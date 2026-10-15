@@ -14,7 +14,10 @@ import socketserver
 import threading
 import json
 import time
+import copy
 from typing import Any
+
+TELEMETRY_TIMEOUT = 2.0
 
 # Shared data store for web client
 dashboard_state: dict[str, Any] = {
@@ -50,12 +53,23 @@ state_lock = threading.Lock()
 
 def update_web_state(data: dict[str, Any]):
     with state_lock:
-        dashboard_state.update(data)
+        dashboard_state.update(copy.deepcopy(data))
 
-def add_voice_log(message: str):
+
+def get_web_state(now=None):
+    now = time.monotonic() if now is None else now
+    with state_lock:
+        snapshot = copy.deepcopy(dashboard_state)
+        last_update = snapshot.pop('last_update_monotonic', None)
+        age = max(0.0, now - last_update) if last_update is not None else None
+        snapshot['connected'] = bool(snapshot['connected'] and age is not None and age <= TELEMETRY_TIMEOUT)
+        snapshot['data_age_seconds'] = age
+        return snapshot
+
+def add_voice_log(message: str, status='spoken'):
     with state_lock:
         log = dashboard_state.get("voice_log", [])
-        log.insert(0, {"time": time.strftime("%H:%M:%S"), "message": message})
+        log.insert(0, {"time": time.strftime("%H:%M:%S"), "message": message, 'status': status})
         dashboard_state["voice_log"] = log[:20]
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -92,8 +106,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
 
         /* Grid Layout */
-        .grid { display: grid; grid-template-columns: 320px 1fr 340px; gap: 16px; }
-        @media (max-width: 1200px) { .grid { grid-template-columns: 1fr; } }
+        .grid { display: grid; grid-template-columns: 320px minmax(0, 1fr) 340px; gap: 16px; }
+        .grid > div { min-width: 0; }
+        @media (max-width: 1200px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+        @media (max-width: 600px) { header { flex-wrap: wrap; gap: 12px; } .logo { font-size: 16px; } }
 
         .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
         .card-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
@@ -249,10 +265,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         <div class="timing-val" id="currentLapTime">0:00.000</div>
                     </div>
                     <div>
-                        <div class="timing-label">Session Best</div>
+                        <div class="timing-label">Track Reference</div>
                         <div class="timing-val" id="bestLapTime" style="color: var(--accent);">--:--.---</div>
                     </div>
                 </div>
+
+                <div style="font-size:12px; color:var(--text-dim); line-height:1.8;" id="raceInfo">Race information awaiting telemetry.</div>
 
                 <div class="delta-box">
                     <div class="timing-label">Performance Delta (vs Best Clean Lap)</div>
@@ -291,7 +309,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     <span>Corner Diagnostic: Why You're Slower</span>
                 </div>
                 <div style="font-size:12px; color:var(--text-dim); margin-bottom:12px;">
-                    Real-time corner delta analysis comparing your current lap apex speeds and braking zones to your fastest reference lap.
+                    Measured corner deltas use your recorded reference lap. Track guides provide approximate speed and braking advice only.
                 </div>
                 <div class="corner-list" id="cornerList">
                     <!-- Populated dynamically -->
@@ -311,7 +329,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         // Initialize Chart.js Speed Trace
         const ctx = document.getElementById('speedChart').getContext('2d');
-        const speedChart = new Chart(ctx, {
+        const speedChart = typeof Chart === 'undefined' ? null : new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
@@ -340,6 +358,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 animation: false,
                 scales: {
                     x: {
+                        type: 'linear',
+                        min: 0,
                         title: { display: true, text: 'Track Distance (m)', color: '#8b949e' },
                         grid: { color: '#1c212c' },
                         ticks: { color: '#8b949e', maxTicksLimit: 8 }
@@ -383,11 +403,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 const dot = document.getElementById('statusDot');
                 const text = document.getElementById('statusText');
                 if (data.connected) {
-                    text.innerText = 'TELEMETRY LIVE (30Hz)';
+                    text.innerText = 'TELEMETRY LIVE';
                     badge.style.color = 'var(--accent)';
                     dot.style.background = 'var(--accent)';
                 } else {
-                    text.innerText = 'WAITING FOR CAR...';
+                    text.innerText = data.paused ? 'GAME PAUSED' : data.spectating ? 'SPECTATING' :
+                        data.data_age_seconds == null ? 'WAITING FOR CAR...' : 'TELEMETRY STALE';
                     badge.style.color = '#e67e22';
                     dot.style.background = '#e67e22';
                 }
@@ -442,10 +463,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 document.getElementById('lapNum').innerText = `P${data.position || 1} | Lap ${data.lap_num || 1}`;
                 document.getElementById('currentLapTime').innerText = formatMS(data.lap_time_ms);
                 document.getElementById('bestLapTime').innerText = formatMS(data.best_lap_time_ms);
+                const gap = value => value == null ? '--' : value.toFixed(1) + 's';
+                const pit = data.pit_window ? 'Laps ' + data.pit_window.join('–') : '--';
+                document.getElementById('raceInfo').innerText =
+                    `Ahead: ${gap(data.gap_ahead_s)} | Behind: ${gap(data.gap_behind_s)} | Pit window: ${pit} | ` +
+                    `Pace (3 clean laps): ${data.race_pace_ms ? formatMS(data.race_pace_ms) : '--'}`;
                 
                 const deltaEl = document.getElementById('deltaVal');
                 const deltaStatus = document.getElementById('deltaStatus');
-                if (data.delta_ms !== 0 && data.best_lap_time_ms > 0) {
+                if (data.delta_ms != null && data.delta_ms !== 0 && data.best_lap_time_ms > 0) {
                     const sec = Math.abs(data.delta_ms) / 1000;
                     if (data.delta_ms < 0) {
                         deltaEl.className = 'delta-val faster';
@@ -456,62 +482,57 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         deltaEl.innerText = `+${sec.toFixed(3)}s`;
                         deltaStatus.innerText = 'LOSING TIME TO BEST PACE';
                     }
-                } else if (data.best_lap_time_ms > 0) {
+                } else if (data.delta_ms === 0 && data.best_lap_time_ms > 0) {
                     deltaEl.className = 'delta-val';
                     deltaEl.innerText = '0.000s';
                     deltaStatus.innerText = 'MATCHING BEST PACE';
                 } else {
                     deltaEl.className = 'delta-val';
                     deltaEl.innerText = '---';
-                    deltaStatus.innerText = 'Complete lap to establish delta baseline';
+                    deltaStatus.innerText = data.best_lap_time_ms > 0 ? 'No reference at this distance' : 'Complete lap to establish delta baseline';
                 }
 
                 // Voice Log
                 const vList = document.getElementById('voiceList');
-                if (data.voice_log && data.voice_log.length > 0) {
-                    vList.innerHTML = data.voice_log.map(v => `
+                vList.innerHTML = (data.voice_log || []).map(v => `
                         <div class="voice-item">
-                            <div class="voice-time">${v.time}</div>
+                            <div class="voice-time">${v.time}${v.status === 'muted' ? ' · Voice off' : ''}</div>
                             <div>${v.message}</div>
                         </div>
                     `).join('');
-                }
 
                 // Corner Diagnostics
                 const cList = document.getElementById('cornerList');
-                if (data.corner_analysis && data.corner_analysis.length > 0) {
-                    cList.innerHTML = data.corner_analysis.map(c => `
-                        <div class="corner-item ${c.delta > 0.05 ? 'losing' : 'gaining'}">
+                cList.innerHTML = (data.corner_analysis || []).map(c => `
+                        <div class="corner-item ${c.delta == null ? '' : c.delta > 0.05 ? 'losing' : 'gaining'}">
                             <div class="corner-header">
                                 <span>${c.name}</span>
-                                <span style="color: ${c.delta > 0.05 ? 'var(--f1-red)' : 'var(--green)'};">
-                                    ${c.delta > 0 ? '+' : ''}${c.delta.toFixed(3)}s
+                                <span style="color: ${c.delta == null ? 'var(--text-dim)' : c.delta > 0.05 ? 'var(--f1-red)' : 'var(--green)'};">
+                                    ${c.delta == null ? 'Guide only' : (c.delta > 0 ? '+' : '') + c.delta.toFixed(3) + 's'}
                                 </span>
                             </div>
                             <div class="corner-stats">
-                                <span>Apex: ${c.current_apex} km/h (Ref: ${c.best_apex} km/h)</span>
-                                <span>Braking: ${c.brake_point}m</span>
+                                <span>Apex: ${c.current_apex} km/h (Ref: ${c.best_apex} km/h, ${c.reference_source})</span>
+                                <span>Braking: ${c.brake_point == null ? 'Not observed' : c.brake_point + 'm'}</span>
                             </div>
-                            <div class="corner-advice ${c.delta <= 0.05 ? 'good' : ''}">
+                            <div class="corner-advice ${c.delta != null && c.delta <= 0.05 ? 'good' : ''}">
                                 ${c.advice}
                             </div>
                         </div>
                     `).join('');
-                }
 
                 // Speed Trace Chart update
-                if (data.speed_trace_best && data.speed_trace_best.length > 0) {
-                    const labels = data.speed_trace_best.map(pt => pt[0]);
-                    const bestSpeeds = data.speed_trace_best.map(pt => pt[1]);
-                    const currentSpeeds = (data.speed_trace_current || []).map(pt => pt[1]);
-                    
-                    speedChart.data.labels = labels;
-                    speedChart.data.datasets[0].data = bestSpeeds;
-                    speedChart.data.datasets[1].data = currentSpeeds;
+                if (speedChart) {
+                    const points = trace => (trace || []).map(([x, y]) => ({ x, y }));
+                    speedChart.data.datasets[0].data = points(data.speed_trace_best);
+                    speedChart.data.datasets[1].data = points(data.speed_trace_current);
+                    speedChart.options.scales.x.max = data.track_length || undefined;
                     speedChart.update('none');
                 }
             } catch (err) {
                 console.error(err);
+                document.getElementById('statusText').innerText = 'HUD DISCONNECTED';
+                document.getElementById('statusDot').style.background = '#e67e22';
             }
         }
 
@@ -533,8 +554,7 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            with state_lock:
-                data_copy = json.dumps(dashboard_state)
+            data_copy = json.dumps(get_web_state(), allow_nan=False)
             self.wfile.write(data_copy.encode("utf-8"))
         else:
             self.send_response(404)

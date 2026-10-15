@@ -20,6 +20,7 @@ import sys
 import time
 import argparse
 import os
+from pathlib import Path
 
 # Safe UTF-8 / replacement handling on Windows CMD
 if hasattr(sys.stdout, "reconfigure"):
@@ -33,15 +34,13 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from packets import (
-    PacketHeader, HEADER_SIZE,
-    parse_player_telemetry, CarTelemetryData,
-    parse_player_lap_data, LapData,
-    parse_session_data, SessionData,
-    TRACK_NAMES, SESSION_TYPES,
+    CarTelemetryData, LapData, SessionData, TRACK_NAMES,
 )
 from voice_engine import VoiceEngine, Priority
 from analysis import AnalysisEngine
-from web_hud import start_web_hud_server
+from history import TelemetryHistory
+from telemetry_stream import TelemetryStream
+from web_hud import start_web_hud_server, add_voice_log
 import webbrowser
 
 
@@ -72,7 +71,7 @@ def format_tyre_temps(telemetry: CarTelemetryData) -> str:
 
 
 def print_live_dashboard(telemetry: CarTelemetryData, lap: LapData,
-                         session: SessionData | None, delta_ms: int):
+                         session: SessionData | None, delta_ms: int | None):
     """Print a compact live dashboard to the console."""
     # Build the display
     speed = telemetry.speed
@@ -96,7 +95,7 @@ def print_live_dashboard(telemetry: CarTelemetryData, lap: LapData,
         track_name = TRACK_NAMES.get(session.track_id, "Unknown")
 
     # Delta
-    if delta_ms != 0:
+    if delta_ms is not None:
         delta_sign = "+" if delta_ms > 0 else "-"
         delta_str = f"{delta_sign}{abs(delta_ms)/1000:.3f}s"
     else:
@@ -142,6 +141,9 @@ def main():
                         help="TTS speech rate in WPM (default: 175)")
     parser.add_argument("--voice-index", type=int, default=0,
                         help="System voice index (default: 0)")
+    parser.add_argument('--history-dir', type=Path,
+                        default=Path(__file__).resolve().parent.parent / 'telemetry-history',
+                        help='Directory for track/session telemetry history')
     args = parser.parse_args()
 
     # ─── Initialize Voice Engine ───
@@ -150,17 +152,20 @@ def main():
         volume=0.9,
         cooldown_seconds=30.0,
         voice_index=args.voice_index,
+        on_spoken=add_voice_log,
     )
 
     if not args.no_voice:
         voice.start()
         time.sleep(0.5)
-        voice.say_immediate("Engine online. Systems checking out. Waiting for telemetry.")
+        voice.say('Engine online. Waiting for telemetry.', Priority.LOW, key='startup', ttl=10)
     else:
         print("[INFO] Voice output disabled (--no-voice)")
 
     # ─── Initialize Analysis Engine ───
-    analysis = AnalysisEngine(voice)
+    history = TelemetryHistory(args.history_dir / 'telemetry.sqlite3')
+    analysis = AnalysisEngine(voice, history=history)
+    stream = TelemetryStream(analysis)
 
     # ─── Set up UDP Socket ───
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -173,6 +178,8 @@ def main():
         print(f"[ERROR] Cannot bind to port {args.port}: {e}")
         print("  Is another application using this port?")
         voice.shutdown()
+        history.close()
+        sock.close()
         sys.exit(1)
 
     # Enable Virtual Terminal Processing on Windows cmd.exe
@@ -213,6 +220,7 @@ def main():
             try:
                 data, addr = sock.recvfrom(2048)
             except socket.timeout:
+                stream.check_timeout()
                 if not first_packet_logged:
                     now = time.time()
                     if now - last_wait_tick >= 0.5:
@@ -225,55 +233,26 @@ def main():
             except ConnectionResetError:
                 continue
 
-            if len(data) < HEADER_SIZE:
-                continue
-
-            # Parse header
-            header = PacketHeader.from_bytes(data)
             packets_received += 1
+            if not stream.handle(data):
+                if args.debug and stream.last_error:
+                    print(f'[DEBUG] Ignored packet: {stream.last_error}')
+                continue
+            latest_session = stream.latest_session
+            latest_telemetry = stream.latest_telemetry
+            latest_lap = stream.latest_lap
 
             if not first_packet_logged:
                 first_packet_logged = True
                 sys.stdout.write("\r" + " " * 75 + "\r")
-                print(f"[CONNECTED] >> Telemetry stream detected! Player car index: {header.player_car_index}")
+                print('[CONNECTED] >> Valid F1 2021 telemetry stream detected!')
                 print()
                 # Prepare space for 9 lines of dashboard
                 for _ in range(9):
                     print()
 
-            # Only process packets we care about
-            packet_id = header.packet_id
-            player_idx = header.player_car_index
-
-            # ─── Packet ID 1: Session Data ───
-            if packet_id == 1:
-                try:
-                    latest_session = parse_session_data(data)
-                    analysis.update_session(latest_session)
-                except Exception as e:
-                    if args.debug:
-                        print(f"[DEBUG] Session parse error: {e}")
-
-            # ─── Packet ID 6: Car Telemetry ───
-            elif packet_id == 6:
-                try:
-                    latest_telemetry = parse_player_telemetry(data, player_idx)
-                except Exception as e:
-                    if args.debug:
-                        print(f"[DEBUG] Telemetry parse error: {e}")
-
-            # ─── Packet ID 2: Lap Data ───
-            elif packet_id == 2:
-                try:
-                    latest_lap = parse_player_lap_data(data, player_idx)
-                except Exception as e:
-                    if args.debug:
-                        print(f"[DEBUG] Lap data parse error: {e}")
-
             # ─── Run Analysis ───
             if latest_telemetry and latest_lap:
-                analysis.update_telemetry(latest_telemetry, latest_lap)
-
                 # ─── Console Display ───
                 now = time.time()
                 if now - last_display_time >= display_interval:
@@ -294,6 +273,10 @@ def main():
         time.sleep(2)
     finally:
         sock.close()
+        history.close()
+        if web_server:
+            web_server.shutdown()
+            web_server.server_close()
         voice.shutdown()
         print(f"[INFO] Received {packets_received} packets total.")
         print("[INFO] AI Race Engineer offline.")

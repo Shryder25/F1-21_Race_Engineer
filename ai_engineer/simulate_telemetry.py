@@ -66,7 +66,7 @@ def build_session_packet(session_time: float, frame_id: int, track_id: int = 11)
         0    # formula F1
     )
     # Pad to standard packet size
-    return header + session_data + b"\x00" * 600
+    return header + session_data + b"\x00" * (625 - len(header) - len(session_data))
 
 def build_telemetry_packet(session_time: float, frame_id: int, speed: int, throttle: float, brake: float, gear: int, tyre_temp: int) -> bytes:
     header = build_header(6, session_time, frame_id)
@@ -99,7 +99,7 @@ def build_telemetry_packet(session_time: float, frame_id: int, speed: int, throt
         cars_data.extend(car_block)
     
     # footer
-    footer = b"\x00"
+    footer = b"\x00\x00\x00"
     return header + bytes(cars_data) + footer
 
 def build_lap_packet(session_time: float, frame_id: int, lap_dist: float, lap_time_ms: int, lap_num: int = 1, pos: int = 3) -> bytes:
@@ -128,7 +128,7 @@ def build_lap_packet(session_time: float, frame_id: int, lap_dist: float, lap_ti
                 0,             # numUnservedStopGoPens
                 3,             # gridPosition
                 4,             # driverStatus (on track)
-                0,             # resultStatus
+                2,             # resultStatus (active)
                 0,             # pitLaneTimerActive
                 0,             # pitLaneTimeInLaneInMS
                 0,             # pitStopTimerInMS
