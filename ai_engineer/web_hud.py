@@ -103,6 +103,15 @@ def set_command_handler(handler):
     _command_handler = handler
 
 
+# DeepSeek client for the Setup tab's "consult" button (None = engineered baseline only).
+_setup_ai_client = None
+
+
+def set_setup_ai_client(client):
+    global _setup_ai_client
+    _setup_ai_client = client
+
+
 def add_voice_log(message: str, status='spoken'):
     with state_lock:
         log = dashboard_state.get("voice_log", [])
@@ -694,7 +703,7 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
                 self.send_response(400)
                 self.end_headers()
                 return
-            result = generate_ai_setup_recommendation(track_id, weather, handling_issue)
+            result = generate_ai_setup_recommendation(track_id, weather, handling_issue, _setup_ai_client)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -711,8 +720,10 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
 
 def start_web_hud_server(port: int = 5000):
     """Start the HUD HTTP server on a background daemon thread."""
-    class ReusableTCPServer(socketserver.TCPServer):
+    class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        # Threaded so a slow AI setup consult never stalls the 10 Hz telemetry polling.
         allow_reuse_address = True
+        daemon_threads = True
 
     try:
         httpd = ReusableTCPServer(("0.0.0.0", port), TelemetryHUDHandler)

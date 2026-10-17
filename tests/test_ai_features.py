@@ -324,8 +324,9 @@ class DispatcherTests(unittest.TestCase):
         self.assertEqual(len(voice.said), 1)
         self.assertTrue(self.wait_for(lambda: len(voice.said) == 2))
         self.assertEqual(voice.said[1][0], 'Answer for gap_ahead.')
-        # same priority, so the answer never interrupts the cue that is still being spoken
-        self.assertEqual({item[1] for item in voice.said}, {Priority.STRATEGY})
+        # cue is CRITICAL (instant, ignores the corner filter); the answer is lower priority,
+        # so it never interrupts the cue that is still being spoken
+        self.assertEqual([item[1] for item in voice.said], [Priority.CRITICAL, Priority.STRATEGY])
         self.assertNotEqual(voice.said[0][2]['key'], voice.said[1][2]['key'])
 
     def test_duplicates_are_debounced_but_different_commands_are_answered(self):
@@ -413,6 +414,40 @@ class StreamRoutingTests(unittest.TestCase):
         bad[24:28] = b'\x00\x00\xc8\x43'      # 400.0% tyre wear is impossible
         self.assertFalse(stream.handle(bytes(bad), now=1))
         self.assertEqual(engine.latest_damage.worst_tyre_wear, 24.0)
+
+
+class SetupConsultTests(unittest.TestCase):
+    def test_setup_consult_uses_deepseek_when_available_and_falls_back_otherwise(self):
+        from track_data import generate_ai_setup_recommendation
+
+        class Client:
+            seen = None
+
+            def chat(self, system, user, max_tokens=600):
+                Client.seen = (system, user, max_tokens)
+                return 'Run low drag: wings 1 and 3. Short gearing is not needed at Monza.'
+
+        class Down:
+            def chat(self, system, user, max_tokens=600):
+                raise AIUnavailable('offline')
+
+        result = generate_ai_setup_recommendation(11, 'dry', 'understeer', Client())
+        self.assertIn('low drag', result['ai_consultation'])
+        self.assertIn('Monza', Client.seen[1])
+        self.assertIn('understeer', Client.seen[1])
+        self.assertGreaterEqual(Client.seen[2], 1000)      # room for R1 reasoning plus the answer
+        fallback = generate_ai_setup_recommendation(11, 'dry', 'balanced', Down())
+        self.assertIn('Engineer Setup Briefing', fallback['ai_consultation'])
+        self.assertIn('ai_consultation_error', fallback)
+
+    def test_hud_server_handles_requests_concurrently(self):
+        import socketserver
+        import web_hud
+        server = web_hud.start_web_hud_server(port=0)
+        self.assertIsNotNone(server)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.assertIsInstance(server, socketserver.ThreadingMixIn)
 
 
 if __name__ == '__main__':

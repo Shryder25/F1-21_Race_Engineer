@@ -1299,7 +1299,7 @@ def generate_ai_setup_recommendation(track_id: int, weather: str = "dry", handli
     if ai_client is not None:
         try:
             sys_prompt, user_prompt = build_setup_advisor_prompt(track_id, weather, handling_issue)
-            ai_notes = ai_client.chat(sys_prompt, user_prompt)
+            ai_notes = ai_client.chat(sys_prompt, user_prompt, max_tokens=1500)
             if ai_notes and len(ai_notes.strip()) > 20:
                 track_info["ai_consultation"] = ai_notes.strip()
                 return track_info

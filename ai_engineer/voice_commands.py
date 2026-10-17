@@ -69,8 +69,8 @@ class CommandDispatcher:
         self._last: tuple[str, float] | None = None
         self._sequence = 0
 
-    def _speak(self, message, key, ttl):
-        queued = self.voice.say(message, Priority.STRATEGY, key=key, ttl=ttl, cooldown=0)
+    def _speak(self, message, key, ttl, priority=Priority.STRATEGY):
+        queued = self.voice.say(message, priority, key=key, ttl=ttl, cooldown=0)
         if not queued and not getattr(self.voice, 'is_running', False) and self.on_log:
             self.on_log(message, status='muted')
 
@@ -86,7 +86,9 @@ class CommandDispatcher:
             self._last = (command, now)
             self._sequence += 1
             sequence = self._sequence
-        self._speak(self.ack_text, f'cmd_ack:{sequence}', 6)           # instant latency cue
+        # CRITICAL so the cue is instant: it skips the braking/cornering silence filter, and the
+        # STRATEGY-priority answer behind it can never interrupt it.
+        self._speak(self.ack_text, f'cmd_ack:{sequence}', 6, Priority.CRITICAL)
         self._executor.submit(self._answer, command, sequence)         # AI works in the background
         return command
 

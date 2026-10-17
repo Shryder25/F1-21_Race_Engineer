@@ -278,7 +278,7 @@ function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forc
 // ──────────────────────────────────────────────
 function initSpeedChart() {
     const ctx = document.getElementById('speedChart');
-    if (!ctx) return;
+    if (!ctx || typeof Chart === 'undefined') return;   // never let a missing chart library kill the HUD
     speedChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -387,7 +387,7 @@ async function initSetupAdvisor() {
     });
 
     // Initial load
-    loadTrackSetup(currentTrackId, 'dry');
+    loadTrackSetup(trackSelect.value || currentTrackId, weatherSelect ? weatherSelect.value : 'dry');
 }
 
 async function loadTrackSetup(trackId, weather) {
@@ -546,7 +546,13 @@ async function fetchTelemetry() {
         if (data.track_id !== undefined && data.track_id !== currentTrackId) {
             currentTrackId = data.track_id;
             const sel = document.getElementById('trackSelect');
-            if (sel) sel.value = currentTrackId;
+            // Only follow the game onto circuits that are in the database (the API would
+            // otherwise answer with its Silverstone default under the wrong heading).
+            if (sel && [...sel.options].some(o => o.value === String(currentTrackId))) {
+                sel.value = currentTrackId;
+                const weather = document.getElementById('weatherSelect');
+                loadTrackSetup(currentTrackId, weather ? weather.value : 'dry');
+            }
         }
 
         // 3. Safety Car Pill
