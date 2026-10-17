@@ -32,7 +32,8 @@ from packets import (
     HEADER_FORMAT, HEADER_SIZE,
     CAR_TELEMETRY_FORMAT, CAR_TELEMETRY_SIZE,
     LAP_DATA_FORMAT, LAP_DATA_SIZE,
-    SESSION_PARTIAL_FORMAT
+    SESSION_PARTIAL_FORMAT,
+    CAR_STATUS_FORMAT, CAR_STATUS_SIZE, CAR_DAMAGE_FORMAT, CAR_DAMAGE_SIZE,
 )
 
 def build_header(packet_id: int, session_time: float, frame_id: int, player_idx: int = 0) -> bytes:
@@ -139,6 +140,23 @@ def build_lap_packet(session_time: float, frame_id: int, lap_dist: float, lap_ti
         cars_data.extend(car_block)
     return header + bytes(cars_data)
 
+def build_car_status_packet(session_time: float, frame_id: int, fuel: float = 60.0,
+                            compound: int = 17, age: int = 0) -> bytes:
+    """Car status packet (id 7) for the player car; other cars left zeroed."""
+    header = build_header(7, session_time, frame_id)
+    car = struct.pack(CAR_STATUS_FORMAT, 0, 0, 1, 58, 0, fuel, 110.0, fuel / 1.6, 13000, 4000,
+                      8, 1, 0, compound, compound, age, 0, 2_000_000.0, 1, 0.0, 0.0, 0.0, 0)
+    return header + car + b"\x00" * (24 + 22 * CAR_STATUS_SIZE - len(header) - len(car))
+
+
+def build_car_damage_packet(session_time: float, frame_id: int, wear=(0.0, 0.0, 0.0, 0.0)) -> bytes:
+    """Car damage packet (id 10) for the player car; wear is (RL, RR, FL, FR) percent."""
+    header = build_header(10, session_time, frame_id)
+    car = struct.pack(CAR_DAMAGE_FORMAT, *wear, 0, 0, 0, 0, 0, 0, 0, 0,
+                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    return header + car + b"\x00" * (24 + 22 * CAR_DAMAGE_SIZE - len(header) - len(car))
+
+
 def run_simulation(duration_seconds: float = 10.0):
     print("=" * 60)
     print("  F1 2021 TELEMETRY SIMULATOR")
@@ -190,6 +208,11 @@ def run_simulation(duration_seconds: float = 10.0):
             
             sock.sendto(telem_pkt, (TARGET_HOST, TARGET_PORT))
             sock.sendto(lap_pkt, (TARGET_HOST, TARGET_PORT))
+            if frame_id % 10 == 0:   # strategy data arrives at a lower rate than telemetry
+                sock.sendto(build_car_status_packet(elapsed, frame_id, fuel=58.0 - elapsed * 0.05,
+                                                    age=3), (TARGET_HOST, TARGET_PORT))
+                sock.sendto(build_car_damage_packet(elapsed, frame_id, wear=(31, 33, 36, 38)),
+                            (TARGET_HOST, TARGET_PORT))
             
             time.sleep(0.04) # ~25 Hz
             

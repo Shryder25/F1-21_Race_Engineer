@@ -27,6 +27,19 @@ class TelemetryHistory:
                 ON sessions(track_id, track_length, formula, weather_group);
             CREATE INDEX IF NOT EXISTS lap_reference
                 ON laps(eligible, lap_time_ms);
+            CREATE TABLE IF NOT EXISTS lap_stats (
+                id INTEGER PRIMARY KEY, capture_id TEXT NOT NULL,
+                lap_num INTEGER NOT NULL, lap_time_ms INTEGER NOT NULL,
+                eligible INTEGER NOT NULL, compound INTEGER, tyre_age_laps INTEGER,
+                wear_rl REAL, wear_rr REAL, wear_fl REAL, wear_fr REAL,
+                fuel_start REAL, fuel_end REAL,
+                s1_ms INTEGER, s2_ms INTEGER, s3_ms INTEGER,
+                s1_delta_ms INTEGER, s2_delta_ms INTEGER, s3_delta_ms INTEGER,
+                UNIQUE(capture_id, lap_num),
+                FOREIGN KEY(capture_id) REFERENCES sessions(capture_id)
+            );
+            CREATE INDEX IF NOT EXISTS lap_stats_compound
+                ON lap_stats(compound, tyre_age_laps);
         ''')
 
     @staticmethod
@@ -78,3 +91,53 @@ class TelemetryHistory:
                 if milliseconds > 0:
                     best[sector] = min(best.get(sector, milliseconds), milliseconds)
         return best
+
+    # ──────────────────────────────────────────
+    # Learning engine: per-lap strategy data
+    # ──────────────────────────────────────────
+
+    def record_lap_stats(self, capture_id: str, stats: dict):
+        """Persist one lap's tyre wear, fuel use and sector deltas (idempotent per lap)."""
+        wear = stats.get('wear') or (None,) * 4
+        sectors = stats.get('sectors') or {}
+        deltas = stats.get('sector_deltas') or {}
+        with self.connection:
+            self.connection.execute(
+                'INSERT OR REPLACE INTO lap_stats(capture_id,lap_num,lap_time_ms,eligible,compound,'
+                'tyre_age_laps,wear_rl,wear_rr,wear_fl,wear_fr,fuel_start,fuel_end,'
+                's1_ms,s2_ms,s3_ms,s1_delta_ms,s2_delta_ms,s3_delta_ms) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (capture_id, stats['lap_num'], stats['lap_time_ms'], int(stats.get('eligible', False)),
+                 stats.get('compound'), stats.get('tyre_age_laps'),
+                 wear[0], wear[1], wear[2], wear[3],
+                 stats.get('fuel_start'), stats.get('fuel_end'),
+                 sectors.get(1), sectors.get(2), sectors.get(3),
+                 deltas.get(1), deltas.get(2), deltas.get(3)))
+
+    def tyre_wear_samples(self, session, compound: int, exclude_capture: str | None = None,
+                          limit: int = 400) -> list[tuple[int, float]]:
+        """(tyre age in laps, worst-tyre wear %) from earlier sessions on this track and compound."""
+        rows = self.connection.execute('''
+            SELECT l.tyre_age_laps, MAX(l.wear_rl, l.wear_rr, l.wear_fl, l.wear_fr)
+            FROM lap_stats l JOIN sessions s USING(capture_id)
+            WHERE s.track_id=? AND s.track_length=? AND s.formula=? AND l.compound=?
+              AND l.tyre_age_laps IS NOT NULL AND l.wear_rl IS NOT NULL
+              AND l.capture_id != ?
+            ORDER BY l.id DESC LIMIT ?
+        ''', (session.track_id, session.track_length, session.formula, compound,
+              exclude_capture or '', limit)).fetchall()
+        return [(int(age), float(wear)) for age, wear in rows]
+
+    def fuel_use_samples(self, session, exclude_capture: str | None = None,
+                         limit: int = 200) -> list[float]:
+        """Fuel burned per lap (kg) on completed laps at this track in earlier sessions."""
+        rows = self.connection.execute('''
+            SELECT l.fuel_start - l.fuel_end
+            FROM lap_stats l JOIN sessions s USING(capture_id)
+            WHERE s.track_id=? AND s.track_length=? AND s.formula=? AND l.eligible=1
+              AND l.fuel_start IS NOT NULL AND l.fuel_end IS NOT NULL
+              AND l.fuel_start > l.fuel_end AND l.capture_id != ?
+            ORDER BY l.id DESC LIMIT ?
+        ''', (session.track_id, session.track_length, session.formula,
+              exclude_capture or '', limit)).fetchall()
+        return [float(kg) for (kg,) in rows]

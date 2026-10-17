@@ -277,6 +277,121 @@ def parse_session_data(data: bytes) -> SessionData:
 
 
 # ──────────────────────────────────────────────
+# Packet ID 7: Car Status (fuel, tyre compound, ERS)
+# ──────────────────────────────────────────────
+# Per-car block: 47 bytes; 22 cars x 47 + header(24) = 1058 bytes
+CAR_STATUS_FORMAT = (
+    "<"
+    "B"       # tractionControl
+    "B"       # antiLockBrakes
+    "B"       # fuelMix
+    "B"       # frontBrakeBias
+    "B"       # pitLimiterStatus
+    "f"       # fuelInTank (kg)
+    "f"       # fuelCapacity (kg)
+    "f"       # fuelRemainingLaps
+    "H"       # maxRPM
+    "H"       # idleRPM
+    "B"       # maxGears
+    "B"       # drsAllowed
+    "H"       # drsActivationDistance
+    "B"       # actualTyreCompound
+    "B"       # visualTyreCompound
+    "B"       # tyresAgeLaps
+    "b"       # vehicleFiaFlags
+    "f"       # ersStoreEnergy
+    "B"       # ersDeployMode
+    "f"       # ersHarvestedThisLapMGUK
+    "f"       # ersHarvestedThisLapMGUH
+    "f"       # ersDeployedThisLap
+    "B"       # networkPaused
+)
+CAR_STATUS_SIZE = struct.calcsize(CAR_STATUS_FORMAT)  # 47 bytes
+
+# Compound ids -> human names (F1 2021)
+VISUAL_COMPOUNDS = {16: "Soft", 17: "Medium", 18: "Hard", 7: "Intermediate", 8: "Wet"}
+ACTUAL_COMPOUNDS = {16: "C5", 17: "C4", 18: "C3", 19: "C2", 20: "C1",
+                    7: "Intermediate", 8: "Wet"}
+
+
+@dataclass
+class CarStatusData:
+    fuel_in_tank: float
+    fuel_capacity: float
+    fuel_remaining_laps: float
+    actual_tyre_compound: int
+    visual_tyre_compound: int
+    tyres_age_laps: int
+    fia_flags: int
+    ers_store_energy: float
+    ers_deploy_mode: int
+    ers_deployed_this_lap: float
+
+    @property
+    def compound_name(self) -> str:
+        return VISUAL_COMPOUNDS.get(self.visual_tyre_compound,
+                                    ACTUAL_COMPOUNDS.get(self.actual_tyre_compound, "Unknown"))
+
+
+def parse_player_car_status(data: bytes, player_index: int) -> CarStatusData:
+    v = struct.unpack_from(CAR_STATUS_FORMAT, data, HEADER_SIZE + player_index * CAR_STATUS_SIZE)
+    return CarStatusData(
+        fuel_in_tank=v[5], fuel_capacity=v[6], fuel_remaining_laps=v[7],
+        actual_tyre_compound=v[13], visual_tyre_compound=v[14], tyres_age_laps=v[15],
+        fia_flags=v[16], ers_store_energy=v[17], ers_deploy_mode=v[18],
+        ers_deployed_this_lap=v[21],
+    )
+
+
+# ──────────────────────────────────────────────
+# Packet ID 10: Car Damage (tyre wear %, damage)
+# ──────────────────────────────────────────────
+# Per-car block: 39 bytes; 22 cars x 39 + header(24) = 882 bytes
+CAR_DAMAGE_FORMAT = (
+    "<"
+    "4f"      # tyresWear (%)  (RL, RR, FL, FR)
+    "4B"      # tyresDamage (%)
+    "4B"      # brakesDamage (%)
+    "B"       # frontLeftWingDamage
+    "B"       # frontRightWingDamage
+    "B"       # rearWingDamage
+    "B"       # floorDamage
+    "B"       # diffuserDamage
+    "B"       # sidepodDamage
+    "B"       # drsFault
+    "B"       # gearBoxDamage
+    "B"       # engineDamage
+    "6B"      # engine MGUH/ES/CE/ICE/MGUK/TC wear
+)
+CAR_DAMAGE_SIZE = struct.calcsize(CAR_DAMAGE_FORMAT)  # 39 bytes
+
+
+@dataclass
+class CarDamageData:
+    tyres_wear: tuple          # (RL, RR, FL, FR) percent
+    tyres_damage: tuple
+    front_left_wing: int
+    front_right_wing: int
+    rear_wing: int
+    floor: int
+    gearbox: int
+    engine: int
+
+    @property
+    def worst_tyre_wear(self) -> float:
+        return max(self.tyres_wear)
+
+
+def parse_player_car_damage(data: bytes, player_index: int) -> CarDamageData:
+    v = struct.unpack_from(CAR_DAMAGE_FORMAT, data, HEADER_SIZE + player_index * CAR_DAMAGE_SIZE)
+    return CarDamageData(
+        tyres_wear=tuple(v[0:4]), tyres_damage=tuple(v[4:8]),
+        front_left_wing=v[12], front_right_wing=v[13], rear_wing=v[14],
+        floor=v[15], gearbox=v[19], engine=v[20],
+    )
+
+
+# ──────────────────────────────────────────────
 # Track ID → Name Mapping (F1 2021)
 # ──────────────────────────────────────────────
 TRACK_NAMES = {

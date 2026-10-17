@@ -66,6 +66,16 @@ def get_web_state(now=None):
         snapshot['data_age_seconds'] = age
         return snapshot
 
+# Voice-command hook: main.py registers CommandDispatcher.handle_text so the HUD (or any
+# local client) can ask the engineer a question without a microphone.
+_command_handler = None
+
+
+def set_command_handler(handler):
+    global _command_handler
+    _command_handler = handler
+
+
 def add_voice_log(message: str, status='spoken'):
     with state_lock:
         log = dashboard_state.get("voice_log", [])
@@ -559,6 +569,24 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+
+    def do_POST(self):
+        if self.path != "/api/command" or _command_handler is None:
+            self.send_response(404)
+            self.end_headers()
+            return
+        try:
+            length = min(int(self.headers.get("Content-Length", 0)), 2048)
+            text = str(json.loads(self.rfile.read(length) or b"{}").get("text", ""))
+        except (ValueError, TypeError, AttributeError):
+            self.send_response(400)
+            self.end_headers()
+            return
+        command = _command_handler(text)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"command": command}).encode("utf-8"))
 
     def log_message(self, format, *args):
         # Suppress noisy HTTP request logging in terminal

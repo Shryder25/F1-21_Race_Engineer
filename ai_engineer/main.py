@@ -40,7 +40,10 @@ from voice_engine import VoiceEngine, Priority
 from analysis import AnalysisEngine
 from history import TelemetryHistory
 from telemetry_stream import TelemetryStream
-from web_hud import start_web_hud_server, add_voice_log
+from web_hud import start_web_hud_server, add_voice_log, set_command_handler
+from ai_client import AIClient
+from engineer_brain import EngineerBrain
+from voice_commands import CommandDispatcher, VoiceCommandListener
 import webbrowser
 
 
@@ -144,6 +147,23 @@ def main():
     parser.add_argument('--history-dir', type=Path,
                         default=Path(__file__).resolve().parent.parent / 'telemetry-history',
                         help='Directory for track/session telemetry history')
+    ai = parser.add_argument_group('AI engineer (DeepSeek via an OpenAI-compatible API)')
+    ai.add_argument('--ai-base-url', default=None,
+                    help='API base URL (default: $F1_AI_BASE_URL or Ollama http://localhost:11434/v1)')
+    ai.add_argument('--ai-model', default=None,
+                    help='Model name (default: $F1_AI_MODEL or deepseek-r1:8b)')
+    ai.add_argument('--ai-api-key', default=None,
+                    help='API key for cloud providers such as Groq (default: $F1_AI_API_KEY)')
+    ai.add_argument('--ai-timeout', type=float, default=15.0,
+                    help='Seconds to wait for the model before answering from rules (default: 15)')
+    ai.add_argument('--no-ai', action='store_true', help='Answer commands from rules only')
+    cmd = parser.add_argument_group('voice commands')
+    cmd.add_argument('--no-mic', action='store_true', help='Disable microphone voice commands')
+    cmd.add_argument('--stt-engine', choices=('google', 'vosk'), default='google',
+                     help='Speech-to-text engine (default: google; vosk is offline)')
+    cmd.add_argument('--mic-index', type=int, default=None, help='Microphone device index')
+    cmd.add_argument('--chatty', action='store_true',
+                     help='Keep the old constant callouts instead of speaking only when asked')
     args = parser.parse_args()
 
     # ─── Initialize Voice Engine ───
@@ -164,8 +184,23 @@ def main():
 
     # ─── Initialize Analysis Engine ───
     history = TelemetryHistory(args.history_dir / 'telemetry.sqlite3')
-    analysis = AnalysisEngine(voice, history=history)
+    analysis = AnalysisEngine(voice, history=history, on_demand=not args.chatty)
     stream = TelemetryStream(analysis)
+
+    # ─── AI brain + on-demand voice commands ───
+    client = None if args.no_ai else AIClient(args.ai_base_url, args.ai_model,
+                                              args.ai_api_key, args.ai_timeout)
+    brain = EngineerBrain(analysis.build_context, client)
+    dispatcher = CommandDispatcher(voice, brain, on_log=add_voice_log)
+    set_command_handler(dispatcher.handle_text)
+    listener = None
+    if not args.no_mic and not args.no_voice:
+        listener = VoiceCommandListener(dispatcher, engine=args.stt_engine,
+                                        device_index=args.mic_index, voice=voice)
+        listener.start()
+    if client:
+        print(f"[AI] Engineer brain: {client.model} @ {client.base_url} "
+              f"(falls back to rules if unreachable)")
 
     # ─── Set up UDP Socket ───
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -273,6 +308,9 @@ def main():
         time.sleep(2)
     finally:
         sock.close()
+        if listener:
+            listener.stop()
+        dispatcher.shutdown()
         history.close()
         if web_server:
             web_server.shutdown()

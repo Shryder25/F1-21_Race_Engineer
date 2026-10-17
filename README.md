@@ -4,6 +4,30 @@ An intelligent, real-time virtual race engineer for the F1 2021 game. This proje
 
 ---
 
+## 🧠 AI Engineer, Learning Engine & Voice Commands
+
+**Learning engine.** Every completed lap is logged to the local SQLite database (`telemetry-history/telemetry.sqlite3`, table `lap_stats`): tyre wear per tyre, tyre compound and age, fuel at lap start/end, sector times and sector deltas to your personal best. Tyre wear and fuel come from the game's Car Status and Car Damage UDP packets.
+
+**Predictive ML (`ai_engineer/strategy_ml.py`).** `numpy.polyfit` fits a wear-vs-tyre-age curve for the current compound using this stint plus your earlier sessions at the same track, and turns it into a pit window (lap numbers) and a "can finish without stopping" flag. It also learns fuel burn per lap and the fuel-corrected tyre fall-off in seconds per lap. With too little (or too noisy) data it says so instead of guessing.
+
+**DeepSeek brain (`ai_client.py`, `engineer_brain.py`).** Live telemetry and the ML predictions are placed in a system prompt that demands short F1-radio replies. Any OpenAI-compatible endpoint works:
+
+| Provider | Flags |
+|---|---|
+| Ollama (default, local) | `ollama pull deepseek-r1:8b`, then just run the engineer |
+| Groq | `--ai-base-url https://api.groq.com/openai/v1 --ai-model deepseek-r1-distill-llama-70b --ai-api-key <key>` |
+| DeepSeek cloud | `--ai-base-url https://api.deepseek.com/v1 --ai-model deepseek-chat --ai-api-key <key>` |
+
+The same settings can come from `F1_AI_BASE_URL`, `F1_AI_MODEL` and `F1_AI_API_KEY`. If the model is offline or slower than `--ai-timeout` (15 s), the engineer answers from the same data using built-in rules, so a command is never ignored. `--no-ai` forces rules only.
+
+**Voice commands (`voice_commands.py`).** The engineer no longer chats constantly. Ask for what you need: *"weather report"*, *"tyre temps"*, *"pit window"*, *"gap to car ahead"*, *"gap to car behind"*, *"pace update"* (optionally prefixed with "engineer"). The moment a command is recognised the engineer says **"We are checking"** while the AI works in the background, then speaks the answer. Only critical tyre overheating still interrupts on its own; `--chatty` restores the old callouts.
+
+- Speech-to-text: `pip install SpeechRecognition PyAudio`. Default engine is Google (online); `--stt-engine vosk` runs offline (`pip install vosk`, unpack a Vosk model to `./model`). `--mic-index N` picks a microphone, `--no-mic` disables it.
+- No microphone? Send text to the engineer: `curl -X POST localhost:5000/api/command -d "{\"text\": \"pit window\"}"`.
+- Test without the game: `test_simulation.bat` now also sends tyre wear and fuel packets.
+
+---
+
 ## 🚀 Core Features
 
 * **DeepSeek AI Integration:** Uses local or cloud-based DeepSeek LLMs to process complex telemetry statistics and translate them into natural, strategic pit-wall advice.

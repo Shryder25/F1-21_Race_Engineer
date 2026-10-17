@@ -216,6 +216,12 @@ class VoiceEngine:
                 self._thread = None
 
     @property
+    def is_busy(self) -> bool:
+        """True while a callout is being spoken (lets the microphone ignore it)."""
+        with self._condition:
+            return self._active is not None
+
+    @property
     def is_running(self) -> bool:
         with self._condition:
             return self._running and self._thread is not None and self._thread.is_alive()

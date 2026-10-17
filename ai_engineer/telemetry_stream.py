@@ -5,10 +5,10 @@ import struct
 import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
-                     parse_player_telemetry)
+                     parse_player_telemetry, parse_player_car_status, parse_player_car_damage)
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
 
-PACKET_SIZES = {1: 625, 2: 970, 3: 36, 6: 1347}
+PACKET_SIZES = {1: 625, 2: 970, 3: 36, 6: 1347, 7: 1058, 10: 882}
 
 
 def newer_frame(frame: int, previous: int) -> bool:
@@ -80,6 +80,15 @@ class TelemetryStream:
                 payload = struct.unpack_from('<If', data, 28)
                 if not math.isfinite(payload[1]):
                     return False
+            elif packet_id == 7:
+                payload = parse_player_car_status(data, header.player_car_index)
+                if not all(math.isfinite(x) and x >= 0 for x in
+                           (payload.fuel_in_tank, payload.fuel_capacity, payload.fuel_remaining_laps)):
+                    raise ValueError('Invalid car status')
+            elif packet_id == 10:
+                payload = parse_player_car_damage(data, header.player_car_index)
+                if not all(math.isfinite(w) and 0 <= w <= 100 for w in payload.tyres_wear):
+                    raise ValueError('Invalid car damage')
             else:
                 payload = parse_player_telemetry(data, header.player_car_index)
                 controls = (payload.throttle, payload.brake)
@@ -158,6 +167,15 @@ class TelemetryStream:
                 if hasattr(self.analysis.voice, 'clear'):
                     self.analysis.voice.clear()
                 update_web_state({'connected': False})
+            return False
+
+        if packet_id in (7, 10):
+            # Strategy inputs arrive on their own cadence; they need no frame pairing.
+            if header.session_time >= self.context_start_time:
+                if packet_id == 7:
+                    self.analysis.update_car_status(payload)
+                else:
+                    self.analysis.update_car_damage(payload)
             return False
 
         if header.session_time < self.context_start_time:

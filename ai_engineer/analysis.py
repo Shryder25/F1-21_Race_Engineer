@@ -15,12 +15,14 @@ from bisect import bisect_left
 from dataclasses import dataclass, field
 from typing import Optional
 
-from packets import CarTelemetryData, LapData, SessionData, TRACK_NAMES, SESSION_TYPES
+from packets import (CarTelemetryData, LapData, SessionData, CarStatusData, CarDamageData,
+                     TRACK_NAMES, SESSION_TYPES)
 from track_data import get_braking_points, get_setup_advice
 from voice_engine import VoiceEngine, Priority
 from history import TelemetryHistory
 from race_radio import RaceRadio
 from web_hud import update_web_state, add_voice_log
+import strategy_ml
 
 
 # ──────────────────────────────────────────────
@@ -37,6 +39,13 @@ DELTA_SAMPLE_INTERVAL = 10.0  # Metres between samples for trace
 DELTA_REPORT_INTERVAL = 14.0  # Seconds between voice delta callouts
 
 WHEEL_NAMES = ("Rear Left", "Rear Right", "Front Left", "Front Right")
+WHEEL_CODES = ("RL", "RR", "FL", "FR")   # same order as the telemetry tuples
+
+WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
+                 4: "heavy rain", 5: "storm"}
+
+# In on-demand mode the engineer stays silent unless the driver asks, except for these topics.
+PROACTIVE_KEYS = frozenset({'tyre_temperature'})
 
 # Corner definitions for Silverstone (Track ID 7)
 SILVERSTONE_CORNERS = [
@@ -87,8 +96,17 @@ class DeltaTracker:
 class AnalysisEngine:
     """The brain of the AI Race Engineer."""
 
-    def __init__(self, voice: VoiceEngine, history: TelemetryHistory | None = None):
+    def __init__(self, voice: VoiceEngine, history: TelemetryHistory | None = None,
+                 on_demand: bool = False):
         self.voice = voice
+        self.on_demand = on_demand
+        self.latest_telemetry: CarTelemetryData | None = None
+        self.latest_lap: LapData | None = None
+        self.latest_status: CarStatusData | None = None
+        self.latest_damage: CarDamageData | None = None
+        self.lap_start_fuel: float | None = None
+        self.session_lap_stats: list[dict] = []
+        self._ml_cache: tuple | None = None
         self.radio = RaceRadio(self.speak)
         self.history = history
         self.capture_id: str | None = None
@@ -137,6 +155,10 @@ class AnalysisEngine:
             self.brake_start_distance = None
             self.current_sector_times.clear()
             self.best_sector_times.clear()
+            self.session_lap_stats.clear()
+            self._ml_cache = None
+            self.latest_status = self.latest_damage = None
+            self.lap_start_fuel = None
             self.announced_braking.clear()
             self.last_sector = 0
             self.session_started = False
@@ -197,6 +219,8 @@ class AnalysisEngine:
     def speak(self, message: str, priority: Priority = Priority.NORMAL, **options):
         """Queue speech; the voice worker logs utterances when they actually start."""
         topic = options.get('key', message)
+        if self.on_demand and topic not in PROACTIVE_KEYS:
+            return  # radio silence until the driver asks
         options['key'] = f'{self.capture_id or self.session_context}:{topic}'
         queued = self.voice.say(message, priority, **options)
         if not queued and not getattr(self.voice, 'is_running', False):
@@ -490,6 +514,8 @@ class AnalysisEngine:
         sectors = dict(self.current_sector_times)
         if 1 in sectors and 2 in sectors and lap.last_lap_time_ms > sectors[1] + sectors[2]:
             sectors[3] = lap.last_lap_time_ms - sectors[1] - sectors[2]
+        if prev_lap_num > 0 and lap.last_lap_time_ms > 0:
+            self._record_lap_stats(prev_lap_num, lap.last_lap_time_ms, complete, sectors)
         if prev_lap_num > 0 and self.delta.current_lap_samples:
             recording = {
                 'lap_time_ms': lap.last_lap_time_ms, 'lap_num': prev_lap_num,
@@ -529,6 +555,8 @@ class AnalysisEngine:
                 self.speak(f"Lap complete: {mins} {secs_rem:.3f}. Plus {diff_s:.2f} seconds to your best.", Priority.TIMING,
                            key='lap_time', ttl=10, cooldown=0)
 
+        self.lap_start_fuel = self.latest_status.fuel_in_tank if self.latest_status else None
+
         # Reset current recording lap
         self.delta.current_lap_times.clear()
         self.delta.current_lap_speeds.clear()
@@ -545,11 +573,151 @@ class AnalysisEngine:
         self.brake_start_distance = None
 
     # ──────────────────────────────────────────
+    # Learning Engine: tyre wear, fuel and ML predictions
+    # ──────────────────────────────────────────
+
+    def update_car_status(self, status: CarStatusData):
+        self.latest_status = status
+        if self.lap_start_fuel is None:
+            self.lap_start_fuel = status.fuel_in_tank
+
+    def update_car_damage(self, damage: CarDamageData):
+        self.latest_damage = damage
+
+    def _record_lap_stats(self, lap_num: int, lap_time_ms: int, eligible: bool, sectors: dict):
+        """Log tyre wear, fuel burn and sector deltas for the lap that just finished."""
+        status, damage = self.latest_status, self.latest_damage
+        deltas = {sector: ms - self.best_sector_times[sector]
+                  for sector, ms in sectors.items() if sector in self.best_sector_times}
+        stats = {
+            'lap_num': lap_num, 'lap_time_ms': lap_time_ms, 'eligible': eligible,
+            'compound': status.actual_tyre_compound if status else None,
+            'tyre_age_laps': status.tyres_age_laps if status else None,
+            'wear': tuple(damage.tyres_wear) if damage else None,
+            'fuel_start': self.lap_start_fuel,
+            'fuel_end': status.fuel_in_tank if status else None,
+            'sectors': dict(sectors), 'sector_deltas': deltas,
+        }
+        self.session_lap_stats.append(stats)
+        self._ml_cache = None
+        if self.history and self.capture_id:
+            try:
+                self.history.record_lap_stats(self.capture_id, stats)
+            except (OSError, ValueError, sqlite3.Error) as error:
+                print(f'[History] Could not save lap stats: {error}')
+
+    def _history_args(self):
+        return (self.session, self.capture_id) if self.history and self.session else None
+
+    def tyre_model(self):
+        """Wear curve for the current compound from this session plus earlier sessions."""
+        status = self.latest_status
+        if status is None:
+            return None
+        compound = status.actual_tyre_compound
+        samples = [(st['tyre_age_laps'], max(st['wear']))
+                   for st in self.session_lap_stats
+                   if st['compound'] == compound and st['wear'] is not None
+                   and st['tyre_age_laps'] is not None]
+        args = self._history_args()
+        if args:
+            try:
+                samples += self.history.tyre_wear_samples(args[0], compound, exclude_capture=args[1])
+            except sqlite3.Error as error:
+                print(f'[History] Could not load wear history: {error}')
+        return strategy_ml.fit_wear_curve(samples)
+
+    def pit_prediction(self):
+        """ML pit window (lap numbers) from tyre age, or None until there is enough data."""
+        status, lap, session = self.latest_status, self.latest_lap, self.session
+        if status is None or lap is None or session is None:
+            return None
+        key = (lap.current_lap_num, status.actual_tyre_compound, len(self.session_lap_stats))
+        if self._ml_cache and self._ml_cache[0] == key:
+            return self._ml_cache[1]
+        prediction = strategy_ml.predict_pit_window(
+            self.tyre_model(), status.tyres_age_laps, lap.current_lap_num, session.total_laps)
+        self._ml_cache = (key, prediction)
+        return prediction
+
+    def fuel_prediction(self) -> dict | None:
+        """Learned fuel burn per lap and how many laps the current load lasts."""
+        status = self.latest_status
+        if status is None:
+            return None
+        samples = [st['fuel_start'] - st['fuel_end'] for st in self.session_lap_stats
+                   if st['eligible'] and st['fuel_start'] is not None and st['fuel_end'] is not None]
+        args = self._history_args()
+        if args:
+            try:
+                samples += self.history.fuel_use_samples(args[0], exclude_capture=args[1])
+            except sqlite3.Error as error:
+                print(f'[History] Could not load fuel history: {error}')
+        per_lap = strategy_ml.fuel_per_lap(samples)
+        result = {'fuel_kg': round(status.fuel_in_tank, 1), 'per_lap_kg': per_lap,
+                  'game_laps_remaining': round(status.fuel_remaining_laps, 1), 'laps_of_fuel': None,
+                  'margin_laps': None}
+        if per_lap:
+            result['laps_of_fuel'] = round(status.fuel_in_tank / per_lap, 1)
+            lap, session = self.latest_lap, self.session
+            if lap and session and session.total_laps > 0:
+                result['margin_laps'] = round(
+                    result['laps_of_fuel'] - (session.total_laps - lap.current_lap_num + 1), 1)
+        return result
+
+    def pace_trend(self) -> float | None:
+        """Fuel-corrected tyre fall-off in s/lap for the current stint."""
+        status = self.latest_status
+        if status is None:
+            return None
+        stint = [(st['tyre_age_laps'], st['lap_time_ms'], st['fuel_start'])
+                 for st in self.session_lap_stats
+                 if st['eligible'] and st['compound'] == status.actual_tyre_compound
+                 and st['tyre_age_laps'] is not None]
+        return strategy_ml.pace_degradation(stint[-8:])
+
+    def build_context(self) -> dict:
+        """Snapshot of live telemetry plus ML predictions, for the AI prompt and fallbacks."""
+        t, lap, s, st, dmg = (self.latest_telemetry, self.latest_lap, self.session,
+                              self.latest_status, self.latest_damage)
+        ctx: dict = {'track': self.track_name,
+                     'session_type': SESSION_TYPES.get(s.session_type, 'Session') if s else None,
+                     'weather': WEATHER_NAMES.get(s.weather) if s else None,
+                     'track_temp_c': s.track_temperature if s else None,
+                     'air_temp_c': s.air_temperature if s else None,
+                     'safety_car': bool(s and s.safety_car_status)}
+        if lap:
+            ctx.update(lap=lap.current_lap_num, total_laps=s.total_laps if s else None,
+                       position=lap.car_position, last_lap_ms=lap.last_lap_time_ms or None,
+                       best_lap_ms=self.delta.best_lap_time_ms or None,
+                       delta_to_best_ms=self.delta.last_reported_delta_ms,
+                       race_pace_ms=self.radio.race_pace_ms,
+                       gap_ahead_s=self.radio.gap_ahead_s, gap_behind_s=self.radio.gap_behind_s,
+                       game_pit_window=self.radio.pit_window)
+        if t:
+            ctx['tyre_surface_c'] = dict(zip(WHEEL_CODES, t.tyres_surface_temperature))
+            ctx['tyre_inner_c'] = dict(zip(WHEEL_CODES, t.tyres_inner_temperature))
+        if dmg:
+            ctx['tyre_wear_pct'] = {c: round(w, 1) for c, w in zip(WHEEL_CODES, dmg.tyres_wear)}
+        if st:
+            ctx.update(compound=st.compound_name, tyre_age_laps=st.tyres_age_laps)
+        prediction = self.pit_prediction()
+        ctx['pit_prediction'] = prediction.as_dict() if prediction else None
+        ctx['fuel'] = self.fuel_prediction()
+        ctx['pace_trend_s_per_lap'] = self.pace_trend()
+        if self.session_lap_stats:
+            last = self.session_lap_stats[-1]
+            ctx['last_lap_sectors_ms'] = last['sectors'] or None
+            ctx['last_lap_sector_deltas_ms'] = last['sector_deltas'] or None
+        return ctx
+
+    # ──────────────────────────────────────────
     # Main Update
     # ──────────────────────────────────────────
 
     def update_telemetry(self, telemetry: CarTelemetryData, lap: LapData):
         """Main update called on each telemetry packet."""
+        self.latest_telemetry, self.latest_lap = telemetry, lap
         self.update_delta(lap, telemetry)
         self.analyze_tyres(telemetry, lap)
         self.check_braking_points(lap, telemetry)
