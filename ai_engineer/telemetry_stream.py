@@ -5,10 +5,11 @@ import struct
 import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
-                     parse_player_telemetry, parse_player_car_status, parse_player_car_damage)
+                     parse_player_telemetry, parse_player_car_status, parse_player_car_damage,
+                     parse_player_motion)
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
 
-PACKET_SIZES = {1: 625, 2: 970, 3: 36, 6: 1347, 7: 1058, 10: 882}
+PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 3: 36, 6: 1347, 7: 1058, 10: 882}
 
 
 def newer_frame(frame: int, previous: int) -> bool:
@@ -61,7 +62,11 @@ class TelemetryStream:
                     or not 0 <= header.player_car_index < 22
                     or not math.isfinite(header.session_time)):
                 raise ValueError('Wrong packet format, version, length, timestamp, or player index')
-            if packet_id == 1:
+            if packet_id == 0:
+                payload = parse_player_motion(data, header.player_car_index)
+                if not all(math.isfinite(x) for x in (payload.world_position_x, payload.world_position_z, payload.g_force_lateral)):
+                    raise ValueError('Invalid car motion')
+            elif packet_id == 1:
                 payload = parse_session_data(data)
                 if not (payload.track_id >= 0 and payload.track_length > 0):
                     return False
@@ -169,10 +174,12 @@ class TelemetryStream:
                 update_web_state({'connected': False})
             return False
 
-        if packet_id in (7, 10):
-            # Strategy inputs arrive on their own cadence; they need no frame pairing.
+        if packet_id in (0, 7, 10):
+            # Motion and strategy inputs arrive on their own cadence; they need no frame pairing.
             if header.session_time >= self.context_start_time:
-                if packet_id == 7:
+                if packet_id == 0:
+                    self.analysis.update_motion(payload)
+                elif packet_id == 7:
                     self.analysis.update_car_status(payload)
                 else:
                     self.analysis.update_car_damage(payload)

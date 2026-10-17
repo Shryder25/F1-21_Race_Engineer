@@ -63,6 +63,12 @@ class VoiceEngine:
         self._running = False
         self._thread: threading.Thread | None = None
         self._engine_ready = threading.Event()
+        self._silence_filter = None
+
+    def set_silence_filter(self, filter_fn):
+        """Predicate returning True if driver is occupied (heavy braking or high-G cornering)."""
+        with self._condition:
+            self._silence_filter = filter_fn
 
     def start(self):
         """Start one speech worker; initialization failure leaves voice disabled."""
@@ -176,6 +182,12 @@ class VoiceEngine:
                         self._active = None
                         self._clear_requested = False
                     if self._active is None and next_item is not None:
+                        # Cornering/Braking filter: Never speak non-critical messages while driver is busy
+                        if (next_item.priority > Priority.CRITICAL and self._silence_filter
+                                and self._silence_filter()):
+                            # Driver under heavy braking or cornering; hold message until straight
+                            self._condition.wait(timeout=0.08)
+                            continue
                         self._pending.remove(next_item)
                         if next_item.expires > time.monotonic():
                             self._active = next_item

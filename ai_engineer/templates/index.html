@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F1 2021 Race Engineer — Official Telemetry HUD</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;0,800;1,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="f1-theme">
+    <!-- Top Broadcast Header Bar -->
+    <header class="broadcast-header">
+        <div class="brand-group">
+            <div class="f1-badge">F1</div>
+            <div class="title-group">
+                <span class="series-tag">FIA FORMULA 1 WORLD CHAMPIONSHIP &trade;</span>
+                <h1 class="main-title">AI RACE ENGINEER TELEMETRY</h1>
+            </div>
+        </div>
+
+        <div class="header-center">
+            <div class="circuit-pill" id="circuitPill">
+                <span class="flag-icon" id="circuitFlag">🏁</span>
+                <span class="circuit-name" id="trackNameDisplay">SILVERSTONE CIRCUIT</span>
+                <span class="circuit-meta" id="trackLengthDisplay">5,891 m</span>
+            </div>
+
+            <div class="safety-car-pill sc-none" id="safetyCarPill">
+                <span class="sc-dot"></span>
+                <span id="safetyCarText">TRACK CLEAR</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <div class="status-beacon" id="statusBeacon">
+                <span class="status-dot" id="statusDot"></span>
+                <span class="status-label" id="statusText">WAITING FOR UDP</span>
+            </div>
+            <div class="checking-badge" id="checkingBadge">
+                <span class="radio-wave"></span>
+                <span>WE ARE CHECKING...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="hud-tabs">
+        <button class="tab-btn active" data-tab="tab-live">
+            <span class="tab-icon">🏁</span> LIVE BROADCAST & TRACK MAP
+        </button>
+        <button class="tab-btn" data-tab="tab-setup">
+            <span class="tab-icon">⚙️</span> TRACK DATABASE & SETUP ADVISOR
+        </button>
+        <button class="tab-btn" data-tab="tab-radio">
+            <span class="tab-icon">📻</span> TEAM RADIO & VOICE LOG
+        </button>
+        <button class="tab-btn" data-tab="tab-corners">
+            <span class="tab-icon">📊</span> CORNER DELTA & SPEED TRACE
+        </button>
+    </nav>
+
+    <!-- MAIN TAB 1: Live Broadcast & Track Map -->
+    <main class="tab-content active" id="tab-live">
+        <div class="dashboard-grid">
+            <!-- Left: F1 Timing Tower & Gaps -->
+            <section class="panel timing-tower-panel">
+                <div class="panel-header">
+                    <span class="header-bar red"></span>
+                    <h2>TIMING TOWER</h2>
+                    <span class="session-badge" id="sessionBadge">RACE</span>
+                </div>
+
+                <div class="timing-tower-content">
+                    <div class="driver-pos-card">
+                        <div class="pos-badge" id="posBadge">P1</div>
+                        <div class="driver-info">
+                            <span class="driver-name">PLAYER</span>
+                            <span class="lap-counter" id="lapCounter">LAP 1 / 52</span>
+                        </div>
+                        <div class="tyre-badge-mini compound-medium" id="towerCompoundBadge">M</div>
+                    </div>
+
+                    <!-- Sector Splits -->
+                    <div class="sector-splits-card">
+                        <div class="card-title">SECTOR DELTAS</div>
+                        <div class="sectors-row">
+                            <div class="sector-box" id="sectorBox1">
+                                <span class="sec-label">SEC 1</span>
+                                <span class="sec-time" id="secTime1">--.---</span>
+                                <span class="sec-delta" id="secDelta1">--</span>
+                            </div>
+                            <div class="sector-box" id="sectorBox2">
+                                <span class="sec-label">SEC 2</span>
+                                <span class="sec-time" id="secTime2">--.---</span>
+                                <span class="sec-delta" id="secDelta2">--</span>
+                            </div>
+                            <div class="sector-box" id="sectorBox3">
+                                <span class="sec-label">SEC 3</span>
+                                <span class="sec-time" id="secTime3">--.---</span>
+                                <span class="sec-delta" id="secDelta3">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Lap Times & Live Delta -->
+                    <div class="lap-times-table">
+                        <div class="time-row delta-row">
+                            <span class="row-label">LIVE DELTA</span>
+                            <span class="row-value delta-val" id="liveDeltaDisplay">---</span>
+                        </div>
+                        <div class="time-row">
+                            <span class="row-label">CURRENT LAP</span>
+                            <span class="row-value" id="currentLapTimeDisplay">0:00.000</span>
+                        </div>
+                        <div class="time-row">
+                            <span class="row-label">LAST LAP</span>
+                            <span class="row-value" id="lastLapTimeDisplay">0:00.000</span>
+                        </div>
+                        <div class="time-row highlight-purple">
+                            <span class="row-label">PERSONAL BEST</span>
+                            <span class="row-value" id="bestLapTimeDisplay">0:00.000</span>
+                        </div>
+                        <div class="time-row">
+                            <span class="row-label">RACE PACE (AVG 3)</span>
+                            <span class="row-value" id="racePaceDisplay">--:--.---</span>
+                        </div>
+                    </div>
+
+                    <!-- Rival Gaps -->
+                    <div class="gaps-card">
+                        <div class="gap-item">
+                            <span class="gap-label">CAR AHEAD</span>
+                            <span class="gap-val" id="gapAheadDisplay">INTERVAL --</span>
+                        </div>
+                        <div class="gap-item">
+                            <span class="gap-label">CAR BEHIND</span>
+                            <span class="gap-val" id="gapBehindDisplay">INTERVAL --</span>
+                        </div>
+                    </div>
+
+                    <!-- Strategy / Pit Window Box -->
+                    <div class="pit-window-box">
+                        <span class="pit-title">PIT STOP WINDOW</span>
+                        <span class="pit-val" id="pitWindowDisplay">Calculating ideal window...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Center: Interactive Live Track Map -->
+            <section class="panel track-map-panel">
+                <div class="panel-header">
+                    <span class="header-bar teal"></span>
+                    <h2>LIVE TRACK MAP & TELEMETRY TRAIL</h2>
+                    <div class="map-legend">
+                        <span class="legend-item"><span class="legend-color dot-car"></span> Car</span>
+                        <span class="legend-item"><span class="legend-color dot-brake"></span> Braking Zone</span>
+                        <span class="legend-item"><span class="legend-color dot-ers"></span> ERS Deploy</span>
+                    </div>
+                </div>
+
+                <div class="track-map-wrapper">
+                    <canvas id="trackCanvas" width="700" height="520"></canvas>
+                    <div class="canvas-overlay-stats">
+                        <div class="stat-pill"><span class="lbl">POS X/Z:</span> <span id="posCoordsDisplay">0.0, 0.0</span></div>
+                        <div class="stat-pill"><span class="lbl">LAT G:</span> <span id="latGDisplay">0.00 G</span></div>
+                        <div class="stat-pill"><span class="lbl">LON G:</span> <span id="lonGDisplay">0.00 G</span></div>
+                    </div>
+                    <div class="canvas-controls">
+                        <button class="mini-btn" id="btnFitMap" title="Recenter and Fit Map">⛶ Fit Map</button>
+                        <button class="mini-btn" id="btnClearTrace" title="Clear Path">↺ Reset Trail</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right: F1 Tyre Thermal Heatmap & Status -->
+            <section class="panel tyre-panel">
+                <div class="panel-header">
+                    <span class="header-bar yellow"></span>
+                    <h2>TYRE THERMALS & DEGRADATION</h2>
+                    <div class="compound-tag" id="compoundTag">MEDIUM</div>
+                </div>
+
+                <div class="tyre-content">
+                    <div class="f1-car-silhouette">
+                        <!-- Front Left Tyre -->
+                        <div class="tyre-card tyre-fl" id="tyreCardFL">
+                            <div class="tyre-pos">FRONT LEFT</div>
+                            <div class="tyre-temp-main" id="tempFL">100°C</div>
+                            <div class="tyre-inner-temp" id="innerTempFL">Carcass: 95°C</div>
+                            <div class="tyre-wear-bar-wrap">
+                                <div class="tyre-wear-bar" id="wearBarFL" style="width: 0%;"></div>
+                            </div>
+                            <div class="tyre-wear-txt" id="wearFL">Wear: 0.0%</div>
+                            <div class="tyre-psi" id="psiFL">23.5 PSI</div>
+                        </div>
+
+                        <!-- Front Right Tyre -->
+                        <div class="tyre-card tyre-fr" id="tyreCardFR">
+                            <div class="tyre-pos">FRONT RIGHT</div>
+                            <div class="tyre-temp-main" id="tempFR">100°C</div>
+                            <div class="tyre-inner-temp" id="innerTempFR">Carcass: 95°C</div>
+                            <div class="tyre-wear-bar-wrap">
+                                <div class="tyre-wear-bar" id="wearBarFR" style="width: 0%;"></div>
+                            </div>
+                            <div class="tyre-wear-txt" id="wearFR">Wear: 0.0%</div>
+                            <div class="tyre-psi" id="psiFR">23.5 PSI</div>
+                        </div>
+
+                        <!-- Center Car Silhouette Graphic -->
+                        <div class="car-chassis-art">
+                            <div class="chassis-nose"></div>
+                            <div class="chassis-halo">HALO</div>
+                            <div class="chassis-cockpit">
+                                <div class="steering-indicator" id="steerAngleGraphic"></div>
+                            </div>
+                            <div class="chassis-rear"></div>
+                        </div>
+
+                        <!-- Rear Left Tyre -->
+                        <div class="tyre-card tyre-rl" id="tyreCardRL">
+                            <div class="tyre-pos">REAR LEFT</div>
+                            <div class="tyre-temp-main" id="tempRL">100°C</div>
+                            <div class="tyre-inner-temp" id="innerTempRL">Carcass: 95°C</div>
+                            <div class="tyre-wear-bar-wrap">
+                                <div class="tyre-wear-bar" id="wearBarRL" style="width: 0%;"></div>
+                            </div>
+                            <div class="tyre-wear-txt" id="wearRL">Wear: 0.0%</div>
+                            <div class="tyre-psi" id="psiRL">22.0 PSI</div>
+                        </div>
+
+                        <!-- Rear Right Tyre -->
+                        <div class="tyre-card tyre-rr" id="tyreCardRR">
+                            <div class="tyre-pos">REAR RIGHT</div>
+                            <div class="tyre-temp-main" id="tempRR">100°C</div>
+                            <div class="tyre-inner-temp" id="innerTempRR">Carcass: 95°C</div>
+                            <div class="tyre-wear-bar-wrap">
+                                <div class="tyre-wear-bar" id="wearBarRR" style="width: 0%;"></div>
+                            </div>
+                            <div class="tyre-wear-txt" id="wearRR">Wear: 0.0%</div>
+                            <div class="tyre-psi" id="psiRR">22.0 PSI</div>
+                        </div>
+                    </div>
+
+                    <!-- Ancillary Engine & Weather Box -->
+                    <div class="car-vital-row">
+                        <div class="vital-item">
+                            <span class="v-label">ENGINE TEMP</span>
+                            <span class="v-val" id="engineTempDisplay">90°C</span>
+                        </div>
+                        <div class="vital-item">
+                            <span class="v-label">WEATHER</span>
+                            <span class="v-val" id="weatherDisplay">DRY / CLEAR</span>
+                        </div>
+                        <div class="vital-item">
+                            <span class="v-label">DRS STATUS</span>
+                            <span class="v-val drs-off" id="drsStatusDisplay">DRS OFF</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Bottom Telemetry Broadcast Banner -->
+        <section class="panel broadcast-telemetry-ribbon">
+            <div class="speedo-block">
+                <div class="speed-val" id="speedDisplay">0</div>
+                <div class="speed-unit">KM/H</div>
+            </div>
+
+            <div class="gear-block">
+                <div class="gear-label">GEAR</div>
+                <div class="gear-val" id="gearDisplay">N</div>
+            </div>
+
+            <div class="revs-and-pedals-block">
+                <div class="rev-counter-strip">
+                    <div class="rev-led-bar" id="revLedBar"></div>
+                    <div class="rpm-number" id="rpmDisplay">0 RPM</div>
+                </div>
+
+                <div class="pedal-inputs">
+                    <div class="pedal-bar-wrap">
+                        <span class="p-label">THR</span>
+                        <div class="bar-bg"><div class="bar-fill throttle-bar" id="throttleBar" style="width: 0%;"></div></div>
+                        <span class="p-pct" id="throttleText">0%</span>
+                    </div>
+                    <div class="pedal-bar-wrap">
+                        <span class="p-label">BRK</span>
+                        <div class="bar-bg"><div class="bar-fill brake-bar" id="brakeBar" style="width: 0%;"></div></div>
+                        <span class="p-pct" id="brakeText">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ers-block">
+                <div class="ers-header">
+                    <span>ERS ENERGY STORE</span>
+                    <span class="ers-pct-text" id="ersPctText">100%</span>
+                </div>
+                <div class="ers-bar-wrap">
+                    <div class="ers-bar-fill" id="ersBarFill" style="width: 100%;"></div>
+                </div>
+                <div class="ers-mode-label" id="ersModeText">DEPLOY: BALANCED</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- MAIN TAB 2: Setup Advisor & Track Database -->
+    <main class="tab-content" id="tab-setup">
+        <div class="setup-advisor-container">
+            <div class="setup-controls-bar">
+                <div class="control-group">
+                    <label for="trackSelect">SELECT CIRCUIT (24 F1 2021 TRACKS):</label>
+                    <select id="trackSelect" class="f1-select">
+                        <option value="7">Silverstone Circuit (Great Britain)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="weatherSelect">TRACK CONDITIONS:</label>
+                    <select id="weatherSelect" class="f1-select">
+                        <option value="dry">Dry Conditions</option>
+                        <option value="wet">Wet / Rainy Conditions</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="balanceSelect">CAR HANDLING PREFERENCE:</label>
+                    <select id="balanceSelect" class="f1-select">
+                        <option value="balanced">Balanced Grip & Aero</option>
+                        <option value="oversteer_fix">Fix Oversteer / Loose Rear</option>
+                        <option value="understeer_fix">Fix Understeer / Sharp Turn-in</option>
+                        <option value="top_speed">Maximum Straight Line Speed</option>
+                    </select>
+                </div>
+
+                <button class="f1-action-btn" id="btnConsultAI">
+                    <span class="btn-icon">🧠</span> CONSULT DEEPSEEK SETUP ADVISOR
+                </button>
+            </div>
+
+            <!-- Track Metadata Header -->
+            <div class="track-info-banner" id="trackInfoBanner">
+                <div class="t-title" id="setupTrackTitle">Silverstone Circuit — Great Britain</div>
+                <div class="t-pills">
+                    <span class="t-pill" id="setupLength">5,891 m</span>
+                    <span class="t-pill" id="setupTurns">18 Turns</span>
+                    <span class="t-pill" id="setupDownforce">Downforce: High</span>
+                    <span class="t-pill" id="setupTyreWear">Tyre Degradation: High</span>
+                </div>
+                <div class="t-desc" id="setupCharacteristics">
+                    High-speed sweeping corners; Maggots-Becketts-Chapel produces the highest sustained lateral acceleration on the calendar.
+                </div>
+            </div>
+
+            <!-- 6 Setup Categories Grid -->
+            <div class="setup-categories-grid">
+                <!-- 1. Aerodynamics -->
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">01</span>
+                        <h3>AERODYNAMICS</h3>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front Wing Aero:</span>
+                        <span class="p-value" id="valFrontWing">7</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Rear Wing Aero:</span>
+                        <span class="p-value" id="valRearWing">8</span>
+                    </div>
+                    <div class="setup-tip" id="tipAero">Balanced aero package matching corner speeds.</div>
+                </div>
+
+                <!-- 2. Transmission -->
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">02</span>
+                        <h3>TRANSMISSION</h3>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Differential On-Throttle:</span>
+                        <span class="p-value" id="valDiffOn">68%</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Differential Off-Throttle:</span>
+                        <span class="p-value" id="valDiffOff">56%</span>
+                    </div>
+                    <div class="setup-tip">Higher off-throttle helps trail-braking stability.</div>
+                </div>
+
+                <!-- 3. Suspension Geometry -->
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">03</span>
+                        <h3>SUSPENSION GEOMETRY</h3>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front Camber:</span>
+                        <span class="p-value" id="valFrontCamber">-3.20°</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Rear Camber:</span>
+                        <span class="p-value" id="valRearCamber">-1.60°</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front Toe-Out:</span>
+                        <span class="p-value" id="valFrontToe">0.08°</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Rear Toe-In:</span>
+                        <span class="p-value" id="valRearToe">0.24°</span>
+                    </div>
+                </div>
+
+                <!-- 4. Suspension -->
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">04</span>
+                        <h3>SUSPENSION & RIDE</h3>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front / Rear Suspension:</span>
+                        <span class="p-value" id="valSuspension">6 / 5</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front / Rear Anti-Roll Bar:</span>
+                        <span class="p-value" id="valArb">8 / 6</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front / Rear Ride Height:</span>
+                        <span class="p-value" id="valRideHeight">2 / 4</span>
+                    </div>
+                </div>
+
+                <!-- 5. Brakes -->
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">05</span>
+                        <h3>BRAKES</h3>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Brake Pressure:</span>
+                        <span class="p-value" id="valBrakePressure">98%</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front Brake Bias:</span>
+                        <span class="p-value" id="valBrakeBias">56%</span>
+                    </div>
+                    <div class="setup-tip">Slight forward bias prevents rear lockups into heavy chicanes.</div>
+                </div>
+
+                <!-- 6. Tyres -->
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">06</span>
+                        <h3>TYRE PRESSURES</h3>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front Right Pressure:</span>
+                        <span class="p-value" id="valFrontRightPsi">23.8 PSI</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Front Left Pressure:</span>
+                        <span class="p-value" id="valFrontLeftPsi">24.4 PSI</span>
+                    </div>
+                    <div class="param-row">
+                        <span class="p-name">Rear Pressures:</span>
+                        <span class="p-value" id="valRearPsi">22.4 PSI</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Chief Engineer Briefing Output -->
+            <div class="engineer-briefing-box">
+                <div class="brief-head">
+                    <span class="brief-icon">📻</span>
+                    <h4>CHIEF RACE ENGINEER BRIEFING & TACTICAL ADVICE</h4>
+                </div>
+                <div class="brief-body" id="setupBriefingText">
+                    Loading circuit telemetry baseline setup...
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MAIN TAB 3: Team Radio & Voice Transcript -->
+    <main class="tab-content" id="tab-radio">
+        <div class="radio-tab-container">
+            <div class="radio-controls-card">
+                <h3>ON-DEMAND RADIO COMMANDS</h3>
+                <p>Click any command button or use microphone voice commands. The engineer will acknowledge instantly with <em>"We are checking"</em> while processing.</p>
+                <div class="quick-commands-grid">
+                    <button class="cmd-chip" data-cmd="Weather report">🌧️ "Weather report"</button>
+                    <button class="cmd-chip" data-cmd="Tire temps">🛞 "Tire temps"</button>
+                    <button class="cmd-chip" data-cmd="Pit window">🛑 "Pit window"</button>
+                    <button class="cmd-chip" data-cmd="Gap to car ahead">🏎️ "Gap to car ahead"</button>
+                    <button class="cmd-chip" data-cmd="Gap to car behind">🏎️ "Gap to car behind"</button>
+                    <button class="cmd-chip" data-cmd="Pace update">⚡ "Pace update"</button>
+                </div>
+
+                <div class="custom-cmd-input-row">
+                    <input type="text" id="customCmdInput" class="f1-text-input" placeholder="Ask race engineer a question (e.g. 'Can we make it on these tires?')...">
+                    <button class="f1-action-btn" id="btnSendCmd">TRANSMIT RADIO</button>
+                </div>
+            </div>
+
+            <div class="radio-log-card">
+                <div class="log-header">
+                    <h3>LIVE RADIO CALLOUT TRANSCRIPT</h3>
+                    <span class="log-count" id="logCount">0 messages</span>
+                </div>
+                <div class="voice-list" id="voiceList">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MAIN TAB 4: Corner Delta & Speed Trace -->
+    <main class="tab-content" id="tab-corners">
+        <div class="corners-tab-container">
+            <div class="speed-trace-box">
+                <div class="panel-header">
+                    <h2>VISUAL SPEED TRACE (CURRENT LAP vs BEST LAP)</h2>
+                </div>
+                <div class="chart-container" style="height: 280px; position: relative;">
+                    <canvas id="speedChart"></canvas>
+                </div>
+            </div>
+
+            <div class="corner-analysis-box">
+                <div class="panel-header">
+                    <h2>CORNER-BY-CORNER DELTA BREAKDOWN</h2>
+                </div>
+                <div class="corner-list" id="cornerList">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

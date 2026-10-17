@@ -54,6 +54,69 @@ class PacketHeader:
 
 
 # ──────────────────────────────────────────────
+# Packet ID 0: Motion Data
+# ──────────────────────────────────────────────
+# Per-car motion data block: 60 bytes each
+# 22 cars × 60 bytes + header(24) + extra player car data(120) = 1,464 bytes
+CAR_MOTION_FORMAT = (
+    "<"
+    "f"       # worldPositionX
+    "f"       # worldPositionY
+    "f"       # worldPositionZ
+    "f"       # worldVelocityX
+    "f"       # worldVelocityY
+    "f"       # worldVelocityZ
+    "h"       # worldForwardDirX (int16 normalised)
+    "h"       # worldForwardDirY
+    "h"       # worldForwardDirZ
+    "h"       # worldRightDirX
+    "h"       # worldRightDirY
+    "h"       # worldRightDirZ
+    "f"       # gForceLateral
+    "f"       # gForceLongitudinal
+    "f"       # gForceVertical
+    "f"       # yaw
+    "f"       # pitch
+    "f"       # roll
+)
+CAR_MOTION_SIZE = struct.calcsize(CAR_MOTION_FORMAT)  # 60 bytes
+
+
+@dataclass
+class CarMotionData:
+    world_position_x: float
+    world_position_y: float
+    world_position_z: float
+    world_velocity_x: float
+    world_velocity_y: float
+    world_velocity_z: float
+    world_forward_dir_x: int
+    world_forward_dir_y: int
+    world_forward_dir_z: int
+    world_right_dir_x: int
+    world_right_dir_y: int
+    world_right_dir_z: int
+    g_force_lateral: float
+    g_force_longitudinal: float
+    g_force_vertical: float
+    yaw: float
+    pitch: float
+    roll: float
+
+
+def parse_car_motion(data: bytes, offset: int) -> CarMotionData:
+    """Parse a single car's motion data block starting at offset."""
+    values = struct.unpack_from(CAR_MOTION_FORMAT, data, offset)
+    return CarMotionData(*values)
+
+
+def parse_player_motion(data: bytes, player_index: int) -> CarMotionData:
+    """Parse the player car motion from PacketMotionData."""
+    offset = HEADER_SIZE + (player_index * CAR_MOTION_SIZE)
+    return parse_car_motion(data, offset)
+
+
+# ──────────────────────────────────────────────
 # Packet ID 6: Car Telemetry Data
 # ──────────────────────────────────────────────
 # Per-car telemetry data block: 60 bytes each

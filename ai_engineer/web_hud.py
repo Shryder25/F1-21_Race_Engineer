@@ -15,7 +15,11 @@ import threading
 import json
 import time
 import copy
+import urllib.parse
+from pathlib import Path
 from typing import Any
+
+from track_data import get_all_tracks, get_track_setup, generate_ai_setup_recommendation
 
 TELEMETRY_TIMEOUT = 2.0
 
@@ -31,11 +35,20 @@ dashboard_state: dict[str, Any] = {
     "drs": False,
     "throttle": 0,
     "brake": 0,
+    "steer": 0,
     "tyre_surface_temps": [100, 100, 100, 100],  # RL, RR, FL, FR
     "tyre_inner_temps": [95, 95, 95, 95],
     "tyre_pressures": [23.5, 23.5, 22.5, 22.5],
+    "tyre_wear": [0.0, 0.0, 0.0, 0.0],
+    "tyre_compound": "Medium",
+    "ers_store_energy": 2000000.0,
+    "ers_deploy_mode": 1,
+    "ers_percent": 50,
+    "safety_car": "NONE",
+    "weather": "Clear",
     "engine_temp": 90,
     "lap_num": 1,
+    "total_laps": 52,
     "position": 1,
     "lap_time_ms": 0,
     "last_lap_time_ms": 0,
@@ -43,10 +56,24 @@ dashboard_state: dict[str, Any] = {
     "delta_ms": 0,
     "lap_distance": 0.0,
     "sector": 0,
+    "current_sectors_ms": {},
+    "personal_sectors_ms": {},
+    "gap_ahead_s": None,
+    "gap_behind_s": None,
+    "race_pace_ms": None,
+    "pit_window": None,
     "voice_log": [],
     "corner_analysis": [],
     "speed_trace_current": [],
-    "speed_trace_best": []
+    "speed_trace_best": [],
+    "car_x": 0.0,
+    "car_z": 0.0,
+    "car_yaw": 0.0,
+    "g_force_lat": 0.0,
+    "g_force_lon": 0.0,
+    "track_map": [],
+    "braking_zones": [],
+    "ers_zones": []
 }
 
 state_lock = threading.Lock()
@@ -552,41 +579,131 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
+MIME_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon"
+}
+
+
 class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/" or self.path == "/index.html":
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        if path in ("/", "/index.html"):
+            template_path = Path(__file__).resolve().parent / "templates" / "index.html"
+            content = None
+            if template_path.is_file():
+                try:
+                    content = template_path.read_bytes()
+                except OSError:
+                    content = None
+            if content is None:
+                content = HTML_TEMPLATE.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            self.wfile.write(HTML_TEMPLATE.encode("utf-8"))
-        elif self.path == "/api/telemetry":
+            self.wfile.write(content)
+
+        elif path.startswith("/static/"):
+            rel_path = path[len("/static/"):].lstrip("/")
+            static_dir = (Path(__file__).resolve().parent / "static").resolve()
+            file_path = (static_dir / rel_path).resolve()
+            if str(file_path).startswith(str(static_dir)) and file_path.is_file():
+                suffix = file_path.suffix.lower()
+                mime = MIME_TYPES.get(suffix, "application/octet-stream")
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(file_path.read_bytes())
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        elif path == "/api/telemetry":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             data_copy = json.dumps(get_web_state(), allow_nan=False)
             self.wfile.write(data_copy.encode("utf-8"))
+
+        elif path == "/api/tracks":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(get_all_tracks()).encode("utf-8"))
+
+        elif path == "/api/setup":
+            qs = urllib.parse.parse_qs(parsed.query)
+            try:
+                track_id = int(qs.get("track_id", ["7"])[0])
+            except (ValueError, TypeError):
+                track_id = 7
+            weather = qs.get("weather", ["dry"])[0]
+            setup_data = get_track_setup(track_id, weather)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(setup_data).encode("utf-8"))
+
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_POST(self):
-        if self.path != "/api/command" or _command_handler is None:
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        if path == "/api/command":
+            if _command_handler is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            try:
+                length = min(int(self.headers.get("Content-Length", 0)), 2048)
+                text = str(json.loads(self.rfile.read(length) or b"{}").get("text", ""))
+            except (ValueError, TypeError, AttributeError):
+                self.send_response(400)
+                self.end_headers()
+                return
+            command = _command_handler(text)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"command": command}).encode("utf-8"))
+
+        elif path == "/api/setup/consult":
+            try:
+                length = min(int(self.headers.get("Content-Length", 0)), 4096)
+                body = json.loads(self.rfile.read(length) or b"{}")
+                track_id = int(body.get("track_id", 7))
+                weather = str(body.get("weather", "dry"))
+                handling_issue = str(body.get("handling_issue", "balanced"))
+            except (ValueError, TypeError):
+                self.send_response(400)
+                self.end_headers()
+                return
+            result = generate_ai_setup_recommendation(track_id, weather, handling_issue)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode("utf-8"))
+
+        else:
             self.send_response(404)
             self.end_headers()
-            return
-        try:
-            length = min(int(self.headers.get("Content-Length", 0)), 2048)
-            text = str(json.loads(self.rfile.read(length) or b"{}").get("text", ""))
-        except (ValueError, TypeError, AttributeError):
-            self.send_response(400)
-            self.end_headers()
-            return
-        command = _command_handler(text)
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps({"command": command}).encode("utf-8"))
 
     def log_message(self, format, *args):
         # Suppress noisy HTTP request logging in terminal

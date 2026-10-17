@@ -186,6 +186,7 @@ def main():
     history = TelemetryHistory(args.history_dir / 'telemetry.sqlite3')
     analysis = AnalysisEngine(voice, history=history, on_demand=not args.chatty)
     stream = TelemetryStream(analysis)
+    voice.set_silence_filter(analysis.is_driver_busy)
 
     # ─── AI brain + on-demand voice commands ───
     client = None if args.no_ai else AIClient(args.ai_base_url, args.ai_model,

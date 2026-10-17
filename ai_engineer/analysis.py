@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from packets import (CarTelemetryData, LapData, SessionData, CarStatusData, CarDamageData,
-                     TRACK_NAMES, SESSION_TYPES)
+                     CarMotionData, TRACK_NAMES, SESSION_TYPES)
 from track_data import get_braking_points, get_setup_advice
 from voice_engine import VoiceEngine, Priority
 from history import TelemetryHistory
@@ -44,8 +44,8 @@ WHEEL_CODES = ("RL", "RR", "FL", "FR")   # same order as the telemetry tuples
 WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
                  4: "heavy rain", 5: "storm"}
 
-# In on-demand mode the engineer stays silent unless the driver asks, except for these topics.
-PROACTIVE_KEYS = frozenset({'tyre_temperature'})
+# In on-demand mode the engineer stays silent unless the driver asks, except for critical events.
+PROACTIVE_KEYS = frozenset({'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear', 'wing_damage'})
 
 # Corner definitions for Silverstone (Track ID 7)
 SILVERSTONE_CORNERS = [
@@ -136,6 +136,16 @@ class AnalysisEngine:
         self.previous_corner_sample = None
         self.brake_start_distance = None
 
+        # Live Motion & Track Mapping
+        self.latest_motion: CarMotionData | None = None
+        self.current_lap_map_points: list[list[float]] = []
+        self.track_map_points: list[list[float]] = []
+        self.current_lap_braking_zones: list[list[float]] = []
+        self.current_lap_ers_zones: list[list[float]] = []
+        self.braking_zones_best: list[list[float]] = []
+        self.ers_zones_best: list[list[float]] = []
+        self.last_map_dist: float = -999.0
+
     # ──────────────────────────────────────────
     # Session Handling
     # ──────────────────────────────────────────
@@ -163,6 +173,14 @@ class AnalysisEngine:
             self.last_sector = 0
             self.session_started = False
             self.capture_id = None
+            self.latest_motion = None
+            self.current_lap_map_points.clear()
+            self.track_map_points.clear()
+            self.current_lap_braking_zones.clear()
+            self.current_lap_ers_zones.clear()
+            self.braking_zones_best.clear()
+            self.ers_zones_best.clear()
+            self.last_map_dist = -999.0
             if hasattr(self.voice, 'clear'):
                 self.voice.clear()
             if self.history and session.track_id >= 0:
@@ -217,14 +235,41 @@ class AnalysisEngine:
             self.speak(msg, Priority.LOW, key='session', ttl=10, cooldown=0)
 
     def speak(self, message: str, priority: Priority = Priority.NORMAL, **options):
-        """Queue speech; the voice worker logs utterances when they actually start."""
+        """Queue speech; priority interrupts in PROACTIVE_KEYS break on-demand silence."""
         topic = options.get('key', message)
         if self.on_demand and topic not in PROACTIVE_KEYS:
-            return  # radio silence until the driver asks
+            return  # radio silence until the driver asks or critical priority event
         options['key'] = f'{self.capture_id or self.session_context}:{topic}'
         queued = self.voice.say(message, priority, **options)
         if not queued and not getattr(self.voice, 'is_running', False):
             add_voice_log(message, status='muted')
+
+    def update_motion(self, motion: CarMotionData):
+        """Update live world position coordinates and lateral/longitudinal G-forces."""
+        self.latest_motion = motion
+        x = round(motion.world_position_x, 2)
+        z = round(motion.world_position_z, 2)
+        if self.latest_lap and self.latest_telemetry:
+            dist = self.latest_lap.lap_distance
+            if abs(dist - self.last_map_dist) >= 6.0:
+                self.last_map_dist = dist
+                self.current_lap_map_points.append([x, z])
+                if self.latest_telemetry.brake > 0.08:
+                    self.current_lap_braking_zones.append([x, z, round(self.latest_telemetry.brake, 2)])
+                if self.latest_status and (self.latest_status.ers_deploy_mode > 0 or self.latest_status.ers_deployed_this_lap > 0):
+                    self.current_lap_ers_zones.append([x, z])
+
+    def is_driver_busy(self) -> bool:
+        """Check if driver is under heavy braking or in a high-G corner (silence filter)."""
+        if self.latest_telemetry is None:
+            return False
+        if self.latest_telemetry.brake > 0.15:
+            return True
+        if abs(self.latest_telemetry.steer) > 0.20:
+            return True
+        if self.latest_motion and abs(self.latest_motion.g_force_lateral) > 1.2:
+            return True
+        return False
 
     # ──────────────────────────────────────────
     # Tyre Temperature Analysis
@@ -547,6 +592,10 @@ class AnalysisEngine:
                 self.delta.best_lap_time_ms = last_ms
                 self.delta.best_lap_num = prev_lap_num
                 self.best_corner_data = copy.deepcopy(self.current_corner_data)
+                if self.current_lap_map_points:
+                    self.track_map_points = list(self.current_lap_map_points)
+                    self.braking_zones_best = list(self.current_lap_braking_zones)
+                    self.ers_zones_best = list(self.current_lap_ers_zones)
 
                 self.speak(f"Personal best! {mins} minute {secs_rem:.3f}. New reference lap set.", Priority.TIMING,
                            key='lap_time', ttl=10, cooldown=0)
@@ -571,6 +620,10 @@ class AnalysisEngine:
         self.current_corner_data.clear()
         self.previous_corner_sample = None
         self.brake_start_distance = None
+        self.current_lap_map_points.clear()
+        self.current_lap_braking_zones.clear()
+        self.current_lap_ers_zones.clear()
+        self.last_map_dist = -999.0
 
     # ──────────────────────────────────────────
     # Learning Engine: tyre wear, fuel and ML predictions
@@ -724,23 +777,52 @@ class AnalysisEngine:
         self.update_corners(telemetry, lap)
         self.radio.update_strategy(lap)
 
+        # Priority Interrupts
+        if self.session:
+            self.radio.update_safety_car(self.session.safety_car_status)
+            self.radio.update_weather_alert(self.session.weather)
+        if self.latest_damage:
+            self.radio.update_damage_alert(
+                self.latest_damage.worst_tyre_wear,
+                self.latest_damage.front_left_wing + self.latest_damage.front_right_wing
+            )
+
+        # Live Motion & Track Map coordinates
+        car_x = self.latest_motion.world_position_x if self.latest_motion else 0.0
+        car_z = self.latest_motion.world_position_z if self.latest_motion else 0.0
+        car_yaw = self.latest_motion.yaw if self.latest_motion else 0.0
+        g_lat = round(self.latest_motion.g_force_lateral, 2) if self.latest_motion else 0.0
+        g_lon = round(self.latest_motion.g_force_longitudinal, 2) if self.latest_motion else 0.0
+
+        active_map = self.track_map_points if self.track_map_points else self.current_lap_map_points
+        active_braking = self.braking_zones_best if self.braking_zones_best else self.current_lap_braking_zones
+        active_ers = self.ers_zones_best if self.ers_zones_best else self.current_lap_ers_zones
+
         # Stream snapshot to Web HUD
         update_web_state({
             "connected": True,
             "last_update_monotonic": time.monotonic(),
             "track_name": self.track_name,
             "track_id": self.track_id,
+            "track_length": self.session.track_length if self.session else 0,
             "speed": telemetry.speed,
             "gear": telemetry.gear,
             "rpm": telemetry.engine_rpm,
             "drs": bool(telemetry.drs),
             "throttle": round(telemetry.throttle, 2),
             "brake": round(telemetry.brake, 2),
+            "steer": round(telemetry.steer, 2),
             "tyre_surface_temps": list(telemetry.tyres_surface_temperature),
             "tyre_inner_temps": list(telemetry.tyres_inner_temperature),
             "tyre_pressures": list(telemetry.tyres_pressure),
+            "tyre_wear": list(self.latest_damage.tyres_wear) if self.latest_damage else [0.0, 0.0, 0.0, 0.0],
+            "tyre_compound": self.latest_status.compound_name if self.latest_status else "Medium",
+            "ers_store_energy": self.latest_status.ers_store_energy if self.latest_status else 2000000.0,
+            "ers_deploy_mode": self.latest_status.ers_deploy_mode if self.latest_status else 1,
+            "ers_percent": int(round((self.latest_status.ers_store_energy / 4000000.0) * 100)) if self.latest_status else 50,
             "engine_temp": telemetry.engine_temperature,
             "lap_num": lap.current_lap_num,
+            "total_laps": self.session.total_laps if self.session else 0,
             "position": lap.car_position,
             "lap_time_ms": lap.current_lap_time_ms,
             "last_lap_time_ms": lap.last_lap_time_ms,
@@ -748,12 +830,25 @@ class AnalysisEngine:
             "delta_ms": self.delta.last_reported_delta_ms,
             "lap_distance": round(lap.lap_distance, 1),
             "sector": lap.sector,
-            'gap_ahead_s': self.radio.gap_ahead_s,
-            'gap_behind_s': self.radio.gap_behind_s,
-            'race_pace_ms': self.radio.race_pace_ms,
-            'pit_window': self.radio.pit_window,
-            'personal_sectors_ms': self.best_sector_times,
+            "current_sectors_ms": dict(self.current_sector_times),
+            "personal_sectors_ms": dict(self.best_sector_times),
+            "gap_ahead_s": self.radio.gap_ahead_s,
+            "gap_behind_s": self.radio.gap_behind_s,
+            "race_pace_ms": self.radio.race_pace_ms,
+            "pit_window": self.radio.pit_window,
+            "safety_car": ("VSC" if self.session and self.session.safety_car_status == 2
+                           else "SAFETY CAR" if self.session and self.session.safety_car_status == 1
+                           else "NONE"),
+            "weather": WEATHER_NAMES.get(self.session.weather, "Clear") if self.session else "Clear",
             "corner_analysis": self.corner_diagnostics,
             "speed_trace_current": self.delta.current_lap_speeds[-120:],
-            "speed_trace_best": self.delta.best_lap_speeds
+            "speed_trace_best": self.delta.best_lap_speeds,
+            "car_x": car_x,
+            "car_z": car_z,
+            "car_yaw": car_yaw,
+            "g_force_lat": g_lat,
+            "g_force_lon": g_lon,
+            "track_map": active_map[-400:],
+            "braking_zones": active_braking[-100:],
+            "ers_zones": active_ers[-100:]
         })

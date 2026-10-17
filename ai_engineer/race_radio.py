@@ -6,6 +6,8 @@ from voice_engine import Priority
 
 
 class RaceRadio:
+    """Authentic F1 race radio protocol with silence enforcement, concise calls, and priority interrupts."""
+
     def __init__(self, speak):
         self.speak = speak
         self.reset(None)
@@ -23,8 +25,12 @@ class RaceRadio:
         self.sectors_reported = set()
         self.race_laps = deque(maxlen=3)
         self.race_pace_ms = None
+        self.last_safety_car = session.safety_car_status if session else 0
+        self.last_weather = session.weather if session else 0
+        self.last_critical_alert = 0.0
 
     def update_strategy(self, lap):
+        """Monitor pit stop windows with concise radio timing."""
         if not self.session or self.session.session_type not in (10, 11, 12):
             return
         ideal = self.session.pit_stop_window_ideal_lap
@@ -37,9 +43,9 @@ class RaceRadio:
         if not self.pit_window or lap.pit_status or window == self.served_window:
             return
         if lap.current_lap_num == latest:
-            phase, message = 'last', 'Last lap of your planned pit window.'
+            phase, message = 'last', f'Last lap of planned pit window. Box now.'
         elif ideal <= lap.current_lap_num < latest:
-            phase, message = 'open', f'Pit window open. Planned stop lap {ideal}, latest lap {latest}.'
+            phase, message = 'open', f'Pit window open. Target lap {ideal}, latest lap {latest}.'
         elif lap.current_lap_num == ideal - 1:
             phase, message = 'next', f'Pit window opens next lap. Target lap {ideal}, latest lap {latest}.'
         else:
@@ -48,6 +54,52 @@ class RaceRadio:
         if notice not in self.pit_notices:
             self.pit_notices.add(notice)
             self.speak(message, Priority.STRATEGY, key='pit_window', ttl=8, cooldown=0)
+
+    # ──────────────────────────────────────────
+    # Priority Interrupts (Critical Events)
+    # ──────────────────────────────────────────
+
+    def update_safety_car(self, safety_car_status: int):
+        """Immediate priority interrupt when Safety Car or VSC is deployed/withdrawn."""
+        if safety_car_status == self.last_safety_car:
+            return
+        prev = self.last_safety_car
+        self.last_safety_car = safety_car_status
+        if safety_car_status == 1:
+            self.speak("Safety Car deployed. Delta positive, maintain delta.",
+                       Priority.CRITICAL, key='safety_car', ttl=10, cooldown=10)
+        elif safety_car_status == 2:
+            self.speak("Virtual Safety Car. Watch your delta.",
+                       Priority.CRITICAL, key='safety_car', ttl=8, cooldown=10)
+        elif prev in (1, 2) and safety_car_status == 0:
+            self.speak("Safety Car in this lap. Track going green.",
+                       Priority.CRITICAL, key='safety_car_in', ttl=8, cooldown=10)
+
+    def update_weather_alert(self, weather_code: int):
+        """Immediate priority interrupt on sudden rain arrival."""
+        if self.last_weather is None:
+            self.last_weather = weather_code
+            return
+        prev = self.last_weather
+        self.last_weather = weather_code
+        # 0=clear, 1=light cloud, 2=overcast, 3=light rain, 4=heavy rain, 5=storm
+        if prev <= 2 and weather_code >= 3:
+            self.speak("Rain reported on circuit. Prepare for changing grip.",
+                       Priority.CRITICAL, key='weather_rain', ttl=10, cooldown=30)
+
+    def update_damage_alert(self, worst_tyre_wear: float, front_wing_damage: int, now=None):
+        """Priority interrupt on severe tyre wear or front wing damage."""
+        now = time.monotonic() if now is None else now
+        if now - self.last_critical_alert < 25.0:
+            return
+        if worst_tyre_wear >= 75.0:
+            self.last_critical_alert = now
+            self.speak(f"Critical tyre wear at {int(worst_tyre_wear)} percent. Box this lap.",
+                       Priority.CRITICAL, key='critical_wear', ttl=8, cooldown=20)
+        elif front_wing_damage >= 50:
+            self.last_critical_alert = now
+            self.speak("Heavy front wing damage. Box for a nose change.",
+                       Priority.CRITICAL, key='wing_damage', ttl=8, cooldown=25)
 
     @staticmethod
     def _crossing_time(history, distance):
@@ -102,12 +154,12 @@ class RaceRadio:
         if now - self.last_gap_report >= 20:
             messages = []
             if self.gap_ahead_s is not None:
-                messages.append(f'Gap ahead, {self.gap_ahead_s:.1f} seconds.')
+                messages.append(f'Gap ahead is {self.gap_ahead_s:.1f}.')
             if self.gap_behind_s is not None:
-                messages.append(f'Gap behind, {self.gap_behind_s:.1f} seconds.')
+                messages.append(f'Gap behind is {self.gap_behind_s:.1f}.')
             if messages:
                 self.last_gap_report = now
-                self.speak(' '.join(messages), Priority.RACE, key='traffic_gaps', ttl=5, cooldown=15)
+                self.speak(' '.join(messages), Priority.RACE, key='traffic_gaps', ttl=5, cooldown=20)
 
     def report_sector(self, lap_num, sector, milliseconds, personal_ms):
         token = (lap_num, sector)
