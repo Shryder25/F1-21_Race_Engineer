@@ -52,29 +52,35 @@ BASIS_NAMES = {'track': 'this track', 'pooled': 'other tracks (pooled)', 'prior'
 # Collecting lap records
 # ──────────────────────────────────────────────
 
-def collect(recordings, history_path=None, exclude_captures=()):
-    """(records, sources, history capture ids used) from recordings and a history database."""
+def collect(recordings, history_path=None, exclude_captures=(), rivals=True):
+    """(records, sources, history capture ids used) from recordings and a history database.
+
+    rivals adds every other car's laps from Session History (fall-off fit only).
+    """
     records, sources, captures = [], [], set()
     for path in recordings:
         path = Path(path)
         try:
-            recs = fm.laps_from_recording(path)
+            recs = fm.laps_from_recording(path, rivals=rivals)
         except Exception as error:                  # a broken file should not stop the rest
             print(f'[FIT] Skipping {path}: {error}', file=sys.stderr)
             sources.append({'path': _display(path), 'error': str(error)})
             continue
         records += recs
-        sources.append({'path': _display(path), 'laps': len(recs),
+        sources.append({'path': _display(path), 'laps': sum(r.car_index is None for r in recs),
+                        'rival_laps': sum(r.car_index is not None for r in recs),
                         'simulated': bool(recs) and all(r.simulated for r in recs)})
     if history_path:
         from history import TelemetryHistory
         history = TelemetryHistory(Path(history_path))
         try:
-            recs, captures = fm.laps_from_history(history, exclude_captures)
+            recs, captures = fm.laps_from_history(history, exclude_captures, rivals=rivals)
         finally:
             history.close()
         records += recs
-        sources.append({'history': _display(Path(history_path)), 'laps': len(recs),
+        sources.append({'history': _display(Path(history_path)),
+                        'laps': sum(r.car_index is None for r in recs),
+                        'rival_laps': sum(r.car_index is not None for r in recs),
                         'sessions': len(captures), 'simulated': False})
     return records, [s for s in sources if 'error' not in s], captures
 
@@ -197,7 +203,10 @@ def render_report(store: fm.ModelStore, checks, records, truth: dict | None = No
     out = ['# Fitted tyre and fuel models', '',
            f"Fitted {store.created} from {len(store.sources)} source(s), "
            f"{sum(1 for r in records if r.wear_increment is not None)} laps of tyre wear, "
-           f"{sum(1 for r in records if r.fuel_used is not None)} laps of fuel use.", '']
+           f"{sum(1 for r in records if r.fuel_used is not None)} laps of fuel use, "
+           f"{sum(1 for r in records if r.corrected_time_s is not None)} clean laps for fall-off "
+           f"({sum(1 for r in records if r.corrected_time_s is not None and r.car_index is not None)} "
+           f"of them by other cars, from Session History).", '']
     if store.simulated_only:
         out += ['> **Simulator data only.** These fits show the fitting and the ranges work on '
                 'stints whose true wear and fuel use are known. They say nothing about F1 2021 '
@@ -258,7 +267,8 @@ def render_report(store: fm.ModelStore, checks, records, truth: dict | None = No
     out += ['', '## Sources', '']
     for s in store.sources:
         name = s.get('path') or s.get('history')
-        out.append(f"* `{name}`: {s.get('laps', 0)} laps{' (simulated)' if s.get('simulated') else ''}")
+        rivals = f" + {s['rival_laps']} laps by other cars" if s.get('rival_laps') else ''
+        out.append(f"* `{name}`: {s.get('laps', 0)} laps{rivals}{' (simulated)' if s.get('simulated') else ''}")
     out.append('')
     return '\n'.join(out)
 
@@ -342,6 +352,8 @@ def main(argv=None):
     parser.add_argument('--level', type=float, default=fm.DEFAULT_LEVEL,
                         help='Range level for the report (default 0.8 = 10th to 90th percentile)')
     parser.add_argument('--no-validate', action='store_true', help='Skip the hold-out check')
+    parser.add_argument('--player-only', action='store_true',
+                        help="Fit from your own laps only, not other cars' laps from Session History")
     args = parser.parse_args(argv)
 
     paths = list(args.recordings)
@@ -351,7 +363,7 @@ def main(argv=None):
         truth = simulated_truth()
     if not paths and not args.history:
         parser.error('give recordings, --history, or --simulated')
-    records, sources, captures = collect(paths, args.history)
+    records, sources, captures = collect(paths, args.history, rivals=not args.player_only)
     if not records:
         print('[FIT] No usable laps found.', file=sys.stderr)
         return 1
