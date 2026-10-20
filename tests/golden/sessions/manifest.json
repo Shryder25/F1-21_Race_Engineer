@@ -1,0 +1,53 @@
+{
+  "tolerances": {
+    "time_s": 0.25,
+    "number_abs": 0.011,
+    "number_rel": 0.0
+  },
+  "sessions": {
+    "race_dry_red_bull_ring": {
+      "kind": "race",
+      "source": "synthetic",
+      "scenario": "race_dry_red_bull_ring",
+      "description": "7-lap dry race: undercut, DRS fights, pit window, own stop, finish."
+    },
+    "qualifying_silverstone": {
+      "kind": "qualifying",
+      "source": "synthetic",
+      "scenario": "qualifying_silverstone",
+      "description": "Short qualifying: out lap, PB, slower lap, invalidated lap, hot fronts, in lap."
+    },
+    "race_wet_hungaroring": {
+      "kind": "wet",
+      "source": "synthetic",
+      "scenario": "race_wet_hungaroring",
+      "description": "6-lap race that turns wet: light then heavy rain, crossover to intermediates."
+    },
+    "race_safety_car_zandvoort": {
+      "kind": "safety_car",
+      "source": "synthetic",
+      "scenario": "race_safety_car_zandvoort",
+      "description": "7-lap race: crash, yellow, Safety Car, wing damage, stops under SC, VSC, warning."
+    },
+    "real_race": {
+      "kind": "race",
+      "source": "needs-recording",
+      "description": "SLOT: a real dry race (5+ laps, at least one pit stop) recorded from F1 2021 on your PC."
+    },
+    "real_qualifying": {
+      "kind": "qualifying",
+      "source": "needs-recording",
+      "description": "SLOT: a real qualifying session (out lap, 2+ flying laps) recorded from F1 2021."
+    },
+    "real_wet": {
+      "kind": "wet",
+      "source": "needs-recording",
+      "description": "SLOT: a real race or practice with rain (ideally changing weather) recorded from F1 2021."
+    },
+    "real_safety_car": {
+      "kind": "safety_car",
+      "source": "needs-recording",
+      "description": "SLOT: a real race with a Safety Car or VSC period recorded from F1 2021."
+    }
+  }
+}

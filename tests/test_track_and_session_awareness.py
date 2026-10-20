@@ -68,6 +68,25 @@ class TrackAwarenessTests(unittest.TestCase):
             self.assertTrue(seen[track_id][4], track_id)
         self.assertEqual(web_hud.get_web_state()['session_label'], 'Free Practice')
 
+    def test_rain_mid_race_keeps_the_session_and_calls_the_rain(self):
+        voice = SilentVoice()
+        engine = AnalysisEngine(voice)
+        dry = replace(parse_session_data(build_session_packet(0, 1, 9, 10, 4381)), weather=2)
+        engine.update_session(dry, 77, 0)
+        engine.delta.best_lap_time_ms = 80_000
+        engine.race_control.lap_one_reported = True
+        lap = parse_player_lap_data(build_lap_packet(1, 1, 500, 30_000, 3, 4), 0)
+        telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 250, 1, 0, 7, 95), 0)
+        engine.update_telemetry(telemetry, lap)
+        for weather in (3, 4):                      # light rain, then heavy rain
+            engine.update_session(replace(dry, weather=weather), 77, 0)
+            engine.update_telemetry(telemetry, lap)
+        spoken = [m[0] for m in voice.messages]
+        self.assertEqual(sum('Radio check' in m for m in spoken), 1, spoken)   # no new session
+        self.assertTrue(any('Rain starting to fall' in m for m in spoken), spoken)
+        self.assertTrue(engine.race_control.lap_one_reported)                  # race state kept
+        self.assertEqual(engine.delta.best_lap_time_ms, 0)                     # dry PB is no yardstick
+
     def test_corner_analysis_works_on_a_non_silverstone_track(self):
         engine = AnalysisEngine(SilentVoice())
         engine.update_session(parse_session_data(build_session_packet(0, 1, 11, 13, 5793)), 5, 0)

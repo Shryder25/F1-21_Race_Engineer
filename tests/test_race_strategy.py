@@ -76,8 +76,15 @@ class PlanRaceTests(unittest.TestCase):
         plan = rs.plan_race(6, 'Medium', 2, current_lap=45, pit_loss=21.0, compounds_used={'Intermediate'})
         self.assertEqual(plan.best.stops, 0)
 
-    def test_wet_tyres_or_finished_race_have_no_plan(self):
-        self.assertIsNone(rs.plan_race(20, 'Intermediate', 3, 30))
+    def test_wet_tyres_plan_only_fresh_sets_of_the_same_tyre(self):
+        short = rs.plan_race(5, 'Intermediate', 3, 30)
+        self.assertEqual((short.best.stops, short.best.compounds), (0, ['INTERMEDIATE']))
+        self.assertIn('Bring the intermediates home', rs.describe_plan(short))
+        long = rs.plan_race(60, 'Wet', 10, 10)
+        self.assertGreater(long.best.stops, 0)
+        self.assertEqual(set(long.best.compounds), {'WET'})
+
+    def test_finished_race_has_no_plan(self):
         self.assertIsNone(rs.plan_race(0, 'Medium', 3, 51))
         self.assertEqual(rs.describe_plan(None), 'No dry strategy to plan right now.')
 
@@ -167,6 +174,12 @@ class UndercutOvercutTests(unittest.TestCase):
         call = rs.react_to_rival_stop('ahead', 1.5, 'Medium', 25, 'Medium', 'Hard', 30, 1)
         self.assertEqual(call.kind, 'stay_out')
         self.assertIn('hards', call.message)
+
+    def test_rival_call_names_the_driver_and_never_guesses_the_compound(self):
+        call = rs.react_to_rival_stop('ahead', 1.5, 'Medium', 25, 'Medium', None, 30, 1, rival_name='Hamilton')
+        self.assertEqual(call.kind, 'stay_out')
+        self.assertTrue(call.message.startswith('Hamilton ahead has boxed.'), call.message)
+        self.assertNotIn('hards', call.message)
 
     def test_no_stops_left_means_stay_out_to_the_flag(self):
         call = rs.react_to_rival_stop('behind', -0.5, 'Hard', 20, 'Medium', None, 10, 0)

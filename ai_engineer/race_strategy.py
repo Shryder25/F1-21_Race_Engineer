@@ -189,24 +189,27 @@ def plan_race(laps_remaining: int, current_compound: str | None, tyre_age: float
               pit_loss: float = DEFAULT_PIT_LOSS_S, compounds_used: set[str] | tuple = (),
               deg_scale: float = 1.0, life_scale: float = 1.0,
               max_stops: int = MAX_STOPS) -> StrategyPlan | None:
-    """Best number of stops and compound sequence for the rest of a dry race.
+    """Best number of stops and compound sequence for the rest of the race.
 
     ``laps_remaining`` counts the lap in progress. Enforces the dry-race rule that two different
-    dry compounds must be used (waived once a wet or intermediate set has been run). Returns None
-    for a wet race or when there is nothing left to plan.
+    dry compounds must be used (waived once a wet or intermediate set has been run). On
+    intermediates or wets the plan only weighs fresh sets of the same tyre: when to cross back
+    to slicks depends on the track drying, which this model can't see. Returns None when there
+    is nothing left to plan.
     """
     current = normalise_compound(current_compound) or 'MEDIUM'
-    if laps_remaining <= 0 or current in WET_COMPOUNDS:
+    if laps_remaining <= 0:
         return None
     used = {c for c in (normalise_compound(u) for u in compounds_used) if c} | {current}
     rule_waived = bool(used & set(WET_COMPOUNDS))
-    curves = {c: tyre_curve(c, deg_scale, life_scale) for c in DRY_COMPOUNDS}
+    options = (current,) if current in WET_COMPOUNDS else DRY_COMPOUNDS
+    curves = {c: tyre_curve(c, deg_scale, life_scale) for c in {*options, current}}
 
     best_by_stops: dict[int, StrategyOption] = {}
     for stops in range(0, max_stops + 1):
         if stops >= laps_remaining:
             break
-        for sequence in itertools.product(DRY_COMPOUNDS, repeat=stops):
+        for sequence in itertools.product(options, repeat=stops):
             if not rule_waived and len(used | set(sequence)) < 2:
                 continue
             stint_curves = [curves[current]] + [curves[c] for c in sequence]
@@ -290,33 +293,40 @@ def undercut_opportunity(gap_ahead_s: float | None, my_compound: str | None, my_
 def react_to_rival_stop(rival_side: str, gap_s: float, my_compound: str | None, my_age: float,
                         rival_old_compound: str | None, rival_new_compound: str | None, laps_remaining: int, my_stops_left: int,
                         deg_scale: float = 1.0, life_scale: float = 1.0,
-                        rival_index: int | None = None) -> StrategyCall:
+                        rival_index: int | None = None, rival_name: str | None = None) -> StrategyCall:
     """Radio call when a nearby rival boxes.
 
     ``rival_side`` is 'ahead' or 'behind'; ``gap_s`` is the absolute gap before they pitted.
     A car behind stopping is an undercut threat (cover it or stay out); a car ahead stopping
     opens the overcut (stay out and push) unless their fresh tyres are too strong.
+    The new compound is usually unknown at pit entry: the maths then assumes the usual next
+    dry set, but the call only names a compound that is actually known.
     """
     gap = abs(gap_s)
-    rival_new = normalise_compound(rival_new_compound) or next_compound(rival_old_compound)
+    known_new = normalise_compound(rival_new_compound)
+    old = normalise_compound(rival_old_compound)
+    # Unknown new set: assume the usual next dry tyre, or fresh wets of the same kind.
+    rival_new = known_new or (old if old in WET_COMPOUNDS else next_compound(old))
+    who = f'{rival_name} {rival_side}' if rival_name else f'Car {rival_side}'
     if my_stops_left <= 0 or laps_remaining <= 2:
-        return StrategyCall('stay_out', f'Car {rival_side} has boxed. We are not stopping again, '
+        return StrategyCall('stay_out', f'{who} has boxed. We are not stopping again, '
                                         'stay out and push to the flag.', None, gap, rival_index)
     if rival_side == 'behind':
         # They are the pitter; we would cover next lap.
         threat = undercut_gain(my_compound, my_age, rival_new, 1, deg_scale, life_scale)
         if threat >= gap - CALL_MARGIN_S:
-            return StrategyCall('cover', f'Car behind has boxed, undercut threat. '
+            return StrategyCall('cover', f'{who} has boxed, undercut threat. '
                                          f'Box this lap to cover, box box.', threat, gap, rival_index)
-        return StrategyCall('stay_out', f'Car behind has boxed. Gap is {gap:.1f}, '
+        return StrategyCall('stay_out', f'{who} has boxed. Gap is {gap:.1f}, '
                                         'undercut will not work. Stay out.', threat, gap, rival_index)
     # Rival ahead pitted: we stay out one lap longer and they do a cold out-lap.
     overcut = -undercut_gain(my_compound, my_age, rival_new, 1, deg_scale, life_scale)
     if overcut >= gap + CALL_MARGIN_S:
-        return StrategyCall('overcut', 'Car ahead has boxed. Overcut is on, push now, '
+        return StrategyCall('overcut', f'{who} has boxed. Overcut is on, push now, '
                                        'big lap please.', overcut, gap, rival_index)
-    return StrategyCall('stay_out', f'Car ahead has boxed for {rival_new.lower()}s. '
-                                    'Overcut is marginal, we stay on plan.', overcut, gap, rival_index)
+    boxed = f'{who} has boxed for {known_new.lower()}s.' if known_new else f'{who} has boxed.'
+    return StrategyCall('stay_out', f'{boxed} Overcut is marginal, we stay on plan.',
+                        overcut, gap, rival_index)
 
 
 def describe_plan(plan: StrategyPlan | None) -> str:
