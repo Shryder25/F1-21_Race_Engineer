@@ -23,6 +23,7 @@ import session_modes
 from voice_engine import VoiceEngine, Priority
 from history import TelemetryHistory
 from race_radio import RaceRadio
+from race_events import RaceControl
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
 import race_strategy
@@ -57,7 +58,7 @@ WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
 # Strategy calls that cannot wait for the driver to ask: covering an undercut or taking one is
 # a this-lap decision, so they break on-demand silence like a real pit wall would.
 PROACTIVE_KEYS = frozenset({'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear',
-                            'wing_damage', 'rival_pit', 'undercut'})
+                            'wing_damage', 'penalty', 'flag_yellow', 'flag_red', 'rival_pit', 'undercut'})
 # Only react to a rival's stop when they were this close; further away it changes nothing.
 RIVAL_REACT_GAP_S = 6.0
 
@@ -137,6 +138,7 @@ class AnalysisEngine:
         self.session_mode = session_modes.UNKNOWN
         self._corner_key: tuple | None = None
         self.radio = RaceRadio(self.speak)
+        self.race_control = RaceControl(self.speak)
         self.history = history
         self.capture_id: str | None = None
         self.session_uid: int | None = None
@@ -217,6 +219,7 @@ class AnalysisEngine:
             self.braking_zones_best.clear()
             self.ers_zones_best.clear()
             self.last_map_dist = -999.0
+            self.radio.set_driver_names({})
             if hasattr(self.voice, 'clear'):
                 self.voice.clear()
             if self.history and session.track_id >= 0:
@@ -237,6 +240,7 @@ class AnalysisEngine:
                 'speed_trace_current': [], 'speed_trace_best': self.delta.best_lap_speeds,
                 'best_lap_time_ms': self.delta.best_lap_time_ms, 'delta_ms': None,
                 'gap_ahead_s': None, 'gap_behind_s': None, 'race_pace_ms': None,
+                'car_ahead_name': None, 'car_behind_name': None,
                 'pit_window': None, 'race_strategy': None, 'last_update_monotonic': None,
                 'speed': 0, 'gear': 0, 'rpm': 0, 'drs': False, 'throttle': 0, 'brake': 0,
                 'lap_num': 0, 'lap_time_ms': 0, 'last_lap_time_ms': 0, 'position': 0,
@@ -245,8 +249,11 @@ class AnalysisEngine:
                 'personal_sectors_ms': self.best_sector_times,
             })
             self.radio.reset(session)
+            self.race_control.reset(session)
+            update_web_state({'race_control': []})
         self.session = session
         self.radio.session = session
+        self.race_control.session = session
         self.track_id = session.track_id
         self.track_name = TRACK_NAMES.get(session.track_id, f"Track {session.track_id}")
         self.session_mode = session_modes.session_mode(session.session_type)
@@ -718,6 +725,12 @@ class AnalysisEngine:
     def update_car_damage(self, damage: CarDamageData):
         self.latest_damage = damage
 
+    def update_participants(self, participants):
+        """Driver names from the Participants packet, so radio calls can say who is where."""
+        self.radio.set_driver_names({index: p.radio_name for index, p in enumerate(participants)
+                                     if p.radio_name})
+        self.race_control.update_participants(participants)
+
     def update_speed_trap(self, speed_kph: float):
         """Record the fastest Speed Trap event ('SPTP') seen so far on the current lap."""
         if self.current_lap_speed_trap_kph is None or speed_kph > self.current_lap_speed_trap_kph:
@@ -975,6 +988,8 @@ class AnalysisEngine:
                        delta_to_best_ms=self.delta.last_reported_delta_ms,
                        race_pace_ms=self.radio.race_pace_ms,
                        gap_ahead_s=self.radio.gap_ahead_s, gap_behind_s=self.radio.gap_behind_s,
+                       car_ahead_name=self.radio.driver_name(self.radio.car_ahead_index),
+                       car_behind_name=self.radio.driver_name(self.radio.car_behind_index),
                        game_pit_window=self.radio.pit_window)
         if t:
             ctx['tyre_surface_c'] = dict(zip(WHEEL_CODES, t.tyres_surface_temperature))
@@ -997,9 +1012,11 @@ class AnalysisEngine:
         ctx['opponent_threats'] = [
             {'threat_level': t['threat_level'], 'threat_score': t['threat_score'],
              'gap_s': t['gap_s'], 'pace_delta_s': t['pace_delta_s'],
-             'laps_to_catch': t['laps_to_catch'], 'factors': t['factors']}
+             'laps_to_catch': t['laps_to_catch'], 'factors': t['factors'],
+             'driver_name': t['driver_name']}
             for t in threats] or None
         ctx['strategy'] = self.strategy_summary()
+        ctx['recent_race_events'] = [event['text'] for event in self.race_control.recent(5)] or None
         if self.session_lap_stats:
             last = self.session_lap_stats[-1]
             ctx['last_lap_sectors_ms'] = last['sectors'] or None
@@ -1077,10 +1094,13 @@ class AnalysisEngine:
             "personal_sectors_ms": dict(self.best_sector_times),
             "gap_ahead_s": self.radio.gap_ahead_s,
             "gap_behind_s": self.radio.gap_behind_s,
+            "car_ahead_name": self.radio.driver_name(self.radio.car_ahead_index),
+            "car_behind_name": self.radio.driver_name(self.radio.car_behind_index),
             "race_pace_ms": self.radio.race_pace_ms,
             "pit_window": self.radio.pit_window,
             "opponent_threats": self.opponent_threats(),
             "race_strategy": self.strategy_summary(),
+            "race_control": self.race_control.recent(),
             "race_report": self.race_report(),
             "tire_health": (lambda t: None if t is None else {
                 'grip_factor': t.grip_factor, 'health_score': t.health_score,

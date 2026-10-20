@@ -15,7 +15,20 @@ class RaceRadio:
 
     def __init__(self, speak):
         self.speak = speak
+        # Car index -> radio name from the Participants packet. Kept across reset() because a
+        # flashback rewinds the timeline but not who is in the field; cleared on session change.
+        self.driver_names: dict[int, str] = {}
         self.reset(None)
+
+    def set_driver_names(self, names: dict[int, str]):
+        self.driver_names = dict(names)
+
+    def driver_name(self, index) -> str | None:
+        return None if index is None else self.driver_names.get(index)
+
+    def _gap_call(self, side: str, gap: float, index) -> str:
+        name = self.driver_name(index)
+        return f'Gap to {name} {side} is {gap:.1f}.' if name else f'Gap {side} is {gap:.1f}.'
 
     def reset(self, session):
         self.session = session
@@ -23,6 +36,7 @@ class RaceRadio:
         self.last_session_time = None
         self.last_gap_report = -math.inf
         self.gap_ahead_s = self.gap_behind_s = None
+        self.car_ahead_index = self.car_behind_index = None
         self.pit_notices = set()
         self.pit_window = None
         self.last_pit_stops = None
@@ -186,15 +200,16 @@ class RaceRadio:
             opponent_best = self.last_lap_times_ms.get(index)
             if player_best and opponent_best:
                 pace_delta = (opponent_best - player_best) / 1000.0
-            threats.append(evaluate_opponent_threat(index, lap.car_position, gap, pace_delta))
+            threats.append(evaluate_opponent_threat(index, lap.car_position, gap, pace_delta,
+                                                   self.driver_name(index)))
         threats.sort(key=lambda t: t.threat_score, reverse=True)
         self.opponent_threats = threats[:5]
         if now - self.last_gap_report >= 20:
             messages = []
             if self.gap_ahead_s is not None:
-                messages.append(f'Gap ahead is {self.gap_ahead_s:.1f}.')
+                messages.append(self._gap_call('ahead', self.gap_ahead_s, self.car_ahead_index))
             if self.gap_behind_s is not None:
-                messages.append(f'Gap behind is {self.gap_behind_s:.1f}.')
+                messages.append(self._gap_call('behind', self.gap_behind_s, self.car_behind_index))
             if messages:
                 self.last_gap_report = now
                 self.speak(' '.join(messages), Priority.RACE, key='traffic_gaps', ttl=5, cooldown=20)
@@ -249,6 +264,24 @@ class RaceRadio:
         if len(self.race_laps) == 3:
             self.race_pace_ms = round(sum(self.race_laps) / 3)
             seconds = self.race_pace_ms / 1000
-            self.speak(f'Race pace over the last three clean laps, {int(seconds // 60)} minute '
-                       f'{seconds % 60:.3f} average.', Priority.RACE,
-                       key='race_pace', ttl=12, cooldown=0)
+            message = (f'Race pace over the last three clean laps, {int(seconds // 60)} minute '
+                       f'{seconds % 60:.3f} average.')
+            comparison = self.pace_comparison(milliseconds)
+            if comparison:
+                message += ' ' + comparison
+            self.speak(message, Priority.RACE, key='race_pace', ttl=12, cooldown=0)
+
+    def pace_comparison(self, player_lap_ms) -> str:
+        """Compare the player's last lap with the cars directly ahead and behind, by name."""
+        parts = []
+        for side, index in (('ahead', self.car_ahead_index), ('behind', self.car_behind_index)):
+            other = self.last_lap_times_ms.get(index) if index is not None else None
+            if not other or not player_lap_ms:
+                continue
+            who = self.driver_name(index) or 'Car'
+            delta = (other - player_lap_ms) / 1000.0
+            if abs(delta) < 0.05:
+                parts.append(f'{who} {side} on the same pace.')
+            else:
+                parts.append(f"{who} {side} {abs(delta):.1f} {'slower' if delta > 0 else 'quicker'}.")
+        return ' '.join(parts)
