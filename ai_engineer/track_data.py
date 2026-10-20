@@ -1277,14 +1277,21 @@ def get_all_tracks() -> List[Dict[str, Any]]:
     return tracks
 
 
-def get_track_setup(track_id: int, weather: str = "dry") -> Dict[str, Any]:
-    """Retrieve full 6-category setup with adjustments for weather."""
+def get_track_setup(track_id: int, weather: str = "dry", session: str = "race") -> Dict[str, Any]:
+    """Retrieve full 6-category setup with adjustments for weather and session (race or qualifying)."""
     circuit = TRACK_DATABASE.get(resolve_track_id(track_id), TRACK_DATABASE[7])  # default to Silverstone
     setup = circuit["setup"]
     is_wet = "wet" in weather.lower() or "rain" in weather.lower()
     if is_wet:
         from track_analysis import wet_setup        # lazy: track_analysis imports this module
         setup = wet_setup(setup, circuit.get("wet_adjustments"))
+    from track_analysis import normalize_session, qualifying_setup, clamp_setup
+    from track_profiles import get_profile
+    session = normalize_session(session)
+    if session == "qualifying":
+        base = clamp_setup(setup)
+        base["notes"] = setup.get("notes", "")
+        setup = qualifying_setup(base, get_profile(circuit["id"]), is_wet)
     return {
         "track_id": circuit["id"],
         "track_name": circuit["name"],
@@ -1292,9 +1299,11 @@ def get_track_setup(track_id: int, weather: str = "dry") -> Dict[str, Any]:
         "characteristics": circuit["characteristics"],
         "downforce_level": circuit["downforce"],
         "weather": "wet" if is_wet else "dry",
+        "session": session,
         "setup": setup,
         "wet_adjustments": circuit.get("wet_adjustments", {}) if is_wet else None,
-        "engineer_advice": circuit.get("wet_adjustments", {}).get("notes") if is_wet else setup.get("notes")
+        "engineer_advice": (setup.get("notes") if session == "qualifying"
+                            else circuit.get("wet_adjustments", {}).get("notes") if is_wet else setup.get("notes"))
     }
 
 
