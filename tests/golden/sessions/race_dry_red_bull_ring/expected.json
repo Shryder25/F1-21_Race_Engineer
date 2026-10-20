@@ -250,7 +250,7 @@
    "tyre_age_laps": 2,
    "worst_wear_pct": 5.2,
    "fuel_kg": 12.6,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.697,
    "fuel_margin_laps": 3.4,
    "ml_pit_window": [
     null,
@@ -259,7 +259,7 @@
    "ml_wear_per_lap_pct": 2.59,
    "tyre_health": 94.8,
    "tyre_remaining_laps": 18.0,
-   "pace_trend_s_per_lap": -3.25,
+   "pace_trend_s_per_lap": null,
    "strategy_stops": 1,
    "strategy_plan": [
     "MEDIUM",
@@ -279,7 +279,7 @@
     "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "Gap to Norris ahead is 0.8.",
     "gap_behind": "No gap behind reading right now.",
-    "pace": "Last lap 1:04.900. Tyres costing 0.00 a lap.",
+    "pace": "Last lap 1:04.900.",
     "threats": "Medium threat from Norris ahead, 0.8, gap 0.8s (DRS range).",
     "strategy": "Plan is one stop. Box lap 4 for soft. 2 stops is 20.0 slower. Undercut on the car ahead will not work yet."
    }
@@ -302,7 +302,7 @@
    "tyre_age_laps": 1,
    "worst_wear_pct": 1.8,
    "fuel_kg": 9.2,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.697,
    "fuel_margin_laps": 2.4,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
@@ -345,10 +345,13 @@
    "tyre_age_laps": 2,
    "worst_wear_pct": 3.7,
    "fuel_kg": 7.5,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.697,
    "fuel_margin_laps": 2.4,
-   "ml_pit_window": null,
-   "ml_wear_per_lap_pct": null,
+   "ml_pit_window": [
+    null,
+    null
+   ],
+   "ml_wear_per_lap_pct": 1.84,
    "tyre_health": 81.1,
    "tyre_remaining_laps": 28.0,
    "pace_trend_s_per_lap": null,
@@ -365,7 +368,7 @@
    "answers": {
     "weather": "Clear. Track 38 degrees, air 26.",
     "tyre_temps": "Fronts 90 and 90, rears 90 and 90. Worst wear 4 percent.",
-    "pit_window": "Game window is lap 3 to 5.",
+    "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "No gap ahead reading right now.",
     "gap_behind": "Gap to Perez behind is 0.8.",
     "pace": "Last lap 1:14.950.",
@@ -391,7 +394,7 @@
    "tyre_age_laps": 3,
    "worst_wear_pct": 5.5,
    "fuel_kg": 5.8,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.698,
    "fuel_margin_laps": 2.4,
    "ml_pit_window": [
     null,
@@ -440,7 +443,7 @@
    "tyre_age_laps": 4,
    "worst_wear_pct": 7.3,
    "fuel_kg": 4.1,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.698,
    "fuel_margin_laps": 2.4,
    "ml_pit_window": [
     null,
@@ -491,7 +494,7 @@
   "tyre_age_laps": 4,
   "worst_wear_pct": 7.3,
   "fuel_kg": 4.1,
-  "fuel_per_lap_kg": 1.7,
+  "fuel_per_lap_kg": 1.698,
   "fuel_margin_laps": 2.4,
   "ml_pit_window": [
    null,

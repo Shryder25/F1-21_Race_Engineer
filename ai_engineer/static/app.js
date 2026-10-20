@@ -872,6 +872,41 @@ async function fetchTelemetry() {
             }
         }
 
+        // Fitted tyre / fuel models: [low, expected, high] ranges
+        const modelCard = document.getElementById('modelCard');
+        const modelList = document.getElementById('modelList');
+        if (modelCard && modelList) {
+            const m = data.model_ranges;
+            modelCard.style.display = m ? '' : 'none';
+            if (m) {
+                const num = (v, d) => (v === null || v === undefined) ? '?' : Number(v).toFixed(d);
+                const span = (r, d, unit) => r ? `${num(r[1], d)}${unit} (${num(r[0], d)}–${num(r[2], d)})` : '—';
+                const laps = r => r ? `L${r[1] ?? '—'} (${r[0] ?? '—'}–${r[2] ?? 'flag'})` : '—';
+                const basisNames = { track: 'fitted here', pooled: 'other tracks', prior: 'estimate' };
+                const basis = document.getElementById('modelBasis');
+                if (basis) {
+                    basis.textContent = `${basisNames[m.basis] || m.basis}, ${m.fit_laps + m.stint_laps} laps`
+                        + (m.simulated_fit ? ', sim' : '');
+                }
+                const rows = [
+                    ['WEAR / LAP', span(m.wear_per_lap_pct, 2, '%')],
+                    ['WEAR IN 5 LAPS', span(m.wear_in_5_laps_pct, 1, '%')],
+                    ['FALL-OFF', span(m.deg_s_per_lap, 3, 's')],
+                ];
+                if (m.pit_ideal_lap) rows.push(['BOX', laps(m.pit_ideal_lap)]);
+                if (m.pit_latest_lap) rows.push(['LATEST', laps(m.pit_latest_lap)]);
+                if (m.finish_without_stop_prob !== null && m.finish_without_stop_prob !== undefined) {
+                    rows.push(['REACH FLAG', `${Math.round(m.finish_without_stop_prob * 100)}%`]);
+                }
+                if (m.fuel_per_lap_kg) rows.push(['FUEL / LAP', span(m.fuel_per_lap_kg, 2, 'kg')]);
+                if (m.fuel_margin_laps) rows.push(['FUEL MARGIN', span(m.fuel_margin_laps, 1, ' laps')]);
+                modelList.innerHTML = rows.map(([label, value]) => `<div class="gap-item">
+                    <span class="gap-label">${label}</span>
+                    <span class="gap-val">${value}</span>
+                </div>`).join('');
+            }
+        }
+
         // Race Control feed (newest first)
         const raceControlCard = document.getElementById('raceControlCard');
         const raceControlList = document.getElementById('raceControlList');

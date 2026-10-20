@@ -8,7 +8,7 @@ An intelligent, real-time virtual race engineer for the F1 2021 game. This proje
 
 **Learning engine.** Every completed lap is logged to the local SQLite database (`telemetry-history/telemetry.sqlite3`, table `lap_stats`): tyre wear per tyre, tyre compound and age, fuel at lap start/end, sector times and sector deltas to your personal best. Tyre wear and fuel come from the game's Car Status and Car Damage UDP packets.
 
-**Predictive ML (`ai_engineer/strategy_ml.py`).** `numpy.polyfit` fits a wear-vs-tyre-age curve for the current compound using this stint plus your earlier sessions at the same track, and turns it into a pit window (lap numbers) and a "can finish without stopping" flag. It also learns fuel burn per lap and the fuel-corrected tyre fall-off in seconds per lap. With too little (or too noisy) data it says so instead of guessing.
+**Tyre and fuel models fitted to the game, with ranges (`ai_engineer/fitted_models.py`, `strategy_ml.py`).** Tyre wear, tyre fall-off and fuel burn are fitted per actual compound (C1-C5, inter, wet) and per track from your recorded stints (`python tools/fit_models.py recordings/*.f1rec.gz`), and every prediction is a range: *box around lap 19, window lap 17 to 21*; *fuel margin +0.6 laps (-0.4 to +1.5)*. A track with no data falls back to the compound pooled over other tracks (scaled by tyre severity), then to a wide built-in estimate; live, the model narrows with this stint's own laps and earlier sessions in the history database. Race strategy is re-planned at both ends of the range to show whether the stop count holds. Details, fallbacks and the file format: [`docs/fitted-models.md`](docs/fitted-models.md).
 
 **Physics tyre/fuel/threat model (`ai_engineer/physics_models.py`).** Alongside the learned wear curve, every frame is also scored by a physics model adapted from the [Box-Box](https://github.com/ploverbyHB/Box-Box) race engineer project: a thermal grip curve per compound (ideal temperature window, overheat/cold penalties), a wear-cliff and competitive-loss budget that gives a 0-100 tyre health score and remaining-laps estimate from the very first lap (no history needed, unlike the learned curve), a fuel-margin check, and an opponent-threat score for nearby cars (gap, DRS range, pace delta, laps to catch) built from the game's per-car lap and car-status/damage packets. Ask *"any threats"* / *"who's attacking me"* for the nearest one.
 
@@ -66,7 +66,7 @@ python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --info     # wh
 `tools/backtest.py` replays recorded races through the engineer and scores its predictions against what the recording shows really happened, per race and across all races (mean and median absolute error, bias, worst miss):
 
 * **Pit lap**: the next stop predicted by the ML wear model (60% and 75% wear laps) and the race-strategy plan, plus the game's own pit window as a baseline, vs the lap you pitted on; also how often each said "no stop" when you did pit, or called a stop that never came.
-* **Tyre wear**: worst-tyre wear the ML curve predicts 1, 3 and 5 laps ahead vs the wear the game reported.
+* **Tyre wear**: worst-tyre wear the fitted wear model predicts 1, 3 and 5 laps ahead vs the wear the game reported, and how often the truth landed inside the model's 80% range.
 * **Lap time**: the engineer's race pace vs the next lap (excluding lap 1, in/out laps and Safety Car laps).
 * **Gaps**: the live gap to the cars ahead and behind vs the true gap, and the gap 1 and 3 laps later forecast from the last-lap pace difference.
 
@@ -74,6 +74,15 @@ python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --info     # wh
 python tools/backtest.py recordings/*.f1rec.gz --out reports/backtest.md --json reports/backtest.json
 python tools/backtest.py --simulated          # built-in simulated races only (pipeline check)
 ```
+
+### Fitting the tyre and fuel models
+
+```bash
+python tools/fit_models.py recordings/*.f1rec.gz --history telemetry-history/telemetry.sqlite3 --report reports/models.md
+python tools/fit_models.py --simulated        # noisy simulator stints with known answers (pipeline check)
+```
+
+Saves `telemetry-history/fitted_models.json`, which `main.py` loads at start-up (`--models FILE` for another). The report lists every fit with its range and a hold-out check of how often the ranges catch the truth.
 
 Simulated races (the golden sessions plus two longer races generated into `recordings/simulated/`) only show the pipeline works; real error numbers need your own recordings (`python main.py --record ...`). Simple baselines (previous lap time, "gap stays the same", last lap's wear rate) are scored alongside, so the report shows whether the engineer beats a rule of thumb.
 
