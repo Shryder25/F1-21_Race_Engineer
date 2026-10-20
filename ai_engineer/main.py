@@ -6,6 +6,8 @@ and delivers feedback through the voice engine.
 
 Usage:
     python main.py [--port 20777] [--no-voice] [--debug]
+    python main.py --record race.f1rec.gz        # also save every datagram for replay
+    python main.py --replay race.f1rec.gz [--replay-speed 1|10|max]   # run from a recording
 
 Game Setup (F1 2021 Settings → Telemetry):
     UDP Telemetry:  ON
@@ -45,6 +47,8 @@ from web_hud import (start_web_hud_server, add_voice_log, set_command_handler,
 from ai_client import AIClient
 from engineer_brain import EngineerBrain
 from voice_commands import CommandDispatcher, VoiceCommandListener
+from udp_recording import (MAX_DATAGRAM, RecordingWriter, ReplayFinished, ReplaySource,
+                           parse_speed)
 import webbrowser
 
 
@@ -176,7 +180,17 @@ def main():
     cmd.add_argument('--mic-index', type=int, default=None, help='Microphone device index')
     cmd.add_argument('--chatty', action='store_true',
                      help='Keep the old constant callouts instead of speaking only when asked')
+    rec = parser.add_argument_group('recording and replay (format: docs/udp-recording-format.md)')
+    rec.add_argument('--record', type=Path, default=None, metavar='FILE',
+                     help='Save every incoming UDP datagram with its arrival time to FILE '
+                          '(a name ending .gz is compressed)')
+    rec.add_argument('--replay', type=Path, default=None, metavar='FILE',
+                     help='Read telemetry from a recording instead of the game')
+    rec.add_argument('--replay-speed', type=parse_speed, default=1.0, metavar='SPEED',
+                     help='Replay speed: 1 (real time, default), 10, or max (as fast as possible)')
     args = parser.parse_args()
+    if args.record and args.replay:
+        parser.error('--record and --replay cannot be used together')
 
     # ─── Initialize Voice Engine ───
     driver_factory = None
@@ -226,20 +240,40 @@ def main():
         print(f"[AI] Engineer brain: {client.model} @ {client.base_url} "
               f"(falls back to rules if unreachable)")
 
-    # ─── Set up UDP Socket ───
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.settimeout(1.0)  # Non-blocking with 1s timeout for clean shutdown
+    # ─── Set up UDP Socket (or a recording standing in for it) ───
+    recorder = None
+    if args.replay:
+        try:
+            sock = ReplaySource(args.replay, args.replay_speed)
+        except (OSError, ValueError) as e:
+            print(f"[ERROR] Cannot open recording {args.replay}: {e}")
+            voice.shutdown()
+            history.close()
+            sys.exit(1)
+    else:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(1.0)  # Non-blocking with 1s timeout for clean shutdown
 
-    try:
-        sock.bind(("0.0.0.0", args.port))
-    except OSError as e:
-        print(f"[ERROR] Cannot bind to port {args.port}: {e}")
-        print("  Is another application using this port?")
-        voice.shutdown()
-        history.close()
-        sock.close()
-        sys.exit(1)
+        try:
+            sock.bind(("0.0.0.0", args.port))
+        except OSError as e:
+            print(f"[ERROR] Cannot bind to port {args.port}: {e}")
+            print("  Is another application using this port?")
+            voice.shutdown()
+            history.close()
+            sock.close()
+            sys.exit(1)
+        if args.record:
+            try:
+                args.record.parent.mkdir(parents=True, exist_ok=True)
+                recorder = RecordingWriter(args.record, metadata={'port': args.port})
+            except OSError as e:  # includes FileExistsError: never overwrite a recording
+                print(f"[ERROR] Cannot create recording {args.record}: {e}")
+                voice.shutdown()
+                history.close()
+                sock.close()
+                sys.exit(1)
 
     # Enable Virtual Terminal Processing on Windows cmd.exe
     if sys.platform == "win32":
@@ -256,7 +290,13 @@ def main():
         pass
 
     print_telemetry_banner()
-    print(f"[OK] Bound to UDP port {args.port}")
+    if args.replay:
+        speed = 'max speed' if args.replay_speed is None else f'{args.replay_speed:g}x'
+        print(f"[REPLAY] Reading telemetry from {args.replay} at {speed}")
+    else:
+        print(f"[OK] Bound to UDP port {args.port}")
+    if recorder:
+        print(f"[REC] Recording every datagram to {args.record}")
     print("[HUD] [*] Live Telemetry Dashboard running at: http://localhost:5000")
     print("[STATUS] [*] Waiting for F1 2021 telemetry data...")
     print("         (Launch F1 2021, start Time Trial/Grand Prix/Race, and make sure UDP Telemetry is ON)")
@@ -277,7 +317,10 @@ def main():
     try:
         while True:
             try:
-                data, addr = sock.recvfrom(2048)
+                data, addr = sock.recvfrom(MAX_DATAGRAM)
+            except ReplayFinished as done:
+                print(f"\n\n[REPLAY] {done}")
+                break
             except socket.timeout:
                 stream.check_timeout()
                 if not first_packet_logged:
@@ -293,6 +336,8 @@ def main():
                 continue
 
             packets_received += 1
+            if recorder:
+                recorder.write(data)
             if not stream.handle(data):
                 if args.debug and stream.last_error:
                     print(f'[DEBUG] Ignored packet: {stream.last_error}')
@@ -332,6 +377,9 @@ def main():
         time.sleep(2)
     finally:
         sock.close()
+        if recorder:
+            recorder.close()
+            print(f"[REC] Saved {recorder.count} datagrams to {args.record}")
         if listener:
             listener.stop()
         dispatcher.shutdown()
