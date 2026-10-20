@@ -61,6 +61,22 @@ python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --info     # wh
 
 `tests/golden/sessions/` holds recorded sessions (race, qualifying, wet, Safety Car) with the radio calls, voice-command answers and key numbers the engineer produced on them. The test suite replays them and fails if behaviour changes. Four sessions come from a deterministic full-field simulator; four more slots wait for real recordings from the game. See [`tests/golden/README.md`](tests/golden/README.md) for how to record one and how to accept an intended change (`python tools/golden_sessions.py bless NAME`).
 
+### Backtest report: predictions vs what happened
+
+`tools/backtest.py` replays recorded races through the engineer and scores its predictions against what the recording shows really happened, per race and across all races (mean and median absolute error, bias, worst miss):
+
+* **Pit lap**: the next stop predicted by the ML wear model (60% and 75% wear laps) and the race-strategy plan, plus the game's own pit window as a baseline, vs the lap you pitted on; also how often each said "no stop" when you did pit, or called a stop that never came.
+* **Tyre wear**: worst-tyre wear the ML curve predicts 1, 3 and 5 laps ahead vs the wear the game reported.
+* **Lap time**: the engineer's race pace vs the next lap (excluding lap 1, in/out laps and Safety Car laps).
+* **Gaps**: the live gap to the cars ahead and behind vs the true gap, and the gap 1 and 3 laps later forecast from the last-lap pace difference.
+
+```bash
+python tools/backtest.py recordings/*.f1rec.gz --out reports/backtest.md --json reports/backtest.json
+python tools/backtest.py --simulated          # built-in simulated races only (pipeline check)
+```
+
+Simulated races (the golden sessions plus two longer races generated into `recordings/simulated/`) only show the pipeline works; real error numbers need your own recordings (`python main.py --record ...`). Simple baselines (previous lap time, "gap stays the same", last lap's wear rate) are scored alongside, so the report shows whether the engineer beats a rule of thumb.
+
 ---
 
 ## 🚀 Core Features
