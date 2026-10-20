@@ -113,9 +113,9 @@ class TelemetryStream:
                 if race_event is None and not math.isfinite(payload[1]):
                     return False
             elif packet_id == 4:
-                payload = parse_participants(data)
-                if not 0 <= payload[0] <= 22:
+                if data[24] > 22:
                     raise ValueError('Invalid participant count')
+                payload = parse_participants(data)
             elif packet_id == 7:
                 all_status = parse_all_car_status(data)
                 payload = all_status[header.player_car_index]
@@ -212,15 +212,14 @@ class TelemetryStream:
                 update_web_state({'connected': False})
             return False
 
-        if packet_id == 4:
-            self.analysis.race_control.update_participants(payload[1])
-            return False
-
-        if packet_id in (0, 7, 10):
-            # Motion and strategy inputs arrive on their own cadence; they need no frame pairing.
+        if packet_id in (0, 4, 7, 10):
+            # Motion, participants and strategy inputs arrive on their own cadence; they need
+            # no frame pairing.
             if header.session_time >= self.context_start_time:
                 if packet_id == 0:
                     self.analysis.update_motion(payload)
+                elif packet_id == 4:
+                    self.analysis.update_participants(payload)
                 elif packet_id == 7:
                     self.analysis.update_car_status(payload)
                     self.analysis.race_control.update_status(all_status, self.player_index)

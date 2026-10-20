@@ -100,8 +100,8 @@ class RaceControl:
     def name(self, index) -> str:
         participant = self.participants[index] if 0 <= index < len(self.participants) else None
         if participant is not None:
-            if participant.short_name:
-                return participant.short_name
+            if participant.radio_name:
+                return participant.radio_name
             if participant.race_number:
                 return f'car {participant.race_number}'
         position = self.position_of(index)

@@ -63,6 +63,8 @@ dashboard_state: dict[str, Any] = {
     "personal_sectors_ms": {},
     "gap_ahead_s": None,
     "gap_behind_s": None,
+    "car_ahead_name": None,
+    "car_behind_name": None,
     "race_pace_ms": None,
     "pit_window": None,
     "opponent_threats": [],

@@ -1,3 +1,8 @@
+// Escape text that comes from the game (e.g. online player names) before using innerHTML.
+function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+
 /**
  * F1 2021 AI Race Engineer — Client Controller & Telemetry Engine
  * ==============================================================
@@ -630,12 +635,12 @@ async function fetchTelemetry() {
         const gapAhead = document.getElementById('gapAheadDisplay');
         if (gapAhead) {
             gapAhead.textContent = data.gap_ahead_s !== null && data.gap_ahead_s !== undefined
-                ? `INTERVAL +${data.gap_ahead_s.toFixed(1)}s` : 'INTERVAL --';
+                ? `${(data.car_ahead_name || 'INTERVAL').toUpperCase()} +${data.gap_ahead_s.toFixed(1)}s` : 'INTERVAL --';
         }
         const gapBehind = document.getElementById('gapBehindDisplay');
         if (gapBehind) {
             gapBehind.textContent = data.gap_behind_s !== null && data.gap_behind_s !== undefined
-                ? `INTERVAL -${data.gap_behind_s.toFixed(1)}s` : 'INTERVAL --';
+                ? `${(data.car_behind_name || 'INTERVAL').toUpperCase()} -${data.gap_behind_s.toFixed(1)}s` : 'INTERVAL --';
         }
 
         // Pit Window
@@ -656,11 +661,13 @@ async function fetchTelemetry() {
             threatsCard.style.display = threats.length ? '' : 'none';
             threatsList.innerHTML = threats.map(t => {
                 const side = t.gap_s < 0 ? 'BEHIND' : 'AHEAD';
+                // Names can be online gamertags, so escape them before they go into innerHTML.
+                const who = t.driver_name ? `${escapeHtml(t.driver_name.toUpperCase())} ` : '';
                 const cls = t.threat_level === 'HIGH' ? 'threat-high'
                           : t.threat_level === 'MEDIUM' ? 'threat-medium' : 'threat-low';
                 const note = t.factors && t.factors.length ? ` — ${t.factors[0]}` : '';
                 return `<div class="gap-item ${cls}">
-                    <span class="gap-label">${side} ${Math.abs(t.gap_s).toFixed(1)}s</span>
+                    <span class="gap-label">${who}${side} ${Math.abs(t.gap_s).toFixed(1)}s</span>
                     <span class="gap-val">${t.threat_level}${note}</span>
                 </div>`;
             }).join('');

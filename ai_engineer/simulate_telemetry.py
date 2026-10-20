@@ -34,6 +34,7 @@ from packets import (
     LAP_DATA_FORMAT, LAP_DATA_SIZE,
     SESSION_PARTIAL_FORMAT,
     CAR_STATUS_FORMAT, CAR_STATUS_SIZE, CAR_DAMAGE_FORMAT, CAR_DAMAGE_SIZE,
+    PARTICIPANT_FORMAT, PARTICIPANT_SIZE,
 )
 
 def build_header(packet_id: int, session_time: float, frame_id: int, player_idx: int = 0) -> bytes:
@@ -158,6 +159,26 @@ def build_car_damage_packet(session_time: float, frame_id: int, wear=(0.0, 0.0, 
     return header + car + b"\x00" * (24 + 22 * CAR_DAMAGE_SIZE - len(header) - len(car))
 
 
+
+# A plausible 2021 grid order for the simulator; index 0 is the player.
+SIM_DRIVER_NAMES = ["Player", "HAMILTON", "VERSTAPPEN", "BOTTAS", "PEREZ", "NORRIS", "LECLERC",
+                    "SAINZ", "RICCIARDO", "GASLY", "ALONSO", "OCON", "VETTEL", "STROLL",
+                    "TSUNODA", "RAIKKONEN", "GIOVINAZZI", "RUSSELL", "LATIFI", "SCHUMACHER",
+                    "MAZEPIN", "KUBICA"]
+
+
+def build_participants_packet(session_time: float, frame_id: int, names=None) -> bytes:
+    """Participants packet (id 4): one name per car, the player first by default."""
+    names = list(SIM_DRIVER_NAMES if names is None else names)[:22]
+    header = build_header(4, session_time, frame_id)
+    body = bytearray(struct.pack("<B", len(names)))
+    for index in range(22):
+        name = names[index] if index < len(names) else ""
+        body += struct.pack(PARTICIPANT_FORMAT, int(index != 0), index, 0, 0, 0, index + 1, 0,
+                            name.encode("utf-8")[:47], 1)
+    return header + bytes(body)
+
+
 def run_simulation(duration_seconds: float = 10.0):
     print("=" * 60)
     print("  F1 2021 TELEMETRY SIMULATOR")
@@ -175,6 +196,7 @@ def run_simulation(duration_seconds: float = 10.0):
         sess_pkt = build_session_packet(0.0, frame_id, track_id=11)
         sock.sendto(sess_pkt, (TARGET_HOST, TARGET_PORT))
         print("-> Sent Session Packet (Monza, Race)")
+        sock.sendto(build_participants_packet(0.0, frame_id), (TARGET_HOST, TARGET_PORT))
         time.sleep(0.5)
 
         # Simulate driving down Monza pit straight towards Turn 1 (braking point at 340m)

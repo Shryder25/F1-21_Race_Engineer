@@ -72,10 +72,10 @@ class PacketParsingTests(unittest.TestCase):
         self.assertIsNone(parse_race_event(event_packet(b'BUTN', bytes(4))))
 
     def test_participants_give_spoken_surnames(self):
-        count, participants = parse_participants(participants_packet())
-        self.assertEqual(count, len(NAMES))
-        self.assertEqual([p.short_name for p in participants[:6]],
-                         ['', 'Hamilton', 'Verstappen', 'Norris', 'Leclerc', ''])
+        participants = parse_participants(participants_packet())
+        self.assertEqual(len(participants), len(NAMES))
+        self.assertEqual([p.radio_name for p in participants],
+                         [None, 'Hamilton', 'Verstappen', 'Norris', 'Leclerc', None])
         self.assertEqual(participants[3].race_number, 13)
 
 
@@ -123,7 +123,7 @@ class RaceControlTests(unittest.TestCase):
         self.voice = SilentVoice()
         self.control = RaceControl(self.voice.say)
         self.control.reset(RACE)
-        self.control.update_participants(parse_participants(participants_packet())[1])
+        self.control.update_participants(parse_participants(participants_packet()))
         self.field = Field()
         self.time = 100.0
         self.tick()
