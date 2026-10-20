@@ -113,7 +113,8 @@
     "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
     "pace": "Last lap 1:44.200.",
     "threats": "Gaps are only tracked in the race, not in qualifying.",
-    "strategy": "No race strategy in qualifying."
+    "strategy": "No race strategy in qualifying.",
+    "rivals": "No race strategy in qualifying."
    }
   },
   {
@@ -134,7 +135,7 @@
    "tyre_age_laps": 1,
    "worst_wear_pct": 3.7,
    "fuel_kg": 6.3,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.705,
    "fuel_margin_laps": null,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
@@ -154,7 +155,8 @@
     "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
     "pace": "Last lap 1:29.900.",
     "threats": "Gaps are only tracked in the race, not in qualifying.",
-    "strategy": "No race strategy in qualifying."
+    "strategy": "No race strategy in qualifying.",
+    "rivals": "No race strategy in qualifying."
    }
   },
   {
@@ -175,7 +177,7 @@
    "tyre_age_laps": 2,
    "worst_wear_pct": 7.3,
    "fuel_kg": 4.6,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.702,
    "fuel_margin_laps": null,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
@@ -195,7 +197,8 @@
     "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
     "pace": "Last lap 1:29.550. 0.0 slower than your best.",
     "threats": "Gaps are only tracked in the race, not in qualifying.",
-    "strategy": "No race strategy in qualifying."
+    "strategy": "No race strategy in qualifying.",
+    "rivals": "No race strategy in qualifying."
    }
   },
   {
@@ -216,7 +219,7 @@
    "tyre_age_laps": 3,
    "worst_wear_pct": 11.0,
    "fuel_kg": 2.9,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.702,
    "fuel_margin_laps": null,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
@@ -236,7 +239,8 @@
     "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
     "pace": "Last lap 1:29.700.",
     "threats": "Gaps are only tracked in the race, not in qualifying.",
-    "strategy": "No race strategy in qualifying."
+    "strategy": "No race strategy in qualifying.",
+    "rivals": "No race strategy in qualifying."
    }
   }
  ],
@@ -262,7 +266,7 @@
   "tyre_age_laps": 4,
   "worst_wear_pct": 14.7,
   "fuel_kg": 1.2,
-  "fuel_per_lap_kg": 1.7,
+  "fuel_per_lap_kg": 1.702,
   "fuel_margin_laps": null,
   "ml_pit_window": null,
   "ml_wear_per_lap_pct": null,
@@ -283,6 +287,7 @@
   "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
   "pace": "Last lap 1:29.700. 4.0 slower than your best.",
   "threats": "Gaps are only tracked in the race, not in qualifying.",
-  "strategy": "No race strategy in qualifying."
+  "strategy": "No race strategy in qualifying.",
+  "rivals": "No race strategy in qualifying."
  }
 }

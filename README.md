@@ -8,7 +8,13 @@ An intelligent, real-time virtual race engineer for the F1 2021 game. This proje
 
 **Learning engine.** Every completed lap is logged to the local SQLite database (`telemetry-history/telemetry.sqlite3`, table `lap_stats`): tyre wear per tyre, tyre compound and age, fuel at lap start/end, sector times and sector deltas to your personal best. Tyre wear and fuel come from the game's Car Status and Car Damage UDP packets.
 
-**Predictive ML (`ai_engineer/strategy_ml.py`).** `numpy.polyfit` fits a wear-vs-tyre-age curve for the current compound using this stint plus your earlier sessions at the same track, and turns it into a pit window (lap numbers) and a "can finish without stopping" flag. It also learns fuel burn per lap and the fuel-corrected tyre fall-off in seconds per lap. With too little (or too noisy) data it says so instead of guessing.
+**Every car's stints and lap times.** The Session History packet (id 11) gives every car's lap times, sectors and lap validity, and every set of tyres with the lap it came off on. They are logged to the same database (tables `car_laps` and `car_stints`: compound, first and last lap, laps on the set, in- and out-laps), along with the Final Classification at the end of the session (`final_classification`: position, grid, stops, best lap, compounds used) and each car's visible setup from the Car Setups packet (`car_setups`, as JSON). `tools/fit_models.py` uses other cars' clean laps for the tyre fall-off fit (`--player-only` to turn that off), and `tools/backtest.py` lists every car's stints per race and checks their pit laps against the lap data. Tyre age for other cars is counted from the start of each stint, as if every set were new.
+
+**Tyre and fuel models fitted to the game, with ranges (`ai_engineer/fitted_models.py`, `strategy_ml.py`).** Tyre wear, tyre fall-off and fuel burn are fitted per actual compound (C1-C5, inter, wet) and per track from your recorded stints (`python tools/fit_models.py recordings/*.f1rec.gz`), and every prediction is a range: *box around lap 19, window lap 17 to 21*; *fuel margin +0.6 laps (-0.4 to +1.5)*. A track with no data falls back to the compound pooled over other tracks (scaled by tyre severity), then to a wide built-in estimate; live, the model narrows with this stint's own laps and earlier sessions in the history database. Race strategy is re-planned at both ends of the range to show whether the stop count holds. Details, fallbacks and the file format: [`docs/fitted-models.md`](docs/fitted-models.md).
+
+**Rival strategy model (`ai_engineer/rival_strategy.py`).** For every rival the engineer keeps a running prediction of their next stop lap (with an 80% window) and which tyre they will fit, from their tyre age, their own measured tyre wear (when the game shares it), the track's typical strategy and the game's pit window, and it learns from the race itself: the wear at which rivals have been boxing, how much longer or shorter they run than planned, and which tyres they have been fitting. Rain brings a slick runner's stop forward onto inters. The predictions feed strategy calls before a rival boxes, not just after: the undercut maths counts the laps the car ahead is expected to stay out, a car behind that is about to box with a working undercut gets a pre-emptive *"box this lap to stay ahead"*, and a car alongside that is due gets a heads-up (*"Hamilton ahead likely to box lap 22 for hards"*). Ask *"when will Hamilton box"* or *"what are the others doing"*; the HUD strategy card lists nearby rivals' predicted stops. The race simulator can sample from the same predictions (`sample_stop_lap`, `sample_next_compound`).
+
+**Monte Carlo race simulator (`ai_engineer/race_sim.py`).** Once a lap in a race, the engineer plays the rest of the race 300 times for the whole field, lap by lap, for each stop plan the strategy model offers: Safety Car and VSC chances per track (lap 1 weighted up), a pit-loss distribution with the odd slow stop, dirty air, being held up and track-dependent overtaking, rivals' own stop plans, and tyre fall-off/fuel drawn from the fitted models' ranges. Every plan sees the same random races, so the comparison is the plan, not the dice. The result is odds: *"Two-stop comes out best 60% of the time, one-stop 30%. Expected finish P4, P3 to P6."* It is in the strategy voice answer ("what are our chances?"), the HUD strategy card and the AI prompt. Off with `--no-race-sim`; `--sim-runs N` sets the races per update. Model, constants and what real recordings would sharpen: [`docs/race-simulator.md`](docs/race-simulator.md).
 
 **Physics tyre/fuel/threat model (`ai_engineer/physics_models.py`).** Alongside the learned wear curve, every frame is also scored by a physics model adapted from the [Box-Box](https://github.com/ploverbyHB/Box-Box) race engineer project: a thermal grip curve per compound (ideal temperature window, overheat/cold penalties), a wear-cliff and competitive-loss budget that gives a 0-100 tyre health score and remaining-laps estimate from the very first lap (no history needed, unlike the learned curve), a fuel-margin check, and an opponent-threat score for nearby cars (gap, DRS range, pace delta, laps to catch) built from the game's per-car lap and car-status/damage packets. Ask *"any threats"* / *"who's attacking me"* for the nearest one.
 
@@ -61,6 +67,32 @@ python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --info     # wh
 ### Golden-session regression tests
 
 `tests/golden/sessions/` holds recorded sessions (race, qualifying, wet, Safety Car) with the radio calls, voice-command answers and key numbers the engineer produced on them. The test suite replays them and fails if behaviour changes. Four sessions come from a deterministic full-field simulator; four more slots wait for real recordings from the game. See [`tests/golden/README.md`](tests/golden/README.md) for how to record one and how to accept an intended change (`python tools/golden_sessions.py bless NAME`).
+
+### Backtest report: predictions vs what happened
+
+`tools/backtest.py` replays recorded races through the engineer and scores its predictions against what the recording shows really happened, per race and across all races (mean and median absolute error, bias, worst miss):
+
+* **Pit lap**: the next stop predicted by the ML wear model (60% and 75% wear laps) and the race-strategy plan, plus the game's own pit window as a baseline, vs the lap you pitted on; also how often each said "no stop" when you did pit, or called a stop that never came.
+* **Tyre wear**: worst-tyre wear the fitted wear model predicts 1, 3 and 5 laps ahead vs the wear the game reported, and how often the truth landed inside the model's 80% range.
+* **Lap time**: the engineer's race pace vs the next lap (excluding lap 1, in/out laps and Safety Car laps).
+* **Gaps**: the live gap to the cars ahead and behind vs the true gap, and the gap 1 and 3 laps later forecast from the last-lap pace difference.
+* **Rival stops**: every rival's predicted next stop lap vs the lap that car really pitted on (against a plan-from-tyre-age-only baseline), and their predicted next tyre vs the one they fitted (against the "soft to medium, medium to hard" rule).
+
+```bash
+python tools/backtest.py recordings/*.f1rec.gz --out reports/backtest.md --json reports/backtest.json
+python tools/backtest.py --simulated          # built-in simulated races only (pipeline check)
+```
+
+### Fitting the tyre and fuel models
+
+```bash
+python tools/fit_models.py recordings/*.f1rec.gz --history telemetry-history/telemetry.sqlite3 --report reports/models.md
+python tools/fit_models.py --simulated        # noisy simulator stints with known answers (pipeline check)
+```
+
+Saves `telemetry-history/fitted_models.json`, which `main.py` loads at start-up (`--models FILE` for another). The report lists every fit with its range and a hold-out check of how often the ranges catch the truth.
+
+Simulated races (the golden sessions plus two longer races generated into `recordings/simulated/`) only show the pipeline works; real error numbers need your own recordings (`python main.py --record ...`). Simple baselines (previous lap time, "gap stays the same", last lap's wear rate) are scored alongside, so the report shows whether the engineer beats a rule of thumb.
 
 ---
 

@@ -17,6 +17,7 @@
   {"t": 62.6, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Right-hand sweep into the final banking, 220 metres."},
   {"t": 69.0, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Steep 18-degree banking, DRS wide open onto front straight, 220 metres."},
   {"t": 77.8, "key": "lap_one", "priority": "RACE", "proactive": false, "text": "End of lap one, P6."},
+  {"t": 77.8, "key": "rival_forecast", "priority": "RACE", "proactive": false, "text": "Leclerc behind likely to box lap 3 for hards."},
   {"t": 78.0, "key": "sector_3", "priority": "TIMING", "proactive": false, "text": "Sector three, twenty-one six."},
   {"t": 78.0, "key": "lap_time", "priority": "TIMING", "proactive": false, "text": "Good lap! One twelve eight, that's a personal best."},
   {"t": 78.0, "key": "live_delta", "priority": "LOW", "proactive": false, "text": "Three point eight seconds up on your best. Keep it going."},
@@ -217,7 +218,8 @@
     "gap_behind": "Gap to Leclerc behind is 0.8.",
     "pace": "Last lap 1:12.800.",
     "threats": "Medium threat from Norris ahead, 0.6, gap 0.6s (DRS range).",
-    "strategy": "Plan is one stop. Box lap 2 for soft. 2 stops is 18.4 slower. Undercut on the car ahead will not work yet."
+    "strategy": "Plan is one stop. Box lap 2 for soft. 2 stops is 18.4 slower. Undercut on the car ahead will not work yet.",
+    "rivals": "Norris likely to box lap 4, onto hards. Window lap 2 to 6. Leclerc likely to box lap 3, onto hards. Window lap 1 to 5."
    }
   },
   {
@@ -238,7 +240,7 @@
    "tyre_age_laps": 1,
    "worst_wear_pct": 2.6,
    "fuel_kg": 14.3,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.694,
    "fuel_margin_laps": 3.4,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
@@ -266,7 +268,8 @@
     "gap_behind": "Gap to Leclerc behind is 0.8.",
     "pace": "Last lap 1:05.800. 7.0 faster than your best.",
     "threats": "Medium threat from Norris ahead, 0.6, gap 0.6s (DRS range).",
-    "strategy": "Plan is one stop. Box lap 3 for soft. 2 stops is 18.5 slower. Undercut on the car ahead will not work yet."
+    "strategy": "Plan is one stop. Box lap 3 for soft. 2 stops is 18.5 slower. Undercut on the car ahead will not work yet.",
+    "rivals": "Norris likely to box lap 4, onto hards. Window lap 3 to 6. Leclerc likely to box lap 4, onto hards. Window lap 2 to 6."
    }
   },
   {
@@ -287,7 +290,7 @@
    "tyre_age_laps": 0,
    "worst_wear_pct": 0.0,
    "fuel_kg": 12.6,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.694,
    "fuel_margin_laps": 3.4,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
@@ -309,7 +312,8 @@
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:42.550.",
     "threats": "No immediate threats.",
-    "strategy": "No more stops. Bring the hards home."
+    "strategy": "No more stops. Bring the hards home.",
+    "rivals": "No read on the other cars yet."
    }
   },
   {
@@ -330,10 +334,13 @@
    "tyre_age_laps": 2,
    "worst_wear_pct": 3.7,
    "fuel_kg": 9.2,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.694,
    "fuel_margin_laps": 2.4,
-   "ml_pit_window": null,
-   "ml_wear_per_lap_pct": null,
+   "ml_pit_window": [
+    null,
+    null
+   ],
+   "ml_wear_per_lap_pct": 1.85,
    "tyre_health": 87.2,
    "tyre_remaining_laps": 28.0,
    "pace_trend_s_per_lap": null,
@@ -350,12 +357,13 @@
    "answers": {
     "weather": "Clear. Track 30 degrees, air 22.",
     "tyre_temps": "Fronts 93 and 93, rears 93 and 93. Worst wear 4 percent.",
-    "pit_window": "Game window is lap 4 to 6.",
+    "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "No gap ahead reading right now.",
     "gap_behind": "Gap to Sainz behind is 1.9.",
     "pace": "Last lap 1:30.800.",
     "threats": "Medium threat from Norris ahead, 0.9, gap 0.9s (DRS range).",
-    "strategy": "No more stops. Bring the hards home."
+    "strategy": "No more stops. Bring the hards home.",
+    "rivals": "Sainz looks to be going to the end on hards."
    }
   },
   {
@@ -376,10 +384,13 @@
    "tyre_age_laps": 2,
    "worst_wear_pct": 3.7,
    "fuel_kg": 9.2,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.694,
    "fuel_margin_laps": 3.4,
-   "ml_pit_window": null,
-   "ml_wear_per_lap_pct": null,
+   "ml_pit_window": [
+    null,
+    null
+   ],
+   "ml_wear_per_lap_pct": 1.85,
    "tyre_health": 91.5,
    "tyre_remaining_laps": 28.0,
    "pace_trend_s_per_lap": null,
@@ -396,12 +407,13 @@
    "answers": {
     "weather": "Clear. Track 30 degrees, air 22.",
     "tyre_temps": "Fronts 95 and 95, rears 95 and 95. Worst wear 4 percent.",
-    "pit_window": "Game window is lap 4 to 6.",
+    "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "Gap to Norris ahead is 0.9.",
     "gap_behind": "Gap to Sainz behind is 2.5.",
     "pace": "Last lap 1:05.850.",
     "threats": "Medium threat from Norris ahead, 0.9, gap 0.9s (DRS range).",
-    "strategy": "No more stops. Bring the hards home. Undercut on the car ahead will not work yet."
+    "strategy": "No more stops. Bring the hards home. Undercut on the car ahead will not work yet.",
+    "rivals": "Norris looks to be going to the end on hards. Sainz looks to be going to the end on hards."
    }
   },
   {
@@ -422,13 +434,13 @@
    "tyre_age_laps": 3,
    "worst_wear_pct": 5.5,
    "fuel_kg": 7.5,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.697,
    "fuel_margin_laps": 3.4,
    "ml_pit_window": [
     null,
     null
    ],
-   "ml_wear_per_lap_pct": 1.84,
+   "ml_wear_per_lap_pct": 1.85,
    "tyre_health": 80.9,
    "tyre_remaining_laps": 27.0,
    "pace_trend_s_per_lap": null,
@@ -450,7 +462,8 @@
     "gap_behind": "Gap to Sainz behind is 3.2.",
     "pace": "Last lap 1:13.250.",
     "threats": "Medium threat from Sainz behind, 3.2, faster by 6.85s/lap.",
-    "strategy": "No more stops. Bring the hards home. Undercut on the car ahead will not work yet."
+    "strategy": "No more stops. Bring the hards home. Undercut on the car ahead will not work yet.",
+    "rivals": "Norris looks to be going to the end on hards. Sainz looks to be going to the end on hards."
    }
   },
   {
@@ -471,13 +484,13 @@
    "tyre_age_laps": 5,
    "worst_wear_pct": 9.2,
    "fuel_kg": 4.1,
-   "fuel_per_lap_kg": 1.7,
+   "fuel_per_lap_kg": 1.697,
    "fuel_margin_laps": 2.4,
    "ml_pit_window": [
     null,
     null
    ],
-   "ml_wear_per_lap_pct": 1.84,
+   "ml_wear_per_lap_pct": 1.85,
    "tyre_health": 76.4,
    "tyre_remaining_laps": 25.0,
    "pace_trend_s_per_lap": null,
@@ -494,7 +507,8 @@
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:05.850.",
     "threats": "No immediate threats.",
-    "strategy": "No strategy data yet."
+    "strategy": "No strategy data yet.",
+    "rivals": "No read on the other cars yet."
    }
   }
  ],
@@ -522,13 +536,13 @@
   "tyre_age_laps": 5,
   "worst_wear_pct": 9.2,
   "fuel_kg": 4.1,
-  "fuel_per_lap_kg": 1.7,
+  "fuel_per_lap_kg": 1.697,
   "fuel_margin_laps": 2.4,
   "ml_pit_window": [
    null,
    null
   ],
-  "ml_wear_per_lap_pct": 1.84,
+  "ml_wear_per_lap_pct": 1.85,
   "tyre_health": 76.4,
   "tyre_remaining_laps": 25.0,
   "pace_trend_s_per_lap": null,
@@ -546,6 +560,7 @@
   "gap_behind": "No gap behind reading right now.",
   "pace": "Last lap 1:05.850.",
   "threats": "No immediate threats.",
-  "strategy": "No strategy data yet."
+  "strategy": "No strategy data yet.",
+  "rivals": "No read on the other cars yet."
  }
 }

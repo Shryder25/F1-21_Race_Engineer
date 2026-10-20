@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import copy
 import math
+import random
 import struct
 from dataclasses import dataclass, field
 
@@ -28,7 +29,10 @@ if str(_AI) not in sys.path:
     sys.path.insert(0, str(_AI))
 
 from packets import (HEADER_FORMAT, CAR_TELEMETRY_FORMAT, LAP_DATA_FORMAT, CAR_STATUS_FORMAT,
-                     CAR_DAMAGE_FORMAT, CAR_MOTION_FORMAT, PARTICIPANT_FORMAT, SPEED_TRAP_FORMAT)
+                     CAR_DAMAGE_FORMAT, CAR_MOTION_FORMAT, PARTICIPANT_FORMAT, SPEED_TRAP_FORMAT,
+                     CAR_SETUP_FORMAT, FINAL_CLASSIFICATION_FORMAT, LAP_HISTORY_FORMAT,
+                     SESSION_HISTORY_MAX_LAPS, SESSION_HISTORY_MAX_STINTS,
+                     TYRE_STINT_HISTORY_FORMAT)
 from track_data import get_braking_points
 
 # ── Compounds: visual id, actual id, pace offset (s), deg (s per lap of age), wear (% per lap)
@@ -91,6 +95,19 @@ class Scenario:
     script: list = field(default_factory=list)
     end_after_laps: float | None = None   # stop early (qualifying), in player laps
     description: str = ''
+    # Tyre/fuel behaviour (defaults reproduce the golden sessions byte for byte). Noise is
+    # drawn from a generator seeded with `seed`, so a scenario still always gives the same bytes.
+    wear_scale: float = 1.0           # multiplies every compound's wear rate (track severity)
+    wear_growth: float = 0.0          # wear rate grows by this fraction per lap of tyre age
+    wear_noise: float = 0.0           # lap-to-lap wear scatter, relative sd
+    stint_noise: float = 0.0          # each set wears differently, relative sd of its rate
+    fuel_per_lap_kg: float = FUEL_PER_LAP_KG
+    fuel_noise: float = 0.0           # lap-to-lap fuel burn scatter, kg sd
+    lap_noise_s: float = 0.0          # lap-to-lap pace scatter, s sd
+    seed: int = 0
+    # Also send Session History (one car per frame), Car Setups and, at the end of a race,
+    # Final Classification. Off by default so the checked-in golden recordings stay as they are.
+    history_packets: bool = False
 
 
 def _q(metres: float) -> float:
@@ -161,6 +178,11 @@ class _CarState:
         self.lap_invalid = 0
         self.best_lap_ms = 0
         self.finish_t = None
+        self.stint_factor = 1.0           # this set's wear relative to the compound's rate
+        self.lap_jitter = 0.0
+        self.history_laps = []            # (lap ms, s1, s2, s3, valid flags) per completed lap
+        visual, actual, *_ = COMPOUNDS[car.compound]
+        self.history_stints = [[255, actual, visual]]   # [end lap (255 = on the car), actual, visual]
 
 
 class SessionSimulator:
@@ -192,7 +214,16 @@ class SessionSimulator:
             start = -8.0 * slot - 5.0 if self.is_race else -40.0 * slot - 300.0
             self.cars.append(_CarState(index, car, start, scenario.fuel_kg))
         self.lights_out_t = 5.0 if self.is_race else 0.0
+        noisy = scenario.wear_noise or scenario.stint_noise or scenario.fuel_noise or scenario.lap_noise_s
+        self.rng = random.Random(scenario.seed) if noisy else None
+        for car in self.cars:
+            self._new_set(car)
+        self.history_cursor = 0
         self.trap_m = 10.0 * max(range(len(self.profile)), key=lambda i: (self.profile[i], -i))
+
+    def _new_set(self, car):
+        if self.rng is not None:
+            car.stint_factor = max(0.2, 1.0 + self.rng.gauss(0.0, self.sc.stint_noise))
 
     # ── track model ──
     def _speed_profile(self):
@@ -228,7 +259,8 @@ class SessionSimulator:
 
     def target_lap_s(self, car):
         _vis, _act, offset, deg, _wear = COMPOUNDS[car.compound]
-        lap = self.base_lap_s + car.car.pace + offset + deg * car.age + FUEL_TIME_S_PER_KG * car.fuel
+        lap = (self.base_lap_s + car.car.pace + offset + deg * car.age + FUEL_TIME_S_PER_KG * car.fuel
+               + car.lap_jitter)
         wet = self.weather >= 3
         if wet and car.compound in SLICKS:
             lap += 4.5 if self.weather == 3 else 10.0
@@ -271,6 +303,10 @@ class SessionSimulator:
             step += 1
         if self.is_race:
             self.emit(event_packet(self.t, self.frame, b'SEND'))
+            if sc.history_packets:
+                for car in self.cars:
+                    self.emit(self.session_history_packet(car))
+                self.emit(self.final_classification_packet())
         return self.out
 
     def _finished(self):
@@ -400,9 +436,13 @@ class SessionSimulator:
             car.total = line - 5
             car.stationary_left = PIT_STATIONARY_S
             car.pit_done_this_entry = True
+            car.history_stints[-1][0] = car.lap_num          # this is the in-lap
             car.compound = car.car.pits[car.lap_num]
+            visual, actual, *_ = COMPOUNDS[car.compound]
+            car.history_stints.append([255, actual, visual])
             car.age = 0
             car.wear = 0.0
+            self._new_set(car)
             car.pit_stops += 1
             if car.index == 0:
                 self.wing_damage = 0                # new nose
@@ -411,14 +451,24 @@ class SessionSimulator:
             self._complete_lap(car, elapsed_ms)
 
     def _complete_lap(self, car, elapsed_ms):
+        s1, s2 = car.s1_ms, car.s2_ms
+        lap_valid = not car.lap_invalid and not car.pit_status
+        car.history_laps.append((elapsed_ms, s1, s2, max(0, elapsed_ms - s1 - s2), 0x0F if lap_valid else 0))
         car.last_lap_ms = elapsed_ms
         car.lap_start_t = self.t
         car.lap_num += 1
         car.sector = 0
         car.s1_ms = car.s2_ms = 0
+        sc = self.sc
+        wear = COMPOUNDS[car.compound][4] * sc.wear_scale * (1.0 + sc.wear_growth * car.age)
+        burn = sc.fuel_per_lap_kg
+        if self.rng is not None:
+            wear *= car.stint_factor * max(0.0, 1.0 + self.rng.gauss(0.0, sc.wear_noise))
+            burn = max(0.0, burn + self.rng.gauss(0.0, sc.fuel_noise))
+            car.lap_jitter = self.rng.gauss(0.0, sc.lap_noise_s)
         car.age += 1
-        car.wear += COMPOUNDS[car.compound][4]
-        car.fuel = max(0.0, car.fuel - FUEL_PER_LAP_KG)
+        car.wear += wear
+        car.fuel = max(0.0, car.fuel - burn)
         valid = not car.lap_invalid and not car.pit_status
         car.lap_invalid = 0
         if self.is_race and valid and car.lap_num > 2:      # lap one is a standing start
@@ -454,6 +504,11 @@ class SessionSimulator:
             self.emit(session_packet(sc, t, frame, self.weather, self.safety_car))
         if step % PARTICIPANTS_EVERY == 0:
             self.emit(participants_packet(t, frame, sc.cars))
+            if sc.history_packets:
+                self.emit(self.car_setups_packet())
+        if sc.history_packets and self.t >= self.lights_out_t:
+            self.emit(self.session_history_packet(self.cars[self.history_cursor % len(self.cars)]))
+            self.history_cursor += 1
         if step % STATUS_EVERY == 0:
             self.emit(self._motion_packet())
             self.emit(self._status_packet())
@@ -567,6 +622,50 @@ class SessionSimulator:
                                 0.8 if car.speed < 50 else 0.3, 0.0, 1.0, angle, 0.0, 0.0)
         player_extra = bytes(1464 - 24 - len(body))
         return header(0, self.t, self.frame) + bytes(body) + player_extra
+
+    def session_history_packet(self, car):
+        """Session History (id 11) for one car: completed laps, the lap in progress, stints."""
+        laps = list(car.history_laps)
+        if car.result == 2:
+            laps.append((0, car.s1_ms if car.sector >= 1 else 0, car.s2_ms if car.sector >= 2 else 0, 0, 0))
+        laps = laps[:SESSION_HISTORY_MAX_LAPS]
+        timed = [(t, n) for n, (t, *_rest) in enumerate(laps, start=1) if t and _rest[-1]]
+        best = min(timed)[1] if timed else 0
+        stints = car.history_stints[:SESSION_HISTORY_MAX_STINTS]
+        body = struct.pack('<7B', car.index, len(laps), len(stints), best, best, best, best)
+        for n in range(SESSION_HISTORY_MAX_LAPS):
+            body += struct.pack(LAP_HISTORY_FORMAT, *(laps[n] if n < len(laps) else (0, 0, 0, 0, 0)))
+        for n in range(SESSION_HISTORY_MAX_STINTS):
+            body += struct.pack(TYRE_STINT_HISTORY_FORMAT, *(stints[n] if n < len(stints) else (0, 0, 0)))
+        return header(11, self.t, self.frame) + body
+
+    def car_setups_packet(self):
+        body = bytearray()
+        for index in range(22):
+            if index >= len(self.cars):
+                body += bytes(struct.calcsize(CAR_SETUP_FORMAT))
+                continue
+            wing = 5 + index % 3
+            body += struct.pack(CAR_SETUP_FORMAT, wing, wing + 1, 60, 55, -3.0, -1.5, 0.05, 0.2,
+                                5, 4, 6, 5, 3, 6, 100, 56, 22.0, 22.0, 23.5, 23.5, 0, self.sc.fuel_kg)
+        return header(5, self.t, self.frame) + bytes(body)
+
+    def final_classification_packet(self):
+        body = bytearray(struct.pack('<B', len(self.cars)))
+        for index in range(22):
+            if index >= len(self.cars):
+                body += bytes(struct.calcsize(FINAL_CLASSIFICATION_FORMAT))
+                continue
+            car = self.cars[index]
+            timed = [t for t, *_rest in car.history_laps if t and _rest[-1]]
+            stints = car.history_stints[:8]
+            actual = [s[1] for s in stints] + [0] * (8 - len(stints))
+            visual = [s[2] for s in stints] + [0] * (8 - len(stints))
+            total = (car.finish_t or self.t) - self.lights_out_t
+            body += struct.pack(FINAL_CLASSIFICATION_FORMAT, car.position, len(car.history_laps),
+                                car.car.grid, 0, car.pit_stops, 3 if car.result == 3 else car.result,
+                                min(timed) if timed else 0, total, 0, 0, len(stints), *actual, *visual)
+        return header(8, self.t, self.frame) + bytes(body)
 
     def speed_trap(self):
         """Speed trap ('SPTP') event as the player passes the fastest point of the lap."""

@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from track_data import get_all_tracks
-from track_analysis import TrackAnalyst, model_analysis
+from track_analysis import TrackAnalyst, model_analysis, normalize_session
 
 TELEMETRY_TIMEOUT = 2.0
 
@@ -70,6 +70,7 @@ dashboard_state: dict[str, Any] = {
     "pit_window": None,
     "opponent_threats": [],
     "race_strategy": None,
+    "model_ranges": None,       # fitted tyre/fuel model ranges (AnalysisEngine.model_summary)
     "race_control": [],
     "tire_health": None,
     "race_report": [],
@@ -136,7 +137,7 @@ def set_setup_ai_client(client):
 
 
 def _analysis_params(source: dict) -> tuple:
-    """(track_id, weather, handling, race_fraction) from a query string or JSON body."""
+    """(track_id, weather, handling, race_fraction, session) from a query string or JSON body."""
     def first(key, default):
         value = source.get(key, default)
         return value[0] if isinstance(value, list) else value
@@ -150,7 +151,8 @@ def _analysis_params(source: dict) -> tuple:
         race_fraction = min(1.0, max(0.05, float(first("race_fraction", 1.0))))
     except (ValueError, TypeError):
         race_fraction = 1.0
-    return track_id, weather, handling, race_fraction
+    session = normalize_session(str(first("session", "race")))
+    return track_id, weather, handling, race_fraction, session
 
 
 def add_voice_log(message: str, status='spoken'):

@@ -1,170 +1,88 @@
-"""Lightweight predictive models for tyre wear, fuel use and pace (numpy.polyfit).
+"""Pit window from the fitted tyre-wear model, as lap ranges rather than single laps.
 
-Everything here is a pure function of lap history, so it can be tested without
-the game, a database or an AI model.
+The wear model itself (per compound and track, fitted from recorded stints, with ranges) is
+in fitted_models.py. This module turns a wear forecast for the current stint into the pit
+window the engineer quotes: the lap the worst tyre reaches the target wear and the last
+sensible lap, each as (soonest, expected, latest).
+
+Everything here is a pure function of numbers passed in, so it can be tested without the
+game, a database or an AI model.
 """
 
 from __future__ import annotations
 
-import statistics
-import warnings
 from dataclasses import dataclass
-from typing import Sequence
 
-import numpy as np
+from fitted_models import DEFAULT_LEVEL, Range, StintWear
 
 # Worst-tyre wear (%) at which the engineer plans the stop / calls it the last sensible lap.
 IDEAL_WEAR_PCT = 60.0
 LATEST_WEAR_PCT = 75.0
-# Typical F1 lap-time benefit of burning 1 kg of fuel (s/kg); used to isolate tyre fall-off.
-FUEL_EFFECT_S_PER_KG = 0.03
-MIN_WEAR_POINTS = 3
-MIN_R2 = 0.5      # below this the wear data is too noisy to plan a stop from
-_MAX_LOOKAHEAD_LAPS = 80
-
-
-@dataclass
-class TyreModel:
-    """Polynomial wear curve: wear% = f(tyre age in laps)."""
-    coeffs: tuple[float, ...]     # highest power first (numpy.polyfit order)
-    degree: int
-    samples: int
-    r2: float
-
-    def wear_at(self, age: float) -> float:
-        return float(np.polyval(self.coeffs, age))
-
-    def wear_rate(self, age: float) -> float:
-        """Local wear in % per lap at the given age."""
-        return self.wear_at(age + 1) - self.wear_at(age)
-
-
-def fit_wear_curve(samples: Sequence[tuple[float, float]]) -> TyreModel | None:
-    """Fit worst-tyre wear against tyre age.
-
-    A brand-new tyre has zero wear, so (0, 0) anchors the curve. Uses a straight
-    line for small data sets and a quadratic once there is enough data to show
-    the accelerating wear near the cliff; falls back to the line if the quadratic
-    is not monotonically increasing over the observed range.
-    """
-    points = [(float(a), float(w)) for a, w in samples
-              if a is not None and w is not None and a >= 0 and 0 <= w <= 100]
-    if len({a for a, _ in points}) < MIN_WEAR_POINTS:
-        return None
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        raw_slope = np.polyfit([p[0] for p in points], [p[1] for p in points], 1)[0]
-    if raw_slope <= 0:
-        return None  # the data itself says wear is not increasing with age
-    points.append((0.0, 0.0))
-    ages = np.array([p[0] for p in points])
-    wears = np.array([p[1] for p in points])
-
-    def fit(degree: int) -> TyreModel | None:
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            try:
-                coeffs = np.polyfit(ages, wears, degree)
-            except (np.linalg.LinAlgError, ValueError):
-                return None
-        predicted = np.polyval(coeffs, ages)
-        ss_res = float(np.sum((wears - predicted) ** 2))
-        ss_tot = float(np.sum((wears - wears.mean()) ** 2))
-        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
-        return TyreModel(tuple(float(c) for c in coeffs), degree, len(points) - 1, r2)
-
-    linear = fit(1)
-    if linear is None or linear.coeffs[0] <= 0 or linear.r2 < MIN_R2:
-        return None
-    if len(points) >= 8:
-        quad = fit(2)
-        if quad is not None and quad.coeffs[0] > 0:
-            vertex = -quad.coeffs[1] / (2 * quad.coeffs[0])
-            if vertex <= 0 and quad.r2 >= MIN_R2:  # increasing across the observed range
-                return quad
-    return linear
-
-
-def laps_until_wear(model: TyreModel, current_age: float, threshold: float) -> float | None:
-    """Laps from now until the modelled worst-tyre wear reaches ``threshold`` %."""
-    if model.wear_at(current_age) >= threshold:
-        return 0.0
-    age = current_age
-    while age - current_age < _MAX_LOOKAHEAD_LAPS:
-        age += 0.25
-        if model.wear_at(age) >= threshold:
-            return round(age - current_age, 2)
-    return None
 
 
 @dataclass
 class PitPrediction:
     wear_now_pct: float
-    wear_per_lap_pct: float
-    ideal_lap: int | None
+    wear_per_lap_pct: float              # expected, this stint
+    ideal_lap: int | None                # expected lap numbers (None = after the flag)
     latest_lap: int | None
     laps_to_ideal: float | None
     laps_to_latest: float | None
     finish_without_stop: bool
-    samples: int
-    r2: float
+    samples: int                         # laps behind the model (fit + this stint)
+    wear_per_lap_range: list             # [low, mid, high] % per lap
+    ideal_lap_range: list                # [soonest, expected, latest] race lap
+    latest_lap_range: list
+    finish_without_stop_prob: float | None
+    basis: str                           # track / pooled / prior (+ this stint's laps)
+    stint_laps: int
+    level: float = DEFAULT_LEVEL
 
     def as_dict(self) -> dict:
         return dict(self.__dict__)
 
 
-def predict_pit_window(model: TyreModel | None, current_age: float, current_lap: int,
+def _lap(current_lap: int, delta: float | None, total_laps: int) -> int | None:
+    if delta is None:
+        return None
+    target = current_lap + int(delta)
+    # A stop after the chequered flag is no stop at all.
+    return None if total_laps > 0 and target > total_laps else target
+
+
+def _laps(current_lap: int, r: Range, total_laps: int) -> list:
+    return [_lap(current_lap, r.low, total_laps), _lap(current_lap, r.mid, total_laps),
+            _lap(current_lap, r.high, total_laps)]
+
+
+def predict_pit_window(stint: StintWear | None, tyre_age: float, wear_now: float, current_lap: int,
                        total_laps: int = 0, ideal_pct: float = IDEAL_WEAR_PCT,
-                       latest_pct: float = LATEST_WEAR_PCT) -> PitPrediction | None:
-    """Turn a wear curve into a pit window expressed in race lap numbers."""
-    if model is None:
+                       latest_pct: float = LATEST_WEAR_PCT,
+                       level: float = DEFAULT_LEVEL) -> PitPrediction | None:
+    """Turn a stint wear forecast into a pit window expressed in race lap numbers."""
+    if stint is None:
         return None
-    to_ideal = laps_until_wear(model, current_age, ideal_pct)
-    to_latest = laps_until_wear(model, current_age, latest_pct)
+    to_ideal = stint.laps_until(ideal_pct, tyre_age, wear_now, level)
+    to_latest = stint.laps_until(latest_pct, tyre_age, wear_now, level)
+    rate = stint.rate(tyre_age, level)
 
-    def lap(delta):
-        if delta is None:
-            return None
-        target = current_lap + int(delta)
-        # A stop after the chequered flag is no stop at all.
-        return None if total_laps > 0 and target > total_laps else target
-
-    finish_ok = False
+    prob = None
     if total_laps > current_lap:
-        wear_at_flag = model.wear_at(current_age + (total_laps - current_lap))
-        finish_ok = wear_at_flag <= latest_pct
-    elif total_laps > 0:
-        finish_ok = True                # on the last lap (or past the flag): nothing to plan
+        prob = stint.prob_below(latest_pct, tyre_age, wear_now, total_laps - current_lap)
+        finish_ok = prob >= 0.5
+    else:
+        finish_ok = total_laps > 0          # on the last lap (or past the flag): nothing to plan
+        prob = 1.0 if finish_ok else None
     return PitPrediction(
-        wear_now_pct=round(max(0.0, model.wear_at(current_age)), 1),
-        wear_per_lap_pct=round(model.wear_rate(current_age), 2),
-        ideal_lap=lap(to_ideal), latest_lap=lap(to_latest),
-        laps_to_ideal=to_ideal, laps_to_latest=to_latest,
-        finish_without_stop=finish_ok, samples=model.samples, r2=round(model.r2, 3))
-
-
-def fuel_per_lap(samples: Sequence[float]) -> float | None:
-    """Median fuel burn per lap (kg), ignoring implausible values (pit laps, resets)."""
-    clean = [s for s in samples if 0.2 < s < 6.0]
-    return round(statistics.median(clean), 3) if clean else None
-
-
-def pace_degradation(laps: Sequence[tuple[float, float, float | None]],
-                     fuel_k: float = FUEL_EFFECT_S_PER_KG) -> float | None:
-    """Tyre-related lap time loss in seconds per lap.
-
-    ``laps`` holds (stint lap index, lap time ms, fuel kg at lap start). Lap times
-    are fuel-corrected to an empty tank before fitting a line; positive means the
-    car is getting slower. Needs at least three laps.
-    """
-    pts = []
-    for index, time_ms, fuel in laps:
-        if time_ms and time_ms > 0:
-            corrected = time_ms / 1000.0 - (fuel_k * fuel if fuel is not None else 0.0)
-            pts.append((float(index), corrected))
-    if len(pts) < 3 or len({p[0] for p in pts}) < 3:
-        return None
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        slope = np.polyfit([p[0] for p in pts], [p[1] for p in pts], 1)[0]
-    return round(float(slope), 3)
+        wear_now_pct=round(max(0.0, wear_now), 1),
+        wear_per_lap_pct=round(rate.mid, 2),
+        ideal_lap=_lap(current_lap, to_ideal.mid, total_laps),
+        latest_lap=_lap(current_lap, to_latest.mid, total_laps),
+        laps_to_ideal=to_ideal.mid, laps_to_latest=to_latest.mid,
+        finish_without_stop=finish_ok,
+        samples=stint.model.n_laps + stint.stint_laps,
+        wear_per_lap_range=rate.as_list(2),
+        ideal_lap_range=_laps(current_lap, to_ideal, total_laps),
+        latest_lap_range=_laps(current_lap, to_latest, total_laps),
+        finish_without_stop_prob=None if prob is None else round(prob, 3),
+        basis=stint.model.basis, stint_laps=stint.stint_laps, level=level)

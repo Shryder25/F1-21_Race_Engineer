@@ -136,6 +136,9 @@ class StrategyPlan:
     alternatives: list[StrategyOption] = field(default_factory=list)   # best plan for each other stop count
     pit_loss_s: float = DEFAULT_PIT_LOSS_S
     laps_remaining: int = 0
+    # Best plan for each choice of next set ({compound: option}); used to weigh which tyre a
+    # rival is likely to fit. Empty when the best plan has no stop at all.
+    best_by_next: dict = field(default_factory=dict)
 
     def margin_to(self, stops: int) -> float | None:
         """How much slower the best plan with ``stops`` stops is, in seconds."""
@@ -206,6 +209,7 @@ def plan_race(laps_remaining: int, current_compound: str | None, tyre_age: float
     curves = {c: tyre_curve(c, deg_scale, life_scale) for c in {*options, current}}
 
     best_by_stops: dict[int, StrategyOption] = {}
+    best_by_next: dict[str, StrategyOption] = {}
     for stops in range(0, max_stops + 1):
         if stops >= laps_remaining:
             break
@@ -225,11 +229,14 @@ def plan_race(laps_remaining: int, current_compound: str | None, tyre_age: float
             option = StrategyOption(stops, [current, *sequence], lengths, pit_laps, round(total, 2))
             if stops not in best_by_stops or option.total_time_s < best_by_stops[stops].total_time_s:
                 best_by_stops[stops] = option
+            if sequence and (sequence[0] not in best_by_next
+                             or option.total_time_s < best_by_next[sequence[0]].total_time_s):
+                best_by_next[sequence[0]] = option
     if not best_by_stops:
         return None
     best = min(best_by_stops.values(), key=lambda o: o.total_time_s)
     others = sorted((o for o in best_by_stops.values() if o is not best), key=lambda o: o.stops)
-    return StrategyPlan(best, others, pit_loss, laps_remaining)
+    return StrategyPlan(best, others, pit_loss, laps_remaining, best_by_next)
 
 
 # ──────────────────────────────────────────────
@@ -256,6 +263,18 @@ def undercut_gain(stayer_compound: str | None, stayer_age: float, new_compound: 
     return round(gain, 2)
 
 
+# The rival stop model can extend the undercut maths by at most this many laps: further out,
+# the rival would react to our stop rather than follow their own plan.
+MAX_COVER_LAPS = 4
+
+
+def cover_laps(rival_stop_in_laps: int | None, laps_remaining: int) -> int:
+    """Laps a rival stays out after we box: 1 (they cover at once) unless predicted otherwise."""
+    if rival_stop_in_laps is None:
+        return 1
+    return int(max(1, min(rival_stop_in_laps, MAX_COVER_LAPS, max(1, laps_remaining - 2))))
+
+
 def next_compound(current: str | None) -> str:
     """The usual next dry set: off softs onto mediums, otherwise onto hards, off hards onto mediums."""
     return {'SOFT': 'MEDIUM', 'MEDIUM': 'HARD', 'HARD': 'MEDIUM'}.get(normalise_compound(current), 'MEDIUM')
@@ -276,13 +295,20 @@ class StrategyCall:
 def undercut_opportunity(gap_ahead_s: float | None, my_compound: str | None, my_age: float,
                          rival_compound: str | None, rival_age: float | None, laps_to_planned_stop: int | None,
                          laps_remaining: int, deg_scale: float = 1.0, life_scale: float = 1.0,
-                         rival_index: int | None = None) -> StrategyCall | None:
-    """Should we box now to jump the car ahead? Returns an 'undercut' call or None."""
+                         rival_index: int | None = None,
+                         rival_stop_in_laps: int | None = None) -> StrategyCall | None:
+    """Should we box now to jump the car ahead? Returns an 'undercut' call or None.
+
+    ``rival_stop_in_laps`` is how many laps the rival is expected to stay out after we box
+    (from the rival stop model). Without it the rival is assumed to cover next lap, the
+    cautious case; with it the gain counts every lap they spend on worn tyres (capped).
+    """
     if (gap_ahead_s is None or rival_age is None or laps_to_planned_stop is None
             or laps_to_planned_stop > UNDERCUT_WINDOW_LAPS or laps_remaining <= 3):
         return None
     my_next = next_compound(my_compound)
-    gain = undercut_gain(rival_compound, rival_age, my_next, 1, deg_scale, life_scale)
+    cover = cover_laps(rival_stop_in_laps, laps_remaining)
+    gain = undercut_gain(rival_compound, rival_age, my_next, cover, deg_scale, life_scale)
     if gain - gap_ahead_s < CALL_MARGIN_S:
         return None
     return StrategyCall('undercut', f'Undercut is on the car ahead. Box this lap, box this lap. '
@@ -293,20 +319,23 @@ def undercut_opportunity(gap_ahead_s: float | None, my_compound: str | None, my_
 def react_to_rival_stop(rival_side: str, gap_s: float, my_compound: str | None, my_age: float,
                         rival_old_compound: str | None, rival_new_compound: str | None, laps_remaining: int, my_stops_left: int,
                         deg_scale: float = 1.0, life_scale: float = 1.0,
-                        rival_index: int | None = None, rival_name: str | None = None) -> StrategyCall:
+                        rival_index: int | None = None, rival_name: str | None = None,
+                        assumed_new_compound: str | None = None) -> StrategyCall:
     """Radio call when a nearby rival boxes.
 
     ``rival_side`` is 'ahead' or 'behind'; ``gap_s`` is the absolute gap before they pitted.
     A car behind stopping is an undercut threat (cover it or stay out); a car ahead stopping
     opens the overcut (stay out and push) unless their fresh tyres are too strong.
-    The new compound is usually unknown at pit entry: the maths then assumes the usual next
-    dry set, but the call only names a compound that is actually known.
+    The new compound is usually unknown at pit entry: the maths then assumes the rival stop
+    model's predicted set (``assumed_new_compound``) or else the usual next dry set, but the
+    call only names a compound that is actually known.
     """
     gap = abs(gap_s)
     known_new = normalise_compound(rival_new_compound)
     old = normalise_compound(rival_old_compound)
-    # Unknown new set: assume the usual next dry tyre, or fresh wets of the same kind.
-    rival_new = known_new or (old if old in WET_COMPOUNDS else next_compound(old))
+    # Unknown new set: the predicted one, else the usual next dry tyre or fresh wets of the same kind.
+    rival_new = (known_new or normalise_compound(assumed_new_compound)
+                 or (old if old in WET_COMPOUNDS else next_compound(old)))
     who = f'{rival_name} {rival_side}' if rival_name else f'Car {rival_side}'
     if my_stops_left <= 0 or laps_remaining <= 2:
         return StrategyCall('stay_out', f'{who} has boxed. We are not stopping again, '

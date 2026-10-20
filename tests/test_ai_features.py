@@ -8,7 +8,6 @@ import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
-import strategy_ml
 from ai_client import AIClient, AIUnavailable, strip_reasoning
 from analysis import AnalysisEngine, PROACTIVE_KEYS
 from engineer_brain import (EngineerBrain, build_prompt, clean_radio_text, format_context,
@@ -22,10 +21,6 @@ from voice_commands import ACK_TEXT, CommandDispatcher, VoiceCommandListener, ma
 from voice_engine import Priority
 
 
-def linear_samples(rate=2.5, laps=10, compound=17):
-    return [(age, rate * age) for age in range(1, laps + 1)]
-
-
 class PacketTests(unittest.TestCase):
     def test_car_status_and_damage_round_trip(self):
         status = parse_player_car_status(build_car_status_packet(0, 1, 55.5, 17, 4), 0)
@@ -35,53 +30,6 @@ class PacketTests(unittest.TestCase):
         damage = parse_player_car_damage(build_car_damage_packet(0, 1, (10, 20, 30, 40)), 0)
         self.assertEqual(damage.tyres_wear, (10.0, 20.0, 30.0, 40.0))
         self.assertEqual(damage.worst_tyre_wear, 40.0)
-
-
-class StrategyMLTests(unittest.TestCase):
-    def test_linear_wear_predicts_pit_window(self):
-        model = strategy_ml.fit_wear_curve(linear_samples(rate=2.5, laps=8))
-        self.assertIsNotNone(model)
-        self.assertAlmostEqual(model.wear_rate(8), 2.5, places=1)
-        prediction = strategy_ml.predict_pit_window(model, current_age=8, current_lap=9, total_laps=53)
-        # 60% at 2.5%/lap = tyre age 24 -> 16 laps from now; 75% = age 30 -> 22 laps from now
-        self.assertEqual(prediction.ideal_lap, 9 + 16)
-        self.assertEqual(prediction.latest_lap, 9 + 22)
-        self.assertFalse(prediction.finish_without_stop)
-
-    def test_gentle_wear_can_reach_the_flag(self):
-        model = strategy_ml.fit_wear_curve(linear_samples(rate=0.8, laps=8))
-        prediction = strategy_ml.predict_pit_window(model, 8, 9, total_laps=30)
-        self.assertTrue(prediction.finish_without_stop)
-
-    def test_window_after_the_flag_is_no_window(self):
-        model = strategy_ml.fit_wear_curve(linear_samples(rate=2.5, laps=8))
-        prediction = strategy_ml.predict_pit_window(model, current_age=2, current_lap=3, total_laps=7)
-        self.assertIsNone(prediction.ideal_lap)            # would be lap 25 in a 7-lap race
-        self.assertIsNone(prediction.latest_lap)
-        self.assertTrue(prediction.finish_without_stop)
-        last_lap = strategy_ml.predict_pit_window(model, current_age=6, current_lap=7, total_laps=7)
-        self.assertTrue(last_lap.finish_without_stop)
-
-    def test_accelerating_wear_uses_quadratic(self):
-        samples = [(age, 0.05 * age ** 2 + 1.0 * age) for age in range(1, 13)]
-        model = strategy_ml.fit_wear_curve(samples)
-        self.assertEqual(model.degree, 2)
-        self.assertGreater(model.wear_rate(12), model.wear_rate(2))
-
-    def test_too_little_or_nonsense_data_gives_no_model(self):
-        self.assertIsNone(strategy_ml.fit_wear_curve([(1, 3.0), (2, 6.0)]))
-        self.assertIsNone(strategy_ml.fit_wear_curve([(1, 9.0), (2, 6.0), (3, 3.0)]))  # wear falling
-        self.assertIsNone(strategy_ml.predict_pit_window(None, 3, 4))
-
-    def test_fuel_and_pace_models(self):
-        self.assertEqual(strategy_ml.fuel_per_lap([1.9, 2.0, 2.1, 50.0, 0.0]), 2.0)
-        self.assertIsNone(strategy_ml.fuel_per_lap([]))
-        # lap times rise 0.1 s/lap while fuel burns off at 1.8 kg/lap (worth 0.054 s/lap)
-        laps = [(i, 90000 + 100 * i - 54 * i, 100 - 1.8 * i) for i in range(1, 7)]
-        raw = [(i, 90000 + 100 * i - 54 * i, None) for i in range(1, 7)]
-        self.assertAlmostEqual(strategy_ml.pace_degradation(laps), 0.1, places=2)
-        self.assertAlmostEqual(strategy_ml.pace_degradation(raw), 0.046, places=2)
-        self.assertIsNone(strategy_ml.pace_degradation(laps[:2]))
 
 
 class HistoryStatsTests(unittest.TestCase):
@@ -138,16 +86,25 @@ class AnalysisIntegrationTests(unittest.TestCase):
         lap = type('L', (), {'current_lap_num': 9, 'car_position': 3, 'last_lap_time_ms': 90640})()
         self.engine.latest_lap = lap
         prediction = self.engine.pit_prediction()
-        self.assertEqual(prediction.ideal_lap, 9 + 16)
+        # 20% worn at 2.5%/lap: 60% in 16 laps (lap 25), give or take the model's range
+        self.assertIn(prediction.ideal_lap, (24, 25))
+        soonest, _expected, latest = prediction.ideal_lap_range
+        self.assertLessEqual(soonest, 25)
+        self.assertGreaterEqual(latest, 25)
+        self.assertEqual(prediction.basis, 'prior')           # no fitted models: this stint only
         fuel = self.engine.fuel_prediction()
-        self.assertAlmostEqual(fuel['per_lap_kg'], 1.9, places=2)
-        self.assertEqual(fuel['laps_of_fuel'], round((100 - 1.9 * 8) / 1.9, 1))
+        self.assertAlmostEqual(fuel['per_lap_kg'], 1.9, places=1)
+        self.assertAlmostEqual(fuel['laps_of_fuel'], (100 - 1.9 * 8) / 1.9, delta=0.5)
+        low, mid, high = fuel['per_lap_kg_range']
+        self.assertLess(low, 1.9)
+        self.assertGreater(high, 1.9)
         context = self.engine.build_context()
         self.assertEqual(context['compound'], 'Medium')
-        self.assertEqual(context['pit_prediction']['ideal_lap'], 25)
+        self.assertEqual(context['pit_prediction']['ideal_lap'], prediction.ideal_lap)
         text = format_context(context)
         self.assertIn('ML pit prediction', text)
-        self.assertIn('ideal stop lap 25', text)
+        self.assertIn(f'ideal stop lap {prediction.ideal_lap} (range [', text)
+        self.assertIn('Tyre model ranges', text)
         rows = self.history.connection.execute('SELECT COUNT(*) FROM lap_stats').fetchone()[0]
         self.assertEqual(rows, 8)
 

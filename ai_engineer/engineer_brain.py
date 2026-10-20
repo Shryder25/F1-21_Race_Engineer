@@ -29,6 +29,7 @@ COMMAND_QUESTIONS = {
     'pace': 'Give me a pace update.',
     'threats': 'Any threats nearby? Who is attacking or defending?',
     'strategy': 'What is the strategy? How many stops, which tyres, and is the undercut or overcut on?',
+    'rivals': 'When are the cars around me going to box, and onto which tyres?',
 }
 
 UNKNOWN_QUESTION_REPLY = ("Copy, can't answer that one without the AI. "
@@ -42,7 +43,10 @@ Rules:
 - Be direct and calm. Lead with the answer, then one useful instruction if it adds value.
 - The data states the session mode. Time trial: no rivals, no pit stops. Qualifying: no pit stops and rival gaps are not tracked. Free practice: gaps are not tracked. If asked about something the mode does not have, say so in a few words instead of inventing numbers.
 - Tyre temperatures are surface temperatures in Celsius; wear is a percentage. Gaps are in seconds.
+- Tyre wear, degradation, pit-window and fuel predictions come as ranges [low, expected, high] (an 80% range). Quote the expected value and give the range when it matters ("box lap eighteen, window seventeen to twenty"). A wide range or a "built-in estimate" basis means the model is unsure: say so briefly.
 - The race strategy line is a model of stop count and compounds; its "slower by" numbers are total race time. Undercut gain is what boxing this lap gains on the car ahead by the time they have stopped too: it works only if the gain beats the gap.
+- Rival stop predictions are the model's guess of when nearby cars will box next and which tyre they will fit, from their tyre age, wear and the track's usual strategy. Say "likely" or "expect": they are forecasts, not facts.
+- The race simulation line is a Monte Carlo of the whole field (Safety Cars, VSCs, pit-stop spread, traffic, overtaking): quote its odds as odds ("two-stop comes out best 60% of the time"), never as certainties.
 - Opponent threats, when present, are nearby cars already ranked by how much pressure they put on the driver; mention one only if it changes what the driver should do right now.
 - When a rival's driver name is given, call them by that name like a real engineer would (for example "Hamilton is one point two ahead"). Never make up a name that is not in the data.
 - Sound like a real F1 engineer: calm, clipped, encouraging. Say lap times the way engineers do ("one thirty-two four"), talk about small time differences in tenths ("two tenths up", "a tenth down"), and say "box, box" only for an actual pit call.
@@ -59,6 +63,16 @@ def _fmt_lap(ms):
         return None
     seconds = ms / 1000
     return f'{int(seconds // 60)}:{seconds % 60:06.3f}'
+
+
+_BASIS = {'track': 'fitted on this track', 'pooled': 'fitted on other tracks',
+          'prior': 'built-in estimate'}
+
+
+def _fmt_range(r) -> str:
+    if not r:
+        return 'unknown'
+    return '[' + ', '.join('?' if v is None else f'{v:g}' for v in r) + ']'
 
 
 def format_context(ctx: dict) -> str:
@@ -97,16 +111,30 @@ def format_context(ctx: dict) -> str:
     prediction = ctx.get('pit_prediction')
     if prediction:
         add('ML pit prediction', (
-            f"worst-tyre wear {prediction['wear_now_pct']}%, +{prediction['wear_per_lap_pct']}% per lap, "
-            f"ideal stop lap {prediction['ideal_lap']}, latest lap {prediction['latest_lap']}, "
-            f"can finish without stopping: {prediction['finish_without_stop']}, "
-            f"based on {prediction['samples']} laps"))
+            f"worst-tyre wear {prediction['wear_now_pct']}%, +{prediction['wear_per_lap_pct']}% per lap "
+            f"(range {_fmt_range(prediction.get('wear_per_lap_range'))}), "
+            f"ideal stop lap {prediction['ideal_lap']} (range {_fmt_range(prediction.get('ideal_lap_range'))}), "
+            f"latest lap {prediction['latest_lap']} (range {_fmt_range(prediction.get('latest_lap_range'))}), "
+            f"can finish without stopping: {prediction['finish_without_stop']}"
+            + (f" (chance {round(prediction['finish_without_stop_prob'] * 100)}%)"
+               if prediction.get('finish_without_stop_prob') is not None else '')
+            + f", based on {prediction['samples']} laps ({_BASIS.get(prediction.get('basis'), 'fit')})"))
     else:
         add('ML pit prediction', 'not enough lap data yet')
+    model = ctx.get('tyre_fuel_model')
+    if model:
+        add('Tyre model ranges [low, expected, high]', (
+            f"wear per lap {_fmt_range(model['wear_per_lap_pct'])}%, wear in 5 laps "
+            f"{_fmt_range(model['wear_in_5_laps_pct'])}%, fall-off {_fmt_range(model['deg_s_per_lap'])} s/lap; "
+            f"{_BASIS.get(model['basis'], 'fit')} from {model['fit_laps']} laps"
+            + (' (simulator data only)' if model.get('simulated_fit') else '')
+            + f" plus {model['stint_laps']} laps this stint"))
     fuel = ctx.get('fuel')
     if fuel:
-        add('Fuel', f"{fuel['fuel_kg']} kg, burn {fuel['per_lap_kg']} kg per lap, "
-                    f"{fuel['laps_of_fuel']} laps of fuel, margin {fuel['margin_laps']} laps")
+        add('Fuel', f"{fuel['fuel_kg']} kg, burn {fuel['per_lap_kg']} kg per lap "
+                    f"(range {_fmt_range(fuel.get('per_lap_kg_range'))}), "
+                    f"{fuel['laps_of_fuel']} laps of fuel, margin {fuel['margin_laps']} laps "
+                    f"(range {_fmt_range(fuel.get('margin_laps_range'))})")
     add('Last lap sector times ms', ctx.get('last_lap_sectors_ms'))
     add('Last lap sector deltas to personal best ms', ctx.get('last_lap_sector_deltas_ms'))
     tire = ctx.get('tire_health')
@@ -138,6 +166,24 @@ def format_context(ctx: dict) -> str:
         if strategy.get('last_call'):
             add('Last strategy call', strategy['last_call']['message'])
         add('Game rejoin position if boxing now', strategy.get('game_rejoin_position'))
+        rivals = strategy.get('rivals')
+        if rivals and rivals.get('nearby'):
+            add('Rival stop predictions', ' '.join(r['summary'] for r in rivals['nearby']))
+        sim = strategy.get('simulation')
+        if sim and sim.get('options'):
+            add(f"Race simulation ({sim['runs']} Monte Carlo races from lap {sim['lap']})", (
+                '; '.join(f"{o['label']}: best {round(o['p_best'] * 100)}% of runs, expected P{o['position_range'][1]} "
+                          f"(P{o['position_range'][0]}-P{o['position_range'][2]}), podium {round(o['p_podium'] * 100)}%"
+                          for o in sim['options'])
+                + f"; chance of a Safety Car {round(sim['p_safety_car'] * 100)}%, VSC {round(sim['p_vsc'] * 100)}%, "
+                  f"rain {round(sim['p_rain'] * 100)}%; pit loss {sim['pit_loss_s'][1]}s "
+                  f"({sim['pit_loss_s'][0]}-{sim['pit_loss_s'][2]}s); overtaking difficulty {sim['overtaking']}/5"))
+        spread = strategy.get('uncertainty')
+        if spread and spread.get('worse') and spread.get('better'):
+            add('Strategy across the tyre-model range', (
+                f"if tyres go off faster: {spread['worse']['stops']} stop(s) at lap(s) "
+                f"{spread['worse']['pit_laps'] or 'none'}; if they last longer: "
+                f"{spread['better']['stops']} stop(s) at lap(s) {spread['better']['pit_laps'] or 'none'}"))
     return '\n'.join(lines) if lines else 'No telemetry received yet.'
 
 
@@ -192,7 +238,7 @@ def _mode_blocks(command: str, ctx: dict) -> str | None:
             else f'Gaps are only tracked in the race, not in {label.lower()}.'
     if command == 'pit_window' and not session_modes.has_pit_strategy(mode):
         return f'No pit stops in {label.lower()}.'
-    if command == 'strategy' and mode != session_modes.RACE:
+    if command in ('strategy', 'rivals') and mode != session_modes.RACE:
         return f'No race strategy in {label.lower()}.'
     return None
 
@@ -227,10 +273,20 @@ def rule_based_answer(command: str, ctx: dict) -> str:
     if command == 'pit_window':
         prediction = ctx.get('pit_prediction')
         if prediction and prediction.get('finish_without_stop'):
+            chance = prediction.get('finish_without_stop_prob')
+            if chance is not None and chance < 0.8:
+                return (f"Tyres should reach the flag, but it's close: "
+                        f"{round(chance * 100)} percent. We'll keep watching.")
             return 'Tyres should reach the flag. No stop needed at the moment.'
         if prediction and prediction.get('ideal_lap'):
-            return (f"Box around lap {prediction['ideal_lap']}, "
-                    f"latest lap {prediction['latest_lap'] or 'unknown'}.")
+            soonest, _mid, latest = prediction.get('ideal_lap_range') or (None, None, None)
+            window = ''
+            if soonest and latest and soonest != latest:
+                window = f", window lap {soonest} to {latest}"
+            elif soonest and not latest:
+                window = f", from lap {soonest}"
+            return (f"Box around lap {prediction['ideal_lap']}{window}. "
+                    f"Latest lap {prediction['latest_lap'] or 'unknown'}.")
         window = ctx.get('game_pit_window')
         if window:
             return f'Game window is lap {window[0]} to {window[1]}.'
@@ -255,6 +311,13 @@ def rule_based_answer(command: str, ctx: dict) -> str:
             text += (' Undercut on the car ahead is on.' if undercut['works']
                      else ' Undercut on the car ahead will not work yet.')
         return text
+    if command == 'rivals':
+        strategy = ctx.get('strategy') or {}
+        rivals = strategy.get('rivals')
+        if not rivals or not rivals.get('nearby'):
+            return 'No read on the other cars yet.'
+        picks = [rivals[side] for side in ('ahead', 'behind') if rivals.get(side)] or rivals['nearby'][:2]
+        return ' '.join(r['summary'] for r in picks)
     if command == 'pace':
         parts = []
         if ctx.get('last_lap_ms'):

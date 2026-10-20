@@ -344,6 +344,7 @@ async function initSetupAdvisor() {
     const weatherSelect = document.getElementById('weatherSelect');
     const balanceSelect = document.getElementById('balanceSelect');
     const distanceSelect = document.getElementById('distanceSelect');
+    const sessionSelect = document.getElementById('sessionSelect');
     const btnConsult = document.getElementById('btnConsultAI');
 
     if (!trackSelect) return;
@@ -370,7 +371,11 @@ async function initSetupAdvisor() {
     }
 
     const reload = () => loadTrackSetup(trackSelect.value, weatherSelect.value);
-    [trackSelect, weatherSelect, balanceSelect, distanceSelect].forEach(el => el?.addEventListener('change', reload));
+    [trackSelect, weatherSelect, balanceSelect, distanceSelect, sessionSelect].forEach(el => el?.addEventListener('change', reload));
+    // Race distance means nothing for a one-lap qualifying setup.
+    const syncDistance = () => { if (distanceSelect) distanceSelect.disabled = sessionSelect?.value === 'qualifying'; };
+    sessionSelect?.addEventListener('change', syncDistance);
+    syncDistance();
 
     btnConsult?.addEventListener('click', async () => {
         btnConsult.disabled = true;
@@ -397,12 +402,14 @@ function analysisParams(trackId, weather) {
         weather: weather ?? val('weatherSelect', 'dry'),
         handling_issue: val('balanceSelect', 'balanced'),
         race_fraction: parseFloat(val('distanceSelect', '1')),
+        session: val('sessionSelect', 'race'),
     };
 }
 
 function sameParams(a, b) {
     return a.track_id === b.track_id && a.weather === b.weather &&
-        a.handling_issue === b.handling_issue && a.race_fraction === b.race_fraction;
+        a.handling_issue === b.handling_issue && a.race_fraction === b.race_fraction &&
+        a.session === b.session;
 }
 
 async function loadTrackSetup(trackId, weather) {
@@ -482,6 +489,7 @@ function renderSetupData(data) {
     const s = data.setup;
     if (!s) return;
     const wet = data.weather === 'wet';
+    const quali = data.session === 'qualifying';
 
     // Header banner
     setText('setupTrackTitle', `${data.track_name} — ${data.country}`);
@@ -490,7 +498,7 @@ function renderSetupData(data) {
     if (data.length_m) setText('setupLength', `${Number(data.length_m).toLocaleString()} m`);
     if (data.turns) setText('setupTurns', `${data.turns} Turns`);
     setText('setupTyreWear', `Tyre Degradation: ${data.tyre_degradation || '—'}`);
-    setText('setupConditions', wet ? 'WET' : 'DRY');
+    setText('setupConditions', `${wet ? 'WET' : 'DRY'}${quali ? ' · QUALIFYING' : ''}`);
     if (data.analysis_source === 'deepseek') {
         setAnalysisSource('ai', 'DeepSeek analysis');
     } else if (data.ai_error) {
@@ -528,17 +536,33 @@ function renderSetupData(data) {
     const limiting = deg.limiting_tyre || (deg.limiting_axle ? `${deg.limiting_axle} axle` : '');
     setText('degReasoning', `${deg.reasoning || ''}${limiting ? ` Limiting: ${limiting}.` : ''}`);
 
-    // B. Strategy
+    // B. Strategy (race) or run plan (qualifying)
     const strat = data.strategy || {};
-    setText('strategyLaps', strat.race_laps ? `${strat.race_laps} LAPS` : '—');
-    stintBar(document.getElementById('strategyBest'), strat.best);
-    stintBar(document.getElementById('strategyAlt'), strat.alternative);
-    const ai = strat.ai || {};
-    setText('strategyAi', ai.plan ? `DeepSeek: ${ai.plan}${ai.reasoning ? ' — ' + ai.reasoning : ''}` : '');
+    const plan = data.qualifying || {};
+    setText('strategyTitle', quali ? 'QUALIFYING PLAN' : 'RACE STRATEGY');
+    document.querySelectorAll('.strategy-row').forEach(row => { row.style.display = quali ? 'none' : ''; });
+    const planEl = document.getElementById('qualiPlan');
+    if (planEl) planEl.style.display = quali ? '' : 'none';
+    let ai = strat.ai || {};
+    if (quali) {
+        const qai = plan.ai || {};
+        const tyre = qai.tyre || plan.tyre || '—';
+        setText('strategyLaps', 'ONE LAP');
+        setText('qualiTyre', tyre.charAt(0).toUpperCase() + tyre.slice(1).toLowerCase());
+        setText('qualiPushLaps', qai.push_laps_per_set ?? plan.push_laps_per_set ?? '—');
+        setText('qualiOutLap', qai.out_lap || plan.out_lap || '');
+        setText('qualiTiming', plan.session_timing || '');
+        setText('strategyAi', qai.reasoning ? `DeepSeek: ${qai.reasoning}` : '');
+    } else {
+        setText('strategyLaps', strat.race_laps ? `${strat.race_laps} LAPS` : '—');
+        stintBar(document.getElementById('strategyBest'), strat.best);
+        stintBar(document.getElementById('strategyAlt'), strat.alternative);
+        setText('strategyAi', ai.plan ? `DeepSeek: ${ai.plan}${ai.reasoning ? ' — ' + ai.reasoning : ''}` : '');
+    }
     const notes = document.getElementById('strategyNotes');
     if (notes) {
         notes.innerHTML = '';
-        (strat.notes || []).forEach(n => {
+        ((quali ? plan.notes : strat.notes) || []).forEach(n => {
             const li = document.createElement('li');
             li.textContent = n;
             notes.appendChild(li);
@@ -605,12 +629,28 @@ function renderSetupData(data) {
 
     // Per-category reasoning (DeepSeek), with conditions-aware defaults
     const tips = data.setup_notes || {};
-    setText('tipAero', tips.aerodynamics || (wet ? 'Wet: extra wing for grip on a low-grip surface.' : `Aero matched to ${String(data.downforce_level || '').toLowerCase()} downforce demand.`));
-    setText('tipTransmission', tips.transmission || (wet ? 'Wet: more open on-throttle diff to stop wheelspin.' : 'Higher off-throttle helps trail-braking stability.'));
-    setText('tipGeometry', tips.suspension_geometry || '');
-    setText('tipSuspension', tips.suspension || (wet ? 'Wet: softer springs and bars, higher ride over standing water.' : ''));
-    setText('tipBrakes', tips.brakes || (wet ? 'Wet: lower pressure and bias rearward to avoid front lock-ups.' : 'Slight forward bias prevents rear lockups into heavy chicanes.'));
-    setText('tipTyres', tips.tyres || '');
+    const dflt = quali ? {
+        aerodynamics: wet ? 'Quali (wet): a touch more front wing for turn-in on one lap.'
+            : `Quali: wings trimmed for one lap at ${String(data.downforce_level || '').toLowerCase()} downforce.`,
+        transmission: wet ? 'Quali (wet): diff kept open for traction.' : 'Quali: on-throttle diff locked up for drive out of slow corners.',
+        suspension_geometry: wet ? '' : 'Quali: maximum useful camber and sharper front toe; wear does not matter for one lap.',
+        suspension: wet ? 'Quali (wet): car kept soft and high over standing water.' : 'Quali: stiffer and lower; low fuel lets the car ride closer to the ground.',
+        brakes: wet ? 'Quali (wet): gentle brake pressure, bias rearward against lock-ups.' : 'Quali: full brake pressure, bias a click forward for the lighter car.',
+        tyres: wet ? '' : 'Quali: lower pressures for a bigger contact patch on one lap.',
+    } : {
+        aerodynamics: wet ? 'Wet: extra wing for grip on a low-grip surface.' : `Aero matched to ${String(data.downforce_level || '').toLowerCase()} downforce demand.`,
+        transmission: wet ? 'Wet: more open on-throttle diff to stop wheelspin.' : 'Higher off-throttle helps trail-braking stability.',
+        suspension_geometry: '',
+        suspension: wet ? 'Wet: softer springs and bars, higher ride over standing water.' : '',
+        brakes: wet ? 'Wet: lower pressure and bias rearward to avoid front lock-ups.' : 'Slight forward bias prevents rear lockups into heavy chicanes.',
+        tyres: '',
+    };
+    setText('tipAero', tips.aerodynamics || dflt.aerodynamics);
+    setText('tipTransmission', tips.transmission || dflt.transmission);
+    setText('tipGeometry', tips.suspension_geometry || dflt.suspension_geometry);
+    setText('tipSuspension', tips.suspension || dflt.suspension);
+    setText('tipBrakes', tips.brakes || dflt.brakes);
+    setText('tipTyres', tips.tyres || dflt.tyres);
 
     // Briefing and key corners
     setText('setupBriefingText', data.engineer_advice || data.ai_consultation || s.notes || 'Setup loaded.');
@@ -693,6 +733,8 @@ function fmtDelta(deltaMs) {
     return `${sign}${(Math.abs(deltaMs) / 1000).toFixed(3)}s`;
 }
 
+let lastSetupSessionMode = null;
+
 async function fetchTelemetry() {
     try {
         const res = await fetch('/api/telemetry');
@@ -735,6 +777,16 @@ async function fetchTelemetry() {
 
         // 2b. Session type: Free Practice / Qualifying / Race / Time Trial
         const mode = data.session_mode || 'unknown';
+        // Follow the game into qualifying or the race once per session change, then leave
+        // the Track Database selector to the driver.
+        if ((mode === 'qualifying' || mode === 'race') && mode !== lastSetupSessionMode) {
+            lastSetupSessionMode = mode;
+            const sessionSel = document.getElementById('sessionSelect');
+            if (sessionSel && sessionSel.value !== mode) {
+                sessionSel.value = mode;
+                sessionSel.dispatchEvent(new Event('change'));
+            }
+        }
         const badge = document.getElementById('sessionBadge');
         if (badge) {
             badge.textContent = (data.session_label || '--').toUpperCase();
@@ -855,6 +907,21 @@ async function fetchTelemetry() {
                     <span class="gap-label">${o.stops}-STOP</span>
                     <span class="gap-val">+${o.slower_by_s.toFixed(1)}s</span>
                 </div>`));
+                // Monte Carlo race simulation: how often each plan comes out best
+                const sim = strat.simulation;
+                if (sim && sim.options && sim.options.length) {
+                    sim.options.forEach((o, i) => {
+                        const r = o.position_range;
+                        rows.push(`<div class="gap-item ${i === 0 ? 'threat-high' : 'threat-low'}">
+                            <span class="gap-label">SIM ${o.label.toUpperCase()} P${r[1]} (P${r[0]}–P${r[2]})</span>
+                            <span class="gap-val">${Math.round(o.p_best * 100)}%</span>
+                        </div>`);
+                    });
+                    rows.push(`<div class="gap-item threat-low">
+                        <span class="gap-label">SIM ${sim.runs} RACES · SC ${Math.round(sim.p_safety_car * 100)}% · VSC ${Math.round(sim.p_vsc * 100)}%</span>
+                        <span class="gap-val">PIT ${sim.pit_loss_s[1].toFixed(1)}s</span>
+                    </div>`);
+                }
                 const uc = strat.undercut_on_car_ahead;
                 if (uc) {
                     rows.push(`<div class="gap-item ${uc.works ? 'threat-high' : 'threat-low'}">
@@ -862,6 +929,19 @@ async function fetchTelemetry() {
                         <span class="gap-val">${uc.works ? 'ON' : 'OFF'}</span>
                     </div>`);
                 }
+                // Rival stop model: who is likely to box when, and onto what
+                const rivals = (strat.rivals && strat.rivals.nearby) || [];
+                rivals.forEach(r => {
+                    const who = r.name ? `${r.name} ` : '';
+                    const [soon, , late] = r.stop_lap_range || [];
+                    const when = !r.will_stop ? 'NO STOP'
+                        : `L${r.stop_lap}${late == null ? '+' : (late - soon >= 3 ? ` (${soon}-${late})` : '')}`;
+                    const onto = r.will_stop && r.next_compound ? ` → ${r.next_compound[0]}` : '';
+                    rows.push(`<div class="gap-item threat-low">
+                        <span class="gap-label">P${r.position} ${who}${r.compound[0]}${r.tyre_age}</span>
+                        <span class="gap-val">${when}${onto}</span>
+                    </div>`);
+                });
                 if (strat.last_call) {
                     rows.push(`<div class="gap-item threat-medium">
                         <span class="gap-label">L${strat.last_call.lap ?? '-'} ${strat.last_call.kind.toUpperCase()}</span>
@@ -869,6 +949,41 @@ async function fetchTelemetry() {
                     </div>`);
                 }
                 strategyList.innerHTML = rows.join('');
+            }
+        }
+
+        // Fitted tyre / fuel models: [low, expected, high] ranges
+        const modelCard = document.getElementById('modelCard');
+        const modelList = document.getElementById('modelList');
+        if (modelCard && modelList) {
+            const m = data.model_ranges;
+            modelCard.style.display = m ? '' : 'none';
+            if (m) {
+                const num = (v, d) => (v === null || v === undefined) ? '?' : Number(v).toFixed(d);
+                const span = (r, d, unit) => r ? `${num(r[1], d)}${unit} (${num(r[0], d)}–${num(r[2], d)})` : '—';
+                const laps = r => r ? `L${r[1] ?? '—'} (${r[0] ?? '—'}–${r[2] ?? 'flag'})` : '—';
+                const basisNames = { track: 'fitted here', pooled: 'other tracks', prior: 'estimate' };
+                const basis = document.getElementById('modelBasis');
+                if (basis) {
+                    basis.textContent = `${basisNames[m.basis] || m.basis}, ${m.fit_laps + m.stint_laps} laps`
+                        + (m.simulated_fit ? ', sim' : '');
+                }
+                const rows = [
+                    ['WEAR / LAP', span(m.wear_per_lap_pct, 2, '%')],
+                    ['WEAR IN 5 LAPS', span(m.wear_in_5_laps_pct, 1, '%')],
+                    ['FALL-OFF', span(m.deg_s_per_lap, 3, 's')],
+                ];
+                if (m.pit_ideal_lap) rows.push(['BOX', laps(m.pit_ideal_lap)]);
+                if (m.pit_latest_lap) rows.push(['LATEST', laps(m.pit_latest_lap)]);
+                if (m.finish_without_stop_prob !== null && m.finish_without_stop_prob !== undefined) {
+                    rows.push(['REACH FLAG', `${Math.round(m.finish_without_stop_prob * 100)}%`]);
+                }
+                if (m.fuel_per_lap_kg) rows.push(['FUEL / LAP', span(m.fuel_per_lap_kg, 2, 'kg')]);
+                if (m.fuel_margin_laps) rows.push(['FUEL MARGIN', span(m.fuel_margin_laps, 1, ' laps')]);
+                modelList.innerHTML = rows.map(([label, value]) => `<div class="gap-item">
+                    <span class="gap-label">${label}</span>
+                    <span class="gap-val">${value}</span>
+                </div>`).join('');
             }
         }
 

@@ -42,6 +42,7 @@ from packets import (
 from voice_engine import VoiceEngine, Priority
 from analysis import AnalysisEngine
 from history import TelemetryHistory
+from fitted_models import ModelStore
 from telemetry_stream import TelemetryStream
 from web_hud import (start_web_hud_server, add_voice_log, set_command_handler,
                      set_setup_ai_client, set_reset_map_handler)
@@ -154,6 +155,13 @@ def main():
     parser.add_argument('--history-dir', type=Path,
                         default=Path(__file__).resolve().parent.parent / 'telemetry-history',
                         help='Directory for track/session telemetry history')
+    parser.add_argument('--models', type=Path, default=None, metavar='FILE',
+                        help='Tyre/fuel models fitted by tools/fit_models.py '
+                             '(default: <history-dir>/fitted_models.json; built-in estimates if missing)')
+    parser.add_argument('--no-race-sim', action='store_true',
+                        help='Turn off the Monte Carlo race simulator (strategy win chances)')
+    parser.add_argument('--sim-runs', type=int, default=300, metavar='N',
+                        help='Races the Monte Carlo simulator runs per update (default 300)')
     tts = parser.add_argument_group('engineer voice')
     tts.add_argument('--tts', choices=('system', 'kokoro'), default='system',
                      help='Voice: system (pyttsx3) or kokoro (free offline neural voice, see neural_voice.py)')
@@ -241,7 +249,17 @@ def main():
 
     # ─── Initialize Analysis Engine ───
     history = TelemetryHistory(args.history_dir / 'telemetry.sqlite3')
-    analysis = AnalysisEngine(voice, history=history, on_demand=not args.chatty)
+    models_path = args.models or args.history_dir / 'fitted_models.json'
+    fitted = ModelStore.load_or_empty(models_path)
+    if fitted.wear or fitted.fuel:
+        print(f"[Models] Loaded {len(fitted.wear)} tyre and {len(fitted.fuel)} fuel fits from {models_path}"
+              + (' (simulator data only)' if fitted.simulated_only else ''))
+    else:
+        print('[Models] No fitted tyre/fuel models yet; using built-in estimates. '
+              'Fit them with: python tools/fit_models.py recordings/*.f1rec.gz')
+    analysis = AnalysisEngine(voice, history=history, on_demand=not args.chatty, fitted=fitted,
+                              race_simulation='off' if args.no_race_sim else 'async',
+                              sim_runs=args.sim_runs)
     stream = TelemetryStream(analysis)
     voice.set_silence_filter(analysis.is_driver_busy)
 
