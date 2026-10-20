@@ -103,17 +103,17 @@ class NamedRadioCallTests(unittest.TestCase):
         self.radio.set_driver_names({0: 'Hamilton', 2: 'Verstappen'})
         self.drive()
         self.assertEqual(self.voice.messages[-1][0],
-                         'Gap to Hamilton ahead is 1.0. Gap to Verstappen behind is 1.0.')
+                         'Gap to Hamilton ahead one point zero. Verstappen behind one point zero.')
 
     def test_gap_call_without_names_is_unchanged(self):
         self.drive()
-        self.assertEqual(self.voice.messages[-1][0], 'Gap ahead is 1.0. Gap behind is 1.0.')
+        self.assertEqual(self.voice.messages[-1][0], 'Gap ahead one point zero. Car behind one point zero.')
 
     def test_partial_names_only_name_the_known_car(self):
         self.radio.set_driver_names({2: 'Verstappen'})
         self.drive()
         self.assertEqual(self.voice.messages[-1][0],
-                         'Gap ahead is 1.0. Gap to Verstappen behind is 1.0.')
+                         'Gap ahead one point zero. Verstappen behind one point zero.')
 
     def test_threats_carry_the_driver_name(self):
         self.radio.set_driver_names({0: 'Hamilton', 2: 'Verstappen'})
@@ -127,14 +127,14 @@ class NamedRadioCallTests(unittest.TestCase):
         for lap_num in range(1, 4):
             self.radio.completed_lap(91000, lap_num, {}, {})
         message = self.voice.messages[-1][0]
-        self.assertIn('Race pace over the last three clean laps', message)
-        self.assertIn('Hamilton ahead 0.2 quicker.', message)
+        self.assertIn('Last three laps averaging', message)
+        self.assertIn('Hamilton ahead two tenths quicker.', message)
         self.assertIn('Verstappen behind on the same pace.', message)
 
     def test_pace_comparison_falls_back_to_car_without_names(self):
         self.drive(last_laps=(91500, 91000, 90500))
         self.assertEqual(self.radio.pace_comparison(91000),
-                         'Car ahead 0.5 slower. Car behind 0.5 quicker.')
+                         'Car ahead half a second slower. Car behind half a second quicker.')
 
 
 class NamedAnswersTests(unittest.TestCase):

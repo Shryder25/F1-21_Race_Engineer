@@ -23,6 +23,7 @@ import session_modes
 from voice_engine import VoiceEngine, Priority
 from history import TelemetryHistory
 from race_radio import RaceRadio
+from race_events import RaceControl
 import radio_phrases as say
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
@@ -139,6 +140,7 @@ class AnalysisEngine:
         self._corner_key: tuple | None = None
         self.radio = RaceRadio(self.speak)
         self.phrases = self.radio.phrases
+        self.race_control = RaceControl(self.speak)
         self.history = history
         self.capture_id: str | None = None
         self.session_uid: int | None = None
