@@ -252,6 +252,7 @@ class TelemetryStream:
             self.rewind_anchor = None
         self.analysis.radio.update_field(laps, self.player_index, lap_time, now=now)
         self.analysis.race_control.update_field(laps, self.player_index, lap_time)
+        self.analysis.update_field(laps, self.player_index, lap_time)
         self.analysis.update_telemetry(telemetry, lap)
         update_web_state({'last_update_monotonic': now})
         return True

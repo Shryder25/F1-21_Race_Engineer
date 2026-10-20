@@ -40,7 +40,7 @@ def match_command(text: str) -> str | None:
         return None
     if re.search(r'\b(threat|threats|attacking|pressure|catching|closing)\b', t):
         return 'threats'
-    if re.search(r'\b(undercut|overcut|strategy|plan|how many stops|one stop|two stop|which tyres?|what tyres?|compound)\b', t):
+    if re.search(r'\b(undercut|overcut|strategy|plan|how many stops|one stop|two stop|which tyres?|what tyres?|compound|what are (?:our|the|my) chances|chances of (?:winning|a podium)|odds|win probability)\b', t):
         return 'strategy'
     if 'behind' in t or 'chasing' in t:
         return 'gap_behind'
