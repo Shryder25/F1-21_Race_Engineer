@@ -352,8 +352,17 @@
                     </select>
                 </div>
 
+                <div class="control-group">
+                    <label for="distanceSelect">RACE DISTANCE:</label>
+                    <select id="distanceSelect" class="f1-select">
+                        <option value="1">100% (full race)</option>
+                        <option value="0.5">50% race</option>
+                        <option value="0.25">25% race</option>
+                    </select>
+                </div>
+
                 <button class="f1-action-btn" id="btnConsultAI">
-                    <span class="btn-icon">🧠</span> CONSULT DEEPSEEK SETUP ADVISOR
+                    <span class="btn-icon">🧠</span> RE-ANALYSE WITH DEEPSEEK
                 </button>
             </div>
 
@@ -364,10 +373,56 @@
                     <span class="t-pill" id="setupLength">5,891 m</span>
                     <span class="t-pill" id="setupTurns">18 Turns</span>
                     <span class="t-pill" id="setupDownforce">Downforce: High</span>
-                    <span class="t-pill" id="setupTyreWear">Tyre Degradation: High</span>
+                    <span class="t-pill" id="setupTyreWear">Tyre Degradation: —</span>
+                    <span class="t-pill" id="setupConditions">DRY</span>
+                    <span class="t-pill source-pill" id="analysisSource">Analysing…</span>
                 </div>
                 <div class="t-desc" id="setupCharacteristics">
                     High-speed sweeping corners; Maggots-Becketts-Chapel produces the highest sustained lateral acceleration on the calendar.
+                </div>
+            </div>
+
+            <!-- Track Analysis: tyres, strategy, demands (computed per track and per conditions) -->
+            <div class="track-analysis-grid">
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">A</span>
+                        <h3>TYRE DEGRADATION</h3>
+                        <span class="deg-badge" id="degBadge">—</span>
+                    </div>
+                    <table class="deg-table">
+                        <thead><tr><th>Compound</th><th>Loss / lap of age</th><th>Life</th></tr></thead>
+                        <tbody id="degTableBody"></tbody>
+                    </table>
+                    <div class="setup-tip" id="degReasoning"></div>
+                </div>
+
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">B</span>
+                        <h3>RACE STRATEGY</h3>
+                        <span class="deg-badge" id="strategyLaps">—</span>
+                    </div>
+                    <div class="strategy-row">
+                        <span class="p-name">Fastest:</span>
+                        <div class="stint-bar" id="strategyBest"></div>
+                    </div>
+                    <div class="strategy-row">
+                        <span class="p-name">Alternative:</span>
+                        <div class="stint-bar" id="strategyAlt"></div>
+                    </div>
+                    <div class="strategy-ai" id="strategyAi"></div>
+                    <ul class="strategy-notes" id="strategyNotes"></ul>
+                </div>
+
+                <div class="setup-card">
+                    <div class="card-head">
+                        <span class="cat-num">C</span>
+                        <h3>TRACK DEMANDS (REAL-RACE DATA)</h3>
+                    </div>
+                    <div id="demandBars"></div>
+                    <div class="race-facts" id="raceFacts"></div>
+                    <div class="setup-tip" id="dataSource"></div>
                 </div>
             </div>
 
@@ -404,7 +459,7 @@
                         <span class="p-name">Differential Off-Throttle:</span>
                         <span class="p-value" id="valDiffOff">56%</span>
                     </div>
-                    <div class="setup-tip">Higher off-throttle helps trail-braking stability.</div>
+                    <div class="setup-tip" id="tipTransmission">Higher off-throttle helps trail-braking stability.</div>
                 </div>
 
                 <!-- 3. Suspension Geometry -->
@@ -429,6 +484,7 @@
                         <span class="p-name">Rear Toe-In:</span>
                         <span class="p-value" id="valRearToe">0.24°</span>
                     </div>
+                    <div class="setup-tip" id="tipGeometry"></div>
                 </div>
 
                 <!-- 4. Suspension -->
@@ -449,6 +505,7 @@
                         <span class="p-name">Front / Rear Ride Height:</span>
                         <span class="p-value" id="valRideHeight">2 / 4</span>
                     </div>
+                    <div class="setup-tip" id="tipSuspension"></div>
                 </div>
 
                 <!-- 5. Brakes -->
@@ -465,7 +522,7 @@
                         <span class="p-name">Front Brake Bias:</span>
                         <span class="p-value" id="valBrakeBias">56%</span>
                     </div>
-                    <div class="setup-tip">Slight forward bias prevents rear lockups into heavy chicanes.</div>
+                    <div class="setup-tip" id="tipBrakes">Slight forward bias prevents rear lockups into heavy chicanes.</div>
                 </div>
 
                 <!-- 6. Tyres -->
@@ -486,6 +543,7 @@
                         <span class="p-name">Rear Pressures:</span>
                         <span class="p-value" id="valRearPsi">22.4 PSI</span>
                     </div>
+                    <div class="setup-tip" id="tipTyres"></div>
                 </div>
             </div>
 
@@ -496,8 +554,9 @@
                     <h4>CHIEF RACE ENGINEER BRIEFING & TACTICAL ADVICE</h4>
                 </div>
                 <div class="brief-body" id="setupBriefingText">
-                    Loading circuit telemetry baseline setup...
+                    Loading circuit analysis...
                 </div>
+                <ul class="key-corners" id="keyCorners"></ul>
             </div>
         </div>
     </main>
