@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import copy
 import math
+import random
 import struct
 from dataclasses import dataclass, field
 
@@ -91,6 +92,16 @@ class Scenario:
     script: list = field(default_factory=list)
     end_after_laps: float | None = None   # stop early (qualifying), in player laps
     description: str = ''
+    # Tyre/fuel behaviour (defaults reproduce the golden sessions byte for byte). Noise is
+    # drawn from a generator seeded with `seed`, so a scenario still always gives the same bytes.
+    wear_scale: float = 1.0           # multiplies every compound's wear rate (track severity)
+    wear_growth: float = 0.0          # wear rate grows by this fraction per lap of tyre age
+    wear_noise: float = 0.0           # lap-to-lap wear scatter, relative sd
+    stint_noise: float = 0.0          # each set wears differently, relative sd of its rate
+    fuel_per_lap_kg: float = FUEL_PER_LAP_KG
+    fuel_noise: float = 0.0           # lap-to-lap fuel burn scatter, kg sd
+    lap_noise_s: float = 0.0          # lap-to-lap pace scatter, s sd
+    seed: int = 0
 
 
 def _q(metres: float) -> float:
@@ -161,6 +172,8 @@ class _CarState:
         self.lap_invalid = 0
         self.best_lap_ms = 0
         self.finish_t = None
+        self.stint_factor = 1.0           # this set's wear relative to the compound's rate
+        self.lap_jitter = 0.0
 
 
 class SessionSimulator:
@@ -192,7 +205,15 @@ class SessionSimulator:
             start = -8.0 * slot - 5.0 if self.is_race else -40.0 * slot - 300.0
             self.cars.append(_CarState(index, car, start, scenario.fuel_kg))
         self.lights_out_t = 5.0 if self.is_race else 0.0
+        noisy = scenario.wear_noise or scenario.stint_noise or scenario.fuel_noise or scenario.lap_noise_s
+        self.rng = random.Random(scenario.seed) if noisy else None
+        for car in self.cars:
+            self._new_set(car)
         self.trap_m = 10.0 * max(range(len(self.profile)), key=lambda i: (self.profile[i], -i))
+
+    def _new_set(self, car):
+        if self.rng is not None:
+            car.stint_factor = max(0.2, 1.0 + self.rng.gauss(0.0, self.sc.stint_noise))
 
     # ── track model ──
     def _speed_profile(self):
@@ -228,7 +249,8 @@ class SessionSimulator:
 
     def target_lap_s(self, car):
         _vis, _act, offset, deg, _wear = COMPOUNDS[car.compound]
-        lap = self.base_lap_s + car.car.pace + offset + deg * car.age + FUEL_TIME_S_PER_KG * car.fuel
+        lap = (self.base_lap_s + car.car.pace + offset + deg * car.age + FUEL_TIME_S_PER_KG * car.fuel
+               + car.lap_jitter)
         wet = self.weather >= 3
         if wet and car.compound in SLICKS:
             lap += 4.5 if self.weather == 3 else 10.0
@@ -403,6 +425,7 @@ class SessionSimulator:
             car.compound = car.car.pits[car.lap_num]
             car.age = 0
             car.wear = 0.0
+            self._new_set(car)
             car.pit_stops += 1
             if car.index == 0:
                 self.wing_damage = 0                # new nose
@@ -416,9 +439,16 @@ class SessionSimulator:
         car.lap_num += 1
         car.sector = 0
         car.s1_ms = car.s2_ms = 0
+        sc = self.sc
+        wear = COMPOUNDS[car.compound][4] * sc.wear_scale * (1.0 + sc.wear_growth * car.age)
+        burn = sc.fuel_per_lap_kg
+        if self.rng is not None:
+            wear *= car.stint_factor * max(0.0, 1.0 + self.rng.gauss(0.0, sc.wear_noise))
+            burn = max(0.0, burn + self.rng.gauss(0.0, sc.fuel_noise))
+            car.lap_jitter = self.rng.gauss(0.0, sc.lap_noise_s)
         car.age += 1
-        car.wear += COMPOUNDS[car.compound][4]
-        car.fuel = max(0.0, car.fuel - FUEL_PER_LAP_KG)
+        car.wear += wear
+        car.fuel = max(0.0, car.fuel - burn)
         valid = not car.lap_invalid and not car.pit_status
         car.lap_invalid = 0
         if self.is_race and valid and car.lap_num > 2:      # lap one is a standing start

@@ -76,11 +76,11 @@ METRICS = {
     'gap': ('Gap forecast', 's'),
 }
 PREDICTORS = {
-    'ml_ideal': 'Engineer ML wear model, target lap (60% wear)',
-    'ml_latest': 'Engineer ML wear model, latest lap (75% wear)',
+    'ml_ideal': 'Engineer fitted wear model, target lap (60% wear)',
+    'ml_latest': 'Engineer fitted wear model, latest lap (75% wear)',
     'strategy': 'Engineer race-strategy plan, next stop',
     'game_window': "Game's own pit window, ideal lap (baseline)",
-    'ml_curve': 'Engineer ML wear curve',
+    'ml_curve': 'Engineer fitted wear model (expected value)',
     'last_lap_rate': "Last lap's wear rate carried on (baseline)",
     'race_pace': 'Engineer race pace (last 3 clean laps)',
     'last_lap': 'Previous lap time (baseline)',
@@ -240,12 +240,16 @@ def engineer_snapshot(engine: AnalysisEngine, truth: GroundTruth) -> dict:
         pit['game_window'] = _pit_value(window[0], total)
     snap['pit'] = pit
 
-    wear = {}
-    model = engine.tyre_model() if status else None
+    wear, wear_range = {}, {}
+    model = engine.wear_forecast() if status else None
     if model is not None and status is not None:
+        wear_now = max(engine.latest_damage.tyres_wear) if engine.latest_damage else 0.0
         for k in WEAR_HORIZONS:
-            wear[k] = round(min(100.0, max(0.0, model.wear_at(status.tyres_age_laps + k))), 2)
+            forecast = model.wear_after(status.tyres_age_laps, wear_now, k)
+            wear[k] = round(min(100.0, max(0.0, forecast.mid)), 2)
+            wear_range[k] = [round(forecast.low, 2), round(forecast.high, 2)]
     snap['wear_pred'] = wear
+    snap['wear_range'] = wear_range
     snap['race_pace_ms'] = engine.radio.race_pace_ms
 
     radio = engine.radio
@@ -354,9 +358,13 @@ def _feed_truth(segments: dict, data: bytes):
 # Comparing predictions with what happened
 # ──────────────────────────────────────────────
 
-def _sample(metric, predictor, horizon, lap, predicted, actual):
-    return {'metric': metric, 'predictor': predictor, 'horizon': horizon, 'lap': lap,
-            'predicted': predicted, 'actual': actual, 'error': round(predicted - actual, 3)}
+def _sample(metric, predictor, horizon, lap, predicted, actual, low=None, high=None):
+    sample = {'metric': metric, 'predictor': predictor, 'horizon': horizon, 'lap': lap,
+              'predicted': predicted, 'actual': actual, 'error': round(predicted - actual, 3)}
+    if low is not None and high is not None:
+        sample['range'] = [low, high]
+        sample['in_range'] = low <= actual <= high
+    return sample
 
 
 def evaluate(segment: Segment) -> dict:
@@ -394,8 +402,9 @@ def evaluate(segment: Segment) -> dict:
                     or target['worst_wear'] is None or snap['worst_wear'] is None):
                 continue
             if k in snap['wear_pred']:
+                low, high = (snap.get('wear_range') or {}).get(k, (None, None))
                 samples.append(_sample('tyre_wear', 'ml_curve', f'+{k} lap{"s" * (k > 1)}', lap,
-                                       snap['wear_pred'][k], target['worst_wear']))
+                                       snap['wear_pred'][k], target['worst_wear'], low, high))
             before = snaps.get(lap - 1)
             if before and before['stops_done'] == snap['stops_done'] and before['worst_wear'] is not None:
                 rate = snap['worst_wear'] - before['worst_wear']
@@ -466,17 +475,23 @@ def summarize(errors) -> dict:
 
 def summary_rows(samples) -> list[dict]:
     """One row per (metric, predictor, horizon), plus an all-horizons row per (metric, predictor)."""
-    groups = defaultdict(list)
+    groups, ranges = defaultdict(list), defaultdict(list)
     for s in samples:
-        groups[(s['metric'], s['predictor'], s['horizon'])].append(s['error'])
-        groups[(s['metric'], s['predictor'], 'all')].append(s['error'])
+        for horizon in (s['horizon'], 'all'):
+            groups[(s['metric'], s['predictor'], horizon)].append(s['error'])
+            if 'in_range' in s:
+                ranges[(s['metric'], s['predictor'], horizon)].append(s['in_range'])
     order = list(METRICS)
     rows = []
     for (metric, predictor, horizon), errors in groups.items():
         if horizon == 'all' and len({s['horizon'] for s in samples
                                      if s['metric'] == metric and s['predictor'] == predictor}) == 1:
             continue   # a single horizon already says it all
-        rows.append({'metric': metric, 'predictor': predictor, 'horizon': horizon, **summarize(errors)})
+        row = {'metric': metric, 'predictor': predictor, 'horizon': horizon, **summarize(errors)}
+        hits = ranges.get((metric, predictor, horizon))
+        if hits:
+            row['in_range'] = round(sum(hits) / len(hits), 3)
+        rows.append(row)
     rows.sort(key=lambda r: (order.index(r['metric']), list(PREDICTORS).index(r['predictor']),
                              r['horizon'] == 'all', _horizon_key(r['horizon'])))
     return rows
@@ -563,13 +578,15 @@ def _fmt(value, places=2):
 def _summary_table(rows) -> list[str]:
     if not rows:
         return ['_No comparable laps._', '']
-    lines = ['| What | Predictor | Horizon | n | Mean abs error | Median abs error | Bias | Worst |',
-             '|---|---|---|---:|---:|---:|---:|---:|']
+    lines = ['| What | Predictor | Horizon | n | Mean abs error | Median abs error | Bias | Worst | '
+             'Inside 80% range |',
+             '|---|---|---|---:|---:|---:|---:|---:|---:|']
     for r in rows:
         label, unit = METRICS[r['metric']]
+        coverage = '–' if r.get('in_range') is None else f"{r['in_range'] * 100:.0f}%"
         lines.append(f"| {label} ({unit}) | {PREDICTORS[r['predictor']]} | {r['horizon']} | {r['n']} | "
                      f"{_fmt(r.get('mae'))} | {_fmt(r.get('median_ae'))} | {_fmt(r.get('bias'), 2)} | "
-                     f"{_fmt(r.get('max_ae'))} |")
+                     f"{_fmt(r.get('max_ae'))} | {coverage} |")
     return lines + ['']
 
 
@@ -611,7 +628,9 @@ def render_markdown(report: dict) -> str:
             'agreement with what you did, which is not always the optimal lap.',
             '* **Lap time** excludes lap 1, in- and out-laps and Safety Car laps. **Gap forecasts** '
             'skip any window where either car pitted or a Safety Car came out.',
-            '* Rows marked baseline are simple rules of thumb; the engineer should beat them.', '',
+            '* Rows marked baseline are simple rules of thumb; the engineer should beat them.',
+            '* **Inside 80% range**: how often the truth landed inside the range the fitted model '
+            'gave. About 80% means the ranges are honest; much lower means they are too narrow.', '',
             '## All races', '']
     out += _summary_table(report['aggregate']['summary'])
     out += ['### Pit-stop calls', '']

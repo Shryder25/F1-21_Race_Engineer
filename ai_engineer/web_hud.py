@@ -70,6 +70,7 @@ dashboard_state: dict[str, Any] = {
     "pit_window": None,
     "opponent_threats": [],
     "race_strategy": None,
+    "model_ranges": None,       # fitted tyre/fuel model ranges (AnalysisEngine.model_summary)
     "race_control": [],
     "tire_health": None,
     "race_report": [],

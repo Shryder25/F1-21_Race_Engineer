@@ -28,6 +28,7 @@ import radio_phrases as say
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
 import race_strategy
+import fitted_models
 
 
 # ──────────────────────────────────────────────
@@ -119,8 +120,13 @@ class AnalysisEngine:
     """The brain of the AI Race Engineer."""
 
     def __init__(self, voice: VoiceEngine, history: TelemetryHistory | None = None,
-                 on_demand: bool = False):
+                 on_demand: bool = False, fitted: fitted_models.ModelStore | None = None):
         self.voice = voice
+        # Tyre/fuel models fitted to the game (tools/fit_models.py); empty = built-in priors.
+        self.fitted = fitted if fitted is not None else fitted_models.ModelStore()
+        self._history_records: list | None = None
+        self._session_captures: set[str] = set()
+        self._forecast_cache: tuple | None = None
         self.on_demand = on_demand
         self.latest_telemetry: CarTelemetryData | None = None
         self.latest_lap: LapData | None = None
@@ -205,6 +211,9 @@ class AnalysisEngine:
             self.best_sector_times.clear()
             self.session_lap_stats.clear()
             self._ml_cache = None
+            self._forecast_cache = None
+            self._history_records = None
+            self._session_captures = set()
             self.latest_status = self.latest_damage = None
             self.all_status = None
             self.compounds_used.clear()
@@ -284,6 +293,8 @@ class AnalysisEngine:
             return
         try:
             self.capture_id = self.history.start_session(session, session_uid)
+            self._session_captures.add(self.capture_id)
+            self._history_records = None
             reference = self.history.best_reference(session)
             if reference:
                 self.delta.best_lap_time_ms = reference['lap_time_ms']
@@ -799,83 +810,193 @@ class AnalysisEngine:
         }
         self.session_lap_stats.append(stats)
         self._ml_cache = None
+        self._forecast_cache = None
         if self.history and self.capture_id:
             try:
                 self.history.record_lap_stats(self.capture_id, stats)
             except (OSError, ValueError, sqlite3.Error) as error:
                 print(f'[History] Could not save lap stats: {error}')
 
-    def _history_args(self):
-        return (self.session, self.capture_id) if self.history and self.session else None
+    # ── Fitted tyre / fuel models (fitted_models.py): ranges, not single numbers ──
+
+    def _past_records(self) -> list:
+        """Laps from earlier sessions on this track that the fitted store has not seen yet."""
+        if self._history_records is None:
+            records = []
+            if self.history and self.session:
+                try:
+                    records, _ = fitted_models.laps_from_history(
+                        self.history, self.fitted.consumed_captures | self._session_captures,
+                        track_id=self.session.track_id)
+                except sqlite3.Error as error:
+                    print(f'[History] Could not load lap history: {error}')
+                records = [r for r in records if r.track_length == self.session.track_length]
+            self._history_records = records
+        return self._history_records
+
+    def _session_records(self) -> list:
+        s = self.session
+        if s is None:
+            return []
+        return fitted_models.records_from_lap_rows(
+            self.session_lap_stats, source='live', session='live', track_id=s.track_id,
+            track_length=s.track_length, session_type=s.session_type,
+            race_laps=self._race_laps(), wet=s.weather >= 3)
+
+    def _race_laps(self) -> int:
+        s = self.session
+        return s.total_laps if s and session_modes.has_pit_strategy(self.session_mode) else 0
+
+    def model_forecast(self) -> dict | None:
+        """Wear, degradation and fuel models for the car's current tyres and track.
+
+        Each model is the stored fit (or its fallback), refined with earlier sessions in the
+        history database and then with this stint's / session's own laps. Cached per lap.
+        """
+        status, session = self.latest_status, self.session
+        if status is None or session is None:
+            return None
+        key = (status.actual_tyre_compound, status.tyres_age_laps, len(self.session_lap_stats),
+               session.track_id, session.weather >= 3)
+        if self._forecast_cache and self._forecast_cache[0] == key:
+            return self._forecast_cache[1]
+        compound = status.actual_tyre_compound
+        past = [r for r in self._past_records()]
+        session_records = self._session_records()
+        stint = fitted_models.current_stint(session_records, compound, status.tyres_age_laps)
+        ckey = fitted_models.compound_key(compound)
+        same_compound_past = [r for r in past + session_records
+                              if r.compound == ckey and r.stint not in {x.stint for x in stint}]
+
+        wear_model = fitted_models.refine(
+            self.fitted.wear_model(session.track_id, compound, self._race_laps()), same_compound_past)
+        stint_wear = wear_model.condition(*fitted_models.stint_increments(stint))
+        deg_model = fitted_models.refine(self.fitted.deg_model(session.track_id, compound),
+                                         same_compound_past)
+        deg_ages, deg_times = fitted_models.stint_times(stint)
+        deg = deg_model.condition(deg_ages, deg_times)
+        fuel_model = fitted_models.refine(
+            self.fitted.fuel_model(session.track_id, session.track_length, self._race_laps()),
+            [r for r in past if r.session != 'live'])
+        session_fuel = fuel_model.condition([u for r in session_records
+                                             if (u := r.fuel_used) is not None])
+        forecast = {'stint_wear': stint_wear, 'deg': deg, 'deg_laps': len(deg_ages),
+                    'deg_basis': deg_model.basis, 'deg_fit_laps': deg_model.n_laps,
+                    'fuel': session_fuel, 'compound': ckey}
+        self._forecast_cache = (key, forecast)
+        return forecast
+
+    def wear_forecast(self) -> fitted_models.StintWear | None:
+        """The wear model conditioned on this stint, or None until there is any data at all."""
+        forecast = self.model_forecast()
+        if forecast is None:
+            return None
+        stint = forecast['stint_wear']
+        if stint.model.n_laps == 0 and stint.stint_laps < 2:
+            return None             # built-in estimate only: not enough to quote a window from
+        return stint
 
     def tyre_model(self):
-        """Wear curve for the current compound from this session plus earlier sessions."""
-        status = self.latest_status
-        if status is None:
-            return None
-        compound = status.actual_tyre_compound
-        samples = [(st['tyre_age_laps'], max(st['wear']))
-                   for st in self.session_lap_stats
-                   if st['compound'] == compound and st['wear'] is not None
-                   and st['tyre_age_laps'] is not None]
-        args = self._history_args()
-        if args:
-            try:
-                samples += self.history.tyre_wear_samples(args[0], compound, exclude_capture=args[1])
-            except sqlite3.Error as error:
-                print(f'[History] Could not load wear history: {error}')
-        return strategy_ml.fit_wear_curve(samples)
+        """Backwards-compatible name for the current stint's wear forecast."""
+        return self.wear_forecast()
+
+    def _worst_wear(self) -> float:
+        return max(self.latest_damage.tyres_wear) if self.latest_damage else 0.0
 
     def pit_prediction(self):
-        """ML pit window (lap numbers) from tyre age, or None until there is enough data."""
+        """Pit window (lap ranges) from the fitted wear model, or None until there is data."""
         status, lap, session = self.latest_status, self.latest_lap, self.session
         if status is None or lap is None or session is None:
             return None
         if not session_modes.has_pit_strategy(self.session_mode):
             return None     # no stops in qualifying or time trial
-        key = (lap.current_lap_num, status.actual_tyre_compound, len(self.session_lap_stats))
+        key = (lap.current_lap_num, status.actual_tyre_compound, status.tyres_age_laps,
+               len(self.session_lap_stats))
         if self._ml_cache and self._ml_cache[0] == key:
             return self._ml_cache[1]
         prediction = strategy_ml.predict_pit_window(
-            self.tyre_model(), status.tyres_age_laps, lap.current_lap_num, session.total_laps)
+            self.wear_forecast(), status.tyres_age_laps, self._worst_wear(), lap.current_lap_num,
+            session.total_laps)
         self._ml_cache = (key, prediction)
         return prediction
 
     def fuel_prediction(self) -> dict | None:
-        """Learned fuel burn per lap and how many laps the current load lasts."""
+        """Fuel burn per lap and the margin at the flag, as ranges (low end = the worry)."""
         status = self.latest_status
         if status is None:
             return None
-        samples = [st['fuel_start'] - st['fuel_end'] for st in self.session_lap_stats
-                   if st['eligible'] and st['fuel_start'] is not None and st['fuel_end'] is not None]
-        args = self._history_args()
-        if args:
-            try:
-                samples += self.history.fuel_use_samples(args[0], exclude_capture=args[1])
-            except sqlite3.Error as error:
-                print(f'[History] Could not load fuel history: {error}')
-        per_lap = strategy_ml.fuel_per_lap(samples)
-        result = {'fuel_kg': round(status.fuel_in_tank, 1), 'per_lap_kg': per_lap,
+        result = {'fuel_kg': round(status.fuel_in_tank, 1), 'per_lap_kg': None,
                   'game_laps_remaining': round(status.fuel_remaining_laps, 1), 'laps_of_fuel': None,
-                  'margin_laps': None}
-        if per_lap:
-            result['laps_of_fuel'] = round(status.fuel_in_tank / per_lap, 1)
-            lap, session = self.latest_lap, self.session
-            if lap and session and session.total_laps > 0:
-                result['margin_laps'] = round(
-                    result['laps_of_fuel'] - (session.total_laps - lap.current_lap_num + 1), 1)
+                  'margin_laps': None, 'per_lap_kg_range': None, 'laps_of_fuel_range': None,
+                  'margin_laps_range': None, 'margin_kg_range': None, 'basis': None,
+                  'level': fitted_models.DEFAULT_LEVEL}
+        forecast = self.model_forecast()
+        if forecast is None:
+            return result
+        fuel = forecast['fuel']
+        result['basis'] = fuel.model.basis
+        result['fit_laps'] = fuel.model.n_laps
+        result['session_laps'] = fuel.session_laps
+        per = fuel.per_lap()
+        laps_of_fuel = fuel.laps_of_fuel(status.fuel_in_tank)
+        result['per_lap_kg_range'] = per.as_list(3)
+        result['laps_of_fuel_range'] = laps_of_fuel.as_list(1)
+        if fuel.model.n_laps or fuel.session_laps:     # a fit or this session's laps: quote it
+            result['per_lap_kg'] = round(per.mid, 3)
+            result['laps_of_fuel'] = round(laps_of_fuel.mid, 1)
+        lap, session = self.latest_lap, self.session
+        if lap and session and session.total_laps > 0:
+            to_go = session.total_laps - lap.current_lap_num + 1
+            kg, laps = fuel.margin(status.fuel_in_tank, to_go)
+            result['margin_kg_range'] = kg.as_list(2)
+            result['margin_laps_range'] = laps.as_list(1)
+            if result['per_lap_kg'] is not None:
+                result['margin_laps'] = round(laps.mid, 1)
         return result
 
+    def deg_forecast(self) -> fitted_models.Range | None:
+        forecast = self.model_forecast()
+        return forecast['deg'] if forecast else None
+
     def pace_trend(self) -> float | None:
-        """Fuel-corrected tyre fall-off in s/lap for the current stint."""
-        status = self.latest_status
-        if status is None:
+        """Fuel-corrected tyre fall-off in s/lap for the current stint (fitted model + stint laps).
+
+        None until the stint has three clean laps and there is no fitted model to lean on.
+        """
+        forecast = self.model_forecast()
+        if forecast is None:
             return None
-        stint = [(st['tyre_age_laps'], st['lap_time_ms'], st['fuel_start'])
-                 for st in self.session_lap_stats
-                 if st['eligible'] and st['compound'] == status.actual_tyre_compound
-                 and st['tyre_age_laps'] is not None]
-        return strategy_ml.pace_degradation(stint[-8:])
+        if forecast['deg_laps'] < 3 and forecast['deg_fit_laps'] == 0:
+            return None
+        return round(forecast['deg'].mid, 3)
+
+    def model_summary(self) -> dict | None:
+        """Ranges for the HUD and the AI prompt: wear, degradation, pit window, fuel."""
+        forecast = self.model_forecast()
+        status = self.latest_status
+        if forecast is None or status is None:
+            return None
+        stint = forecast['stint_wear']
+        model = stint.model
+        age, wear = status.tyres_age_laps, self._worst_wear()
+        prediction = self.pit_prediction()
+        fuel = self.fuel_prediction() or {}
+        return {
+            'level': fitted_models.DEFAULT_LEVEL,
+            'compound': forecast['compound'], 'compound_name': status.compound_name,
+            'basis': model.basis, 'fit_laps': model.n_laps, 'fit_stints': model.n_stints,
+            'stint_laps': stint.stint_laps, 'simulated_fit': bool(model.simulated and model.n_laps),
+            'wear_now_pct': round(wear, 1),
+            'wear_per_lap_pct': stint.rate(age).as_list(2),
+            'wear_in_5_laps_pct': stint.wear_after(age, wear, 5).as_list(1),
+            'deg_s_per_lap': forecast['deg'].as_list(3), 'deg_basis': forecast['deg_basis'],
+            'pit_ideal_lap': prediction.ideal_lap_range if prediction else None,
+            'pit_latest_lap': prediction.latest_lap_range if prediction else None,
+            'finish_without_stop_prob': prediction.finish_without_stop_prob if prediction else None,
+            'fuel_per_lap_kg': fuel.get('per_lap_kg_range'),
+            'fuel_margin_laps': fuel.get('margin_laps_range'),
+            'fuel_basis': fuel.get('basis'),
+        }
 
     def tire_health(self):
         """Instant physics-model tyre read: grip, health and overheat risk, no lap history needed.
@@ -896,12 +1017,26 @@ class AnalysisEngine:
     # Race strategy (stops, compounds, undercut / overcut)
     # ──────────────────────────────────────────
 
-    def _strategy_calibration(self) -> tuple[float, float]:
+    def _strategy_calibration(self, case: str = 'expected') -> tuple[float, float]:
+        """(deg_scale, life_scale) for the expected case, or the ends of the model ranges:
+        'worse' = tyres fall off faster and wear out sooner, 'better' = the opposite."""
         status = self.latest_status
         prediction = self.pit_prediction()
-        return race_strategy.calibration(
-            status.compound_name, status.tyres_age_laps, self.pace_trend(),
-            prediction.laps_to_latest if prediction else None)
+        deg = self.pace_trend()
+        to_limit = prediction.laps_to_latest if prediction else None
+        if case != 'expected':
+            spread = self.deg_forecast()
+            if deg is not None and spread is not None:
+                deg = spread.high if case == 'worse' else spread.low
+            if prediction is not None and prediction.latest_lap_range:
+                lap = self.latest_lap.current_lap_num
+                soonest, _mid, latest = prediction.latest_lap_range
+                bound = soonest if case == 'worse' else latest
+                if bound is not None:
+                    to_limit = bound - lap
+                elif case == 'better':
+                    to_limit = None if to_limit is None else to_limit * 1.5
+        return race_strategy.calibration(status.compound_name, status.tyres_age_laps, deg, to_limit)
 
     def strategy_plan(self):
         """Best stop count and compound sequence for the rest of the race, or None outside a race."""
@@ -913,12 +1048,38 @@ class AnalysisEngine:
                frozenset(self.compounds_used), session.track_id, laps_remaining, len(self.session_lap_stats))
         if self._strategy_cache and self._strategy_cache[0] == key:
             return self._strategy_cache[1]
+        args = (laps_remaining, status.compound_name, status.tyres_age_laps, lap.current_lap_num,
+                race_strategy.pit_loss_s(session.track_id), self.compounds_used)
         scales = self._strategy_calibration()
-        plan = race_strategy.plan_race(
-            laps_remaining, status.compound_name, status.tyres_age_laps, lap.current_lap_num,
-            race_strategy.pit_loss_s(session.track_id), self.compounds_used, *scales)
-        self._strategy_cache = (key, plan, scales)
+        plan = race_strategy.plan_race(*args, *scales)
+        # The same plan at both ends of the tyre-model ranges: does the call survive?
+        cases = {}
+        for case in ('worse', 'better'):
+            case_scales = self._strategy_calibration(case)
+            cases[case] = plan if case_scales == scales else race_strategy.plan_race(*args, *case_scales)
+        self._strategy_cache = (key, plan, scales, cases)
         return plan
+
+    def strategy_uncertainty(self) -> dict | None:
+        """How the plan changes if the tyres turn out at either end of the model's range."""
+        plan = self.strategy_plan()
+        if plan is None or not self._strategy_cache or len(self._strategy_cache) < 4:
+            return None
+        cases = self._strategy_cache[3]
+        out = {'level': fitted_models.DEFAULT_LEVEL}
+        stops, next_stop = [], []
+        for case in ('worse', 'expected', 'better'):
+            option = (cases.get(case) if case != 'expected' else plan)
+            option = option.best if option is not None else None
+            out[case] = None if option is None else {
+                'stops': option.stops, 'compounds': option.compounds, 'pit_laps': option.pit_laps}
+            if option is not None:
+                stops.append(option.stops)
+                if option.pit_laps:
+                    next_stop.append(option.pit_laps[0])
+        out['stops_agree'] = len(set(stops)) <= 1
+        out['next_stop_lap_range'] = [min(next_stop), max(next_stop)] if next_stop else None
+        return out
 
     def strategy_scales(self) -> tuple[float, float]:
         """(deg_scale, life_scale) the current plan was built with."""
@@ -977,6 +1138,13 @@ class AnalysisEngine:
             return None
         summary = plan.as_dict()
         summary['radio'] = race_strategy.describe_plan(plan)
+        uncertainty = self.strategy_uncertainty()
+        summary['uncertainty'] = uncertainty
+        if uncertainty and not uncertainty['stops_agree'] and uncertainty['worse']:
+            worse = uncertainty['worse']['stops']
+            if worse != plan.best.stops:
+                words = {0: 'no stop', 1: 'one stop', 2: 'two stops', 3: 'three stops'}
+                summary['radio'] += f" If the tyres go off faster, it's {words.get(worse, worse)}."
         summary['last_call'] = self.last_strategy_call
         status, rival = self.latest_status, self._rival_status(self.radio.car_ahead_index)
         wet = race_strategy.normalise_compound(status.compound_name if status else None) in race_strategy.WET_COMPOUNDS
@@ -1049,6 +1217,7 @@ class AnalysisEngine:
         ctx['pit_prediction'] = prediction.as_dict() if prediction else None
         ctx['fuel'] = self.fuel_prediction()
         ctx['pace_trend_s_per_lap'] = self.pace_trend()
+        ctx['tyre_fuel_model'] = self.model_summary()
         tire = self.tire_health()
         ctx['tire_health'] = None if tire is None else {
             'grip_factor': tire.grip_factor, 'health_score': tire.health_score,
@@ -1147,6 +1316,7 @@ class AnalysisEngine:
             "pit_window": self.radio.pit_window,
             "opponent_threats": self.opponent_threats(),
             "race_strategy": self.strategy_summary(),
+            "model_ranges": self.model_summary(),
             "race_control": self.race_control.recent(),
             "race_report": self.race_report(),
             "tire_health": (lambda t: None if t is None else {
