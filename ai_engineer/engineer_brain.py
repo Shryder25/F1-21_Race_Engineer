@@ -28,6 +28,7 @@ COMMAND_QUESTIONS = {
     'gap_behind': 'What is the gap to the car behind?',
     'pace': 'Give me a pace update.',
     'threats': 'Any threats nearby? Who is attacking or defending?',
+    'strategy': 'What is the strategy? How many stops, which tyres, and is the undercut or overcut on?',
 }
 
 SYSTEM_PROMPT = """You are the driver's Formula 1 race engineer speaking over team radio.
@@ -38,6 +39,7 @@ Rules:
 - Be direct and calm. Lead with the answer, then one useful instruction if it adds value.
 - The data states the session mode. Time trial: no rivals, no pit stops. Qualifying: no pit stops and rival gaps are not tracked. Free practice: gaps are not tracked. If asked about something the mode does not have, say so in a few words instead of inventing numbers.
 - Tyre temperatures are surface temperatures in Celsius; wear is a percentage. Gaps are in seconds.
+- The race strategy line is a model of stop count and compounds; its "slower by" numbers are total race time. Undercut gain is what boxing this lap gains on the car ahead by the time they have stopped too: it works only if the gain beats the gap.
 - Opponent threats, when present, are nearby cars already ranked by how much pressure they put on the driver; mention one only if it changes what the driver should do right now.
 Example: "Gap ahead is two point four, tyres are good, keep pushing."
 
@@ -109,6 +111,23 @@ def format_context(ctx: dict) -> str:
         add('Nearby cars ranked by threat', '; '.join(
             f"{t['threat_level']} ({t['gap_s']:+.1f}s{', ' + ', '.join(t['factors']) if t['factors'] else ''})"
             for t in threats))
+    strategy = ctx.get('strategy')
+    if strategy:
+        best = strategy['best']
+        stints = ', '.join(f"{c.lower()} {n} laps" for c, n in zip(best['compounds'], best['stint_laps']))
+        add('Race strategy model', (
+            f"best is {best['stops']} stop(s): {stints}; box at end of lap(s) {best['pit_laps'] or 'none'}; "
+            f"pit loss {strategy['pit_loss_s']}s")
+            + ''.join(f"; {o['stops']} stop(s) is {o['slower_by_s']}s slower" for o in strategy['alternatives']))
+        undercut = strategy.get('undercut_on_car_ahead')
+        if undercut:
+            add('Undercut on car ahead', (
+                f"gap {undercut['gap_s']}s, boxing this lap gains {undercut['gain_s']}s "
+                f"(rival on {undercut['rival_tyre_age']}-lap {undercut['rival_compound']}), "
+                f"works: {undercut['works']}"))
+        if strategy.get('last_call'):
+            add('Last strategy call', strategy['last_call']['message'])
+        add('Game rejoin position if boxing now', strategy.get('game_rejoin_position'))
     return '\n'.join(lines) if lines else 'No telemetry received yet.'
 
 
@@ -163,6 +182,8 @@ def _mode_blocks(command: str, ctx: dict) -> str | None:
             else f'Gaps are only tracked in the race, not in {label.lower()}.'
     if command == 'pit_window' and not session_modes.has_pit_strategy(mode):
         return f'No pit stops in {label.lower()}.'
+    if command == 'strategy' and mode != session_modes.RACE:
+        return f'No race strategy in {label.lower()}.'
     return None
 
 
@@ -209,6 +230,16 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         side = 'behind' if top['gap_s'] < 0 else 'ahead'
         note = f", {top['factors'][0]}" if top.get('factors') else ''
         return f"{top['threat_level'].capitalize()} threat {side}, {abs(top['gap_s']):.1f}{note}."
+    if command == 'strategy':
+        strategy = ctx.get('strategy')
+        if not strategy:
+            return 'No strategy data yet.'
+        text = strategy['radio']
+        undercut = strategy.get('undercut_on_car_ahead')
+        if undercut:
+            text += (' Undercut on the car ahead is on.' if undercut['works']
+                     else ' Undercut on the car ahead will not work yet.')
+        return text
     if command == 'pace':
         parts = []
         if ctx.get('last_lap_ms'):

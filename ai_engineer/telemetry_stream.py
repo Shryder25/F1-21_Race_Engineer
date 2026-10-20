@@ -5,7 +5,7 @@ import struct
 import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
-                     parse_player_telemetry, parse_player_car_status, parse_player_car_damage,
+                     parse_player_telemetry, parse_all_car_status, parse_player_car_damage,
                      parse_player_motion, parse_speed_trap_event)
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
 
@@ -102,7 +102,8 @@ class TelemetryStream:
                 if not math.isfinite(payload[1]):
                     return False
             elif packet_id == 7:
-                payload = parse_player_car_status(data, header.player_car_index)
+                all_status = parse_all_car_status(data)
+                payload = all_status[header.player_car_index]
                 if not all(math.isfinite(x) and x >= 0 for x in
                            (payload.fuel_in_tank, payload.fuel_capacity, payload.fuel_remaining_laps)):
                     raise ValueError('Invalid car status')
@@ -196,7 +197,7 @@ class TelemetryStream:
                 if packet_id == 0:
                     self.analysis.update_motion(payload)
                 elif packet_id == 7:
-                    self.analysis.update_car_status(payload)
+                    self.analysis.update_car_status(payload, all_status)
                 else:
                     self.analysis.update_car_damage(payload)
             return False

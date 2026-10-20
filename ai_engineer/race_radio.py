@@ -35,6 +35,10 @@ class RaceRadio:
         self.last_critical_alert = 0.0
         self.last_lap_times_ms: dict[int, int] = {}    # car index -> most recent completed lap time
         self.opponent_threats: list = []
+        self.car_ahead_index = self.car_behind_index = None
+        self.rival_gaps: dict[int, tuple[float, float]] = {}   # car index -> (signed gap s, session time)
+        self.rival_in_pits: dict[int, bool] = {}
+        self.rival_pit_events: list[dict] = []
 
     def update_strategy(self, lap):
         """Monitor pit stop windows with concise radio timing."""
@@ -147,7 +151,9 @@ class RaceRadio:
         for index, lap in active.items():
             if lap.last_lap_time_ms:
                 self.last_lap_times_ms[index] = lap.last_lap_time_ms
+        self._track_rival_stops(laps, player_index, session_time)
         self.gap_ahead_s = self.gap_behind_s = None
+        self.car_ahead_index = self.car_behind_index = None
         player = active.get(player_index)
         if player is None:
             self.opponent_threats = []
@@ -170,10 +176,11 @@ class RaceRadio:
                 gap = None if crossing is None else -max(0.0, session_time - crossing)
             if gap is None:
                 continue
+            self.rival_gaps[index] = (gap, session_time)
             if offset == -1:
-                self.gap_ahead_s = gap
+                self.gap_ahead_s, self.car_ahead_index = gap, index
             elif offset == 1:
-                self.gap_behind_s = -gap
+                self.gap_behind_s, self.car_behind_index = -gap, index
             pace_delta = None
             player_best = self.last_lap_times_ms.get(player_index)
             opponent_best = self.last_lap_times_ms.get(index)
@@ -191,6 +198,32 @@ class RaceRadio:
             if messages:
                 self.last_gap_report = now
                 self.speak(' '.join(messages), Priority.RACE, key='traffic_gaps', ttl=5, cooldown=20)
+
+    def _track_rival_stops(self, laps, player_index, session_time):
+        """Queue an event when a nearby rival turns into the pit lane.
+
+        The gap is the last one measured before the car entered the pit lane (cars in the pit
+        lane are dropped from the gap calculation), so it is only trusted if it is fresh.
+        """
+        for index, lap in enumerate(laps):
+            if index == player_index or lap.result_status != 2 or lap.car_position == 0:
+                self.rival_in_pits.pop(index, None)
+                continue
+            in_pits = lap.pit_status in (1, 2)
+            was_in_pits = self.rival_in_pits.get(index)
+            self.rival_in_pits[index] = in_pits
+            if was_in_pits is None or was_in_pits or not in_pits:
+                continue
+            measured = self.rival_gaps.get(index)
+            if measured is None or session_time - measured[1] > 2.0:
+                continue
+            self.rival_pit_events.append({'car_index': index, 'gap_s': measured[0],
+                                          'lap': lap.current_lap_num, 'position': lap.car_position,
+                                          'session_time': session_time})
+
+    def pop_rival_pit_events(self) -> list[dict]:
+        events, self.rival_pit_events = self.rival_pit_events, []
+        return events
 
     def report_sector(self, lap_num, sector, milliseconds, personal_ms):
         token = (lap_num, sector)
