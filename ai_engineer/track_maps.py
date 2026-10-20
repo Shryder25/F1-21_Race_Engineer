@@ -110,3 +110,68 @@ class TrackMapStore:
             os.replace(tmp, self.path)
         except OSError as error:
             print(f'[TrackMaps] Could not save {self.path}: {error}')
+
+
+FIELD_COVERAGE_NEEDED = 0.97   # share of 8 m bins that must be seen before the outline is used
+FIELD_MAX_MISSING_BINS = 5     # and no hole longer than this (40 m)
+FIELD_SAMPLES_PER_BIN = 8
+
+
+class FieldMapper:
+    """Builds the circuit outline from every car on track, not only the player.
+
+    Each car's (lap distance, x, z) lands in an 8 m bin and the bin keeps the mean
+    position, so with a full field the whole circuit is known within a minute or two of
+    running, long before the player finishes a lap."""
+
+    def __init__(self, track_length: float, bin_m: float = OUTLINE_BIN_M):
+        self.track_length = track_length
+        self.bin_m = bin_m
+        self.total_bins = max(1, int(track_length // bin_m) + 1) if track_length > 0 else 0
+        self.bins: dict[int, list[float]] = {}
+
+    def add(self, dist: float, x: float, z: float) -> bool:
+        """Add one sample; True when it filled a new bin (the shape changed visibly)."""
+        if not self.total_bins or not (0 <= dist < self.track_length):
+            return False
+        if not (math.isfinite(x) and math.isfinite(z)) or (x == 0 and z == 0):
+            return False
+        index = int(dist // self.bin_m)
+        entry = self.bins.get(index)
+        if entry is None:
+            self.bins[index] = [x, z, 1]
+            return True
+        if entry[2] < FIELD_SAMPLES_PER_BIN:
+            entry[0] += x
+            entry[1] += z
+            entry[2] += 1
+        return False
+
+    @property
+    def coverage(self) -> float:
+        return len(self.bins) / self.total_bins if self.total_bins else 0.0
+
+    def _points(self, index):
+        x, z, n = self.bins[index]
+        return [round(x / n, 1), round(z / n, 1)]
+
+    def outline(self) -> list[list[float]] | None:
+        """The full outline once nearly every bin is seen and no hole is too long."""
+        if self.coverage < FIELD_COVERAGE_NEEDED:
+            return None
+        indexes = sorted(self.bins)
+        wrap_gap = indexes[0] + self.total_bins - indexes[-1]
+        gaps = [b - a for a, b in zip(indexes, indexes[1:])] + [wrap_gap]
+        if max(gaps) > FIELD_MAX_MISSING_BINS + 1:
+            return None
+        return [self._points(i) for i in indexes]
+
+    def partial(self) -> list:
+        """What is known so far, in lap order; None marks a hole so no chord is drawn."""
+        points, previous = [], None
+        for index in sorted(self.bins):
+            if previous is not None and index - previous > FIELD_MAX_MISSING_BINS + 1:
+                points.append(None)
+            points.append(self._points(index))
+            previous = index
+        return points

@@ -242,6 +242,12 @@ def parse_player_motion(data: bytes, player_index: int) -> CarMotionData:
     return parse_car_motion(data, offset)
 
 
+def parse_all_positions(data: bytes) -> list[tuple[float, float]]:
+    """Every car's world (x, z) from PacketMotionData, for the HUD map."""
+    return [struct.unpack_from('<fxxxxf', data, HEADER_SIZE + i * CAR_MOTION_SIZE)
+            for i in range(22)]
+
+
 # ──────────────────────────────────────────────
 # Packet ID 6: Car Telemetry Data
 # ──────────────────────────────────────────────

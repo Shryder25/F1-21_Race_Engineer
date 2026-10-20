@@ -106,6 +106,7 @@ let lastErsZones = [];
 const mapState = {
     outline: [],          // whole circuit [[x, z], ...]
     pitLane: [],          // pit lane path [[x, z], ...]
+    cars: [],             // every car [x, z, team, position, isPlayer, inPit]
     trail: [],            // this lap's driven points
     source: 'recording',  // 'stored' once the outline is known
     inPit: false,
@@ -143,8 +144,8 @@ function resizeCanvas() {
     if (!trackCanvas) return;
     const rect = trackCanvas.parentElement.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
-        trackCanvas.width = rect.width;
-        trackCanvas.height = rect.height;
+        trackCanvas.width = Math.round(rect.width);
+        trackCanvas.height = Math.round(rect.height);
     }
 }
 
@@ -152,6 +153,7 @@ function resizeCanvas() {
 function updateMapState(data, nowMs = Date.now()) {
     if (Array.isArray(data.track_outline)) mapState.outline = data.track_outline;
     if (Array.isArray(data.pit_lane)) mapState.pitLane = data.pit_lane;
+    if (Array.isArray(data.cars)) mapState.cars = data.cars;
     if (Array.isArray(data.current_lap_trail)) mapState.trail = data.current_lap_trail;
     if (Array.isArray(data.track_map)) lastKnownCoords = data.track_map;
     if (data.track_map_source) mapState.source = data.track_map_source;
@@ -176,18 +178,43 @@ function mapBase() {
 }
 
 function redrawTrackMap(forceFit = false) {
+    // Keep the canvas the size of its panel, so the whole circuit always fits on screen.
+    const rect = trackCanvas?.parentElement?.getBoundingClientRect?.();
+    if (rect && rect.width > 0 && rect.height > 0 &&
+            (Math.round(rect.width) !== trackCanvas.width || Math.round(rect.height) !== trackCanvas.height)) {
+        resizeCanvas();
+    }
     drawTrackMap(mapBase().line, lastCarX, lastCarZ, lastBrakingZones, lastErsZones, forceFit);
 }
 
 function tracePath(points, toCanvas, closed) {
+    // A null entry is a hole in a partly mapped circuit: lift the pen there.
     trackCtx.beginPath();
-    const [sx, sz] = toCanvas(points[0][0], points[0][1]);
-    trackCtx.moveTo(sx, sz);
-    for (let i = 1; i < points.length; i++) {
-        const [cx, cz] = toCanvas(points[i][0], points[i][1]);
-        trackCtx.lineTo(cx, cz);
+    let penDown = false;
+    for (const p of points) {
+        if (!p) { penDown = false; continue; }
+        const [cx, cz] = toCanvas(p[0], p[1]);
+        if (penDown) trackCtx.lineTo(cx, cz); else trackCtx.moveTo(cx, cz);
+        penDown = true;
     }
     if (closed) trackCtx.closePath();
+}
+
+// F1 2021 team ids (Participants packet) to team colours, for the car dots.
+const TEAM_COLOURS = {
+    0: '#00d2be', 1: '#dc0000', 2: '#1e41ff', 3: '#005aff', 4: '#006f62',
+    5: '#0090ff', 6: '#4e7c9b', 7: '#b6babd', 8: '#ff8700', 9: '#900000',
+};
+
+// Draw a path as a road: light edges with dark tarmac between them.
+function strokeRoad(points, toCanvas, closed, widthPx, edgeColour, tarmacColour) {
+    tracePath(points, toCanvas, closed);
+    trackCtx.strokeStyle = edgeColour;
+    trackCtx.lineWidth = widthPx;
+    trackCtx.stroke();
+    trackCtx.strokeStyle = tarmacColour;
+    trackCtx.lineWidth = Math.max(1, widthPx - 4);
+    trackCtx.stroke();
 }
 
 function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forceFit = false) {
@@ -197,38 +224,23 @@ function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forc
     const closed = points === mapState.outline && points.length >= 2;
 
     // Clear background
-    trackCtx.fillStyle = '#07090e';
+    trackCtx.fillStyle = '#05070b';
     trackCtx.fillRect(0, 0, width, height);
-
-    // Draw subtle grid lines
-    trackCtx.strokeStyle = 'rgba(39, 49, 66, 0.3)';
-    trackCtx.lineWidth = 1;
-    const gridSize = 40;
-    for (let x = 0; x < width; x += gridSize) {
-        trackCtx.beginPath();
-        trackCtx.moveTo(x, 0);
-        trackCtx.lineTo(x, height);
-        trackCtx.stroke();
-    }
-    for (let y = 0; y < height; y += gridSize) {
-        trackCtx.beginPath();
-        trackCtx.moveTo(0, y);
-        trackCtx.lineTo(width, y);
-        trackCtx.stroke();
-    }
 
     if (!points || points.length < 2) {
         trackCtx.fillStyle = '#64748b';
         trackCtx.font = "bold 13px 'Barlow Condensed', sans-serif";
         trackCtx.textAlign = 'center';
-        trackCtx.fillText('MAPPING CIRCUIT... DRIVE ONE CLEAN LAP AND IT IS SAVED FOR NEXT TIME', width / 2, height / 2);
+        trackCtx.fillText('MAPPING CIRCUIT... WAITING FOR CARS ON TRACK', width / 2, height / 2);
         return;
     }
 
-    // Bounding box over the circuit and pit lane, so the map does not jump around.
+    // Bounding box over the whole circuit and pit lane, so the full track always fits
+    // the panel and the map does not jump around.
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     const pitLane = mapState.pitLane || [];
     for (const p of closed ? points.concat(pitLane) : points) {
+        if (!p) continue;
         if (p[0] < minX) minX = p[0];
         if (p[0] > maxX) maxX = p[0];
         if (p[1] < minZ) minZ = p[1];
@@ -237,110 +249,95 @@ function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forc
 
     const rangeX = (maxX - minX) || 1;
     const rangeZ = (maxZ - minZ) || 1;
-    const padding = 50;
+    const padding = 34;
 
+    const bottomPadding = 56;           // room for the X/Z and G-force pills
     const scaleX = (width - padding * 2) / rangeX;
-    const scaleZ = (height - padding * 2) / rangeZ;
+    const scaleZ = (height - padding - bottomPadding) / rangeZ;
     const scale = Math.min(scaleX, scaleZ);
 
     const offsetX = (width - rangeX * scale) / 2;
-    const offsetZ = (height - rangeZ * scale) / 2;
+    const offsetZ = bottomPadding + (height - padding - bottomPadding - rangeZ * scale) / 2;
 
     const toCanvas = (x, z) => [
         offsetX + (x - minX) * scale,
         height - (offsetZ + (z - minZ) * scale) // Flip Z for correct orientation
     ];
 
+    // A real track is about 14 m wide; keep it wide enough to read and hold the car dots.
+    const roadPx = Math.max(12, Math.min(22, 14 * scale));
+    const carRadius = Math.max(3, roadPx * 0.3);
+
     trackCtx.lineCap = 'round';
     trackCtx.lineJoin = 'round';
 
-    // 1. Pit lane (dashed amber), under the circuit
+    // 1. Pit lane: a narrower road with amber edges, under the circuit
     if (closed && pitLane.length >= 2) {
-        trackCtx.strokeStyle = 'rgba(255, 176, 0, 0.85)';
-        trackCtx.lineWidth = 3;
-        if (trackCtx.setLineDash) trackCtx.setLineDash([6, 5]);
-        tracePath(pitLane, toCanvas, false);
-        trackCtx.stroke();
-        if (trackCtx.setLineDash) trackCtx.setLineDash([]);
+        strokeRoad(pitLane, toCanvas, false, roadPx * 0.7, 'rgba(255, 176, 0, 0.8)', '#11151d');
     }
 
-    // 2. Circuit: glow, then tarmac, then centre line
-    trackCtx.strokeStyle = 'rgba(0, 210, 190, 0.15)';
-    trackCtx.lineWidth = 10;
-    tracePath(points, toCanvas, closed);
-    trackCtx.stroke();
+    // 2. Circuit: wide road with white edges
+    strokeRoad(points, toCanvas, closed, roadPx, '#c9d1dc', '#141a24');
 
-    trackCtx.strokeStyle = '#273142';
-    trackCtx.lineWidth = 4;
-    trackCtx.stroke();
-
-    trackCtx.strokeStyle = '#94a3b8';
-    trackCtx.lineWidth = 2;
-    trackCtx.stroke();
-
-    // 3. This lap's driven trail on top of the stored circuit (rewinds cut it back)
+    // 3. This lap's driven line inside the road (a flashback cuts it back)
     if (closed && mapState.trail.length >= 2) {
-        trackCtx.strokeStyle = 'rgba(0, 210, 190, 0.7)';
+        trackCtx.strokeStyle = 'rgba(0, 210, 190, 0.45)';
         trackCtx.lineWidth = 2;
         tracePath(mapState.trail, toCanvas, false);
         trackCtx.stroke();
     }
 
-    // 4. ERS Deployment Zones (Cyan / Teal)
-    if (ersZones && ersZones.length > 0) {
-        trackCtx.fillStyle = '#00d2be';
-        trackCtx.shadowColor = '#00d2be';
-        trackCtx.shadowBlur = 6;
-        for (const pt of ersZones) {
-            const [ex, ez] = toCanvas(pt[0], pt[1]);
+    // 4. ERS deployment and braking zones, as small marks inside the road
+    for (const [zones, colour] of [[ersZones, '#00d2be'], [brakingZones, '#e10600']]) {
+        if (!zones || !zones.length) continue;
+        trackCtx.fillStyle = colour;
+        for (const pt of zones) {
+            const [zx, zz] = toCanvas(pt[0], pt[1]);
             trackCtx.beginPath();
-            trackCtx.arc(ex, ez, 3, 0, Math.PI * 2);
+            trackCtx.arc(zx, zz, 1.8, 0, Math.PI * 2);
             trackCtx.fill();
         }
-        trackCtx.shadowBlur = 0;
     }
 
-    // 5. Braking Zones (Red / Coral)
-    if (brakingZones && brakingZones.length > 0) {
-        trackCtx.fillStyle = '#e10600';
-        trackCtx.shadowColor = '#e10600';
-        trackCtx.shadowBlur = 8;
-        for (const pt of brakingZones) {
-            const [bx, bz] = toCanvas(pt[0], pt[1]);
-            const radius = pt[2] ? Math.max(3, Math.min(6, pt[2] * 6)) : 4;
-            trackCtx.beginPath();
-            trackCtx.arc(bx, bz, radius, 0, Math.PI * 2);
-            trackCtx.fill();
-        }
-        trackCtx.shadowBlur = 0;
-    }
-
-    // 6. Start / Finish Line
-    const [sfx, sfz] = toCanvas(points[0][0], points[0][1]);
-    trackCtx.fillStyle = '#fff';
-    trackCtx.strokeStyle = '#000';
-    trackCtx.lineWidth = 2;
+    // 5. Start / finish line: a white bar across the road
+    const first = points.find(p => p);
+    const next = points.slice(1).find(p => p) || first;
+    const [sfx, sfz] = toCanvas(first[0], first[1]);
+    const [nx, nz] = toCanvas(next[0], next[1]);
+    const along = Math.atan2(nz - sfz, nx - sfx);
+    const half = roadPx / 2 + 2;
+    trackCtx.strokeStyle = '#ffffff';
+    trackCtx.lineWidth = 3;
     trackCtx.beginPath();
-    trackCtx.arc(sfx, sfz, 6, 0, Math.PI * 2);
-    trackCtx.fill();
+    trackCtx.moveTo(sfx - Math.sin(along) * half, sfz + Math.cos(along) * half);
+    trackCtx.lineTo(sfx + Math.sin(along) * half, sfz - Math.cos(along) * half);
     trackCtx.stroke();
 
-    // 7. Live Car Position Beacon (amber while in the pit lane)
-    if (carX !== undefined && carZ !== undefined && (carX !== 0 || carZ !== 0)) {
-        const [px, pz] = toCanvas(carX, carZ);
-        const carColour = mapState.inPit ? '#ffb000' : '#ffffff';
-
-        trackCtx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    // 6. Every car, in its team colour; the player on top with a white ring
+    const cars = mapState.cars || [];
+    let player = null;
+    for (const car of cars) {
+        if (car[4]) { player = car; continue; }
+        const [cx, cz] = toCanvas(car[0], car[1]);
+        trackCtx.fillStyle = TEAM_COLOURS[car[2]] || '#9ca3af';
+        trackCtx.beginPath();
+        trackCtx.arc(cx, cz, carRadius, 0, Math.PI * 2);
+        trackCtx.fill();
+    }
+    if (!player && (carX || carZ)) player = [carX, carZ, -1, 0, 1, mapState.inPit ? 1 : 0];
+    if (player) {
+        const [px, pz] = toCanvas(player[0], player[1]);
+        const carColour = player[5] ? '#ffb000' : (TEAM_COLOURS[player[2]] || '#ffffff');
+        trackCtx.strokeStyle = '#ffffff';
         trackCtx.lineWidth = 2;
         trackCtx.beginPath();
-        trackCtx.arc(px, pz, 14, 0, Math.PI * 2);
+        trackCtx.arc(px, pz, carRadius + 4, 0, Math.PI * 2);
         trackCtx.stroke();
-
         trackCtx.fillStyle = carColour;
-        trackCtx.shadowColor = carColour;
-        trackCtx.shadowBlur = 10;
+        trackCtx.shadowColor = '#ffffff';
+        trackCtx.shadowBlur = 8;
         trackCtx.beginPath();
-        trackCtx.arc(px, pz, 5, 0, Math.PI * 2);
+        trackCtx.arc(px, pz, carRadius + 1, 0, Math.PI * 2);
         trackCtx.fill();
         trackCtx.shadowBlur = 0;
     }
