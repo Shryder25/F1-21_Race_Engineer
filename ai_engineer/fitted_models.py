@@ -174,6 +174,7 @@ class LapRecord:
     wet: bool = False             # slick tyres on a wet track (kept out of the slick fits)
     simulated: bool = False
     visual: str | None = None     # 'Soft' / 'Medium' / ... as the game showed it
+    car_index: int | None = None  # a rival's car index (Session History); None = the player
 
     @property
     def wear_increment(self) -> float | None:
@@ -290,26 +291,87 @@ class _SessionScan:
         self.last_lap = None
 
 
-def laps_from_recording(path, simulated: bool | None = None) -> list[LapRecord]:
+def laps_from_recording(path, simulated: bool | None = None, rivals: bool = False) -> list[LapRecord]:
     """Lap records for the player's car from a `.f1rec` recording (gzipped or not).
+
+    With rivals=True, every other car's laps from the Session History packets are added too
+    (see rival_records): lap times only, for the fall-off fit.
 
     Tyre age, worst-tyre wear and fuel are read once per lap at SNAPSHOT_DISTANCE_M into it,
     so the numbers are steady (the line itself is where packets disagree about which lap it
     is). Flashbacks rewind: laps at or after the one rewound to are thrown away and re-read.
     """
+    from session_history import apply_datagram, lap_rows
     from udp_recording import RecordingReader
 
     path = Path(path)
     scans: dict[int, _SessionScan] = {}
+    logs: dict = {}
     with RecordingReader(path) as reader:
         metadata = dict(reader.metadata)
         if simulated is None:
             simulated = bool(metadata.get('simulated')) or metadata.get('source') == 'synthetic'
         for record in reader:
             _scan_datagram(scans, record.data)
+            if rivals:
+                apply_datagram(logs, record.data)
     out = []
-    for scan in scans.values():
-        out.extend(_records_from_scan(scan, str(path), simulated))
+    for uid, scan in scans.items():
+        records = _records_from_scan(scan, str(path), simulated)
+        out.extend(records)
+        log = logs.get(uid)
+        if rivals and log is not None and scan.session is not None and scan.session.formula not in (1, 2):
+            session = scan.session
+            sid = f'{path}#{scan.uid}'
+            fuel = {n: snap['fuel'] for n, snap in scan.snaps.items()}
+            wet = {n: snap['weather'] >= 3 for n, snap in scan.snaps.items()}
+            sc_laps = {n for n, f in scan.flags.items() if f.get('sc')}
+            for car, history in log.histories.items():
+                if car == log.player_index:
+                    continue
+                out.extend(rival_records(
+                    lap_rows(history), source=str(path), session=sid, track_id=session.track_id,
+                    track_length=session.track_length, session_type=session.session_type,
+                    race_laps=session.total_laps if session.session_type in RACE_SESSION_TYPES else 0,
+                    fuel_by_lap=fuel, wet_laps=wet, sc_laps=sc_laps, simulated=simulated))
+    return out
+
+
+def rival_records(rows: Sequence[dict], *, source: str, session: str, track_id: int,
+                  track_length: int, session_type: int = 10, race_laps: int = 0,
+                  fuel_by_lap: dict | None = None, wet_laps: dict | None = None,
+                  sc_laps: Iterable[int] = (), simulated: bool = False) -> list[LapRecord]:
+    """Lap records for one rival from Session History lap rows (session_history.lap_rows).
+
+    Rivals send no fuel or tyre wear, so these only feed the fall-off (lap time vs tyre age)
+    fit. Lap times are fuel-corrected with the player's fuel on the same lap (fuel_by_lap):
+    every car burns about the same per lap, and the fit only uses the change within a stint,
+    so an offset in the starting load does not matter. In-laps, out-laps, invalid laps,
+    Safety Car laps and a race's standing-start lap are not counted as pace laps.
+    """
+    fuel_by_lap = fuel_by_lap or {}
+    wet_laps = wet_laps or {}
+    sc_laps = set(sc_laps)
+    is_race = session_type in RACE_SESSION_TYPES
+    out = []
+    for row in rows:
+        compound = compound_key(row.get('actual_compound'))
+        if compound is None or row.get('stint_num') is None:
+            continue
+        lap = row['lap_num']
+        fuel = fuel_by_lap.get(lap)
+        clean = (bool(row.get('valid')) and not row.get('in_lap') and not row.get('out_lap')
+                 and lap not in sc_laps and (lap >= 2 or not is_race))
+        car = row['car_index']
+        out.append(LapRecord(
+            source=source, session=session, stint=f"{session}#car{car}#{row['stint_num']}",
+            track_id=track_id, track_length=track_length, session_type=session_type,
+            race_laps=race_laps, compound=compound, lap=lap, tyre_age=int(row['tyre_age_laps']),
+            fuel_start=fuel, lap_time_ms=row.get('lap_time_ms') or None,
+            time_ok=clean and bool(row.get('lap_time_ms')) and fuel is not None,
+            wet=bool(wet_laps.get(lap)) and compound in SLICKS, simulated=simulated,
+            visual=VISUAL_COMPOUNDS.get(row.get('visual_compound')), car_index=car))
+    _drop_time_outliers(out)
     return out
 
 
@@ -417,8 +479,13 @@ def _records_from_scan(scan: _SessionScan, source: str, simulated: bool) -> list
 
 
 def laps_from_history(history, exclude_captures: Iterable[str] = (),
-                      track_id: int | None = None) -> tuple[list[LapRecord], set[str]]:
-    """Lap records from a TelemetryHistory database, and the capture ids they came from."""
+                      track_id: int | None = None,
+                      rivals: bool = False) -> tuple[list[LapRecord], set[str]]:
+    """Lap records from a TelemetryHistory database, and the capture ids they came from.
+
+    With rivals=True, every other car's laps logged from Session History (car_laps) are added
+    for sessions that know which car was the player's (see rival_records).
+    """
     excluded = set(exclude_captures)
     where, args = ('AND s.track_id=?', (track_id,)) if track_id is not None else ('', ())
     rows = history.connection.execute(f'''
@@ -445,7 +512,35 @@ def laps_from_history(history, exclude_captures: Iterable[str] = (),
         out.extend(records_from_lap_rows(
             laps, source=f'history:{capture}', session=f'history:{capture}', track_id=track_id,
             track_length=length, session_type=stype, race_laps=0, wet=weather != 'dry'))
+    if rivals:
+        out.extend(_rival_records_from_history(history, excluded, track_id, grouped))
     return out, set(grouped)
+
+
+def _rival_records_from_history(history, excluded, track_id, player_laps) -> list[LapRecord]:
+    where, args = ('AND s.track_id=?', (track_id,)) if track_id is not None else ('', ())
+    sessions = history.connection.execute(f'''
+        SELECT s.capture_id, s.track_id, s.track_length, s.formula, s.weather_group, s.session_type,
+               s.player_car_index
+        FROM sessions s WHERE s.player_car_index IS NOT NULL {where}
+          AND EXISTS (SELECT 1 FROM car_laps c WHERE c.capture_id = s.capture_id)
+    ''', args).fetchall()
+    out = []
+    for capture, track, length, formula, weather, stype, player in sessions:
+        if capture in excluded or formula in (1, 2):
+            continue
+        fuel = {row['lap_num']: row['fuel_start'] for row in player_laps.get(capture, [])
+                if row.get('fuel_start') is not None}
+        by_car = defaultdict(list)
+        for row in history.car_laps(capture):
+            if row['car_index'] != player:
+                by_car[row['car_index']].append(row)
+        for rows in by_car.values():
+            out.extend(rival_records(
+                rows, source=f'history:{capture}', session=f'history:{capture}', track_id=track,
+                track_length=length, session_type=stype, fuel_by_lap=fuel,
+                wet_laps={r['lap_num']: weather != 'dry' for r in rows}))
+    return out
 
 
 # ──────────────────────────────────────────────

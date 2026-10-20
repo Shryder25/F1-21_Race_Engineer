@@ -329,7 +329,7 @@ class AnalysisRivalTests(unittest.TestCase):
                     damages[index] = damage(rival_wear_rate * age)
                 self.engine.update_car_status(statuses[0], statuses)
                 self.engine.update_car_damage(damages[0], damages)
-                self.engine.update_field(laps, 0)
+                self.engine.update_field(laps, 0, 100.0 * lap + distance / 100.0)
         self.engine.latest_lap = replace(self.lap, current_lap_num=lap_num)
 
     def test_predictions_in_race_only(self):

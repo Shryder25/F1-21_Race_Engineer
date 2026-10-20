@@ -7,10 +7,13 @@ import time
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
                      parse_player_telemetry, parse_all_car_damage,
                      parse_player_motion, parse_speed_trap_event, parse_all_car_status,
-                     parse_race_event, race_event_body_size, parse_participants)
+                     parse_race_event, race_event_body_size, parse_participants,
+                     parse_car_setups, parse_final_classification, parse_session_history)
+from session_history import valid_history
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
 
-PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 4: 1257, 6: 1347, 7: 1058, 10: 882}
+PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 4: 1257, 5: 1102, 6: 1347, 7: 1058, 8: 839, 10: 882,
+                11: 1155}
 # Packet ID 3 (Event) is a fixed header plus a variable-size, event-code-specific body, so
 # unlike every other packet type it does not have one single valid length.
 EVENT_PACKET_SIZES = {b'FLBK': 36, b'SPTP': 40}
@@ -116,6 +119,21 @@ class TelemetryStream:
                 if data[24] > 22:
                     raise ValueError('Invalid participant count')
                 payload = parse_participants(data)
+            elif packet_id == 5:
+                payload = parse_car_setups(data)
+                if not all(math.isfinite(x) for s in payload for x in
+                           (s.front_camber, s.rear_camber, s.front_toe, s.rear_toe, s.fuel_load, *s.tyre_pressures)):
+                    raise ValueError('Invalid car setups')
+            elif packet_id == 8:
+                if data[24] > 22:
+                    raise ValueError('Invalid classified car count')
+                payload = parse_final_classification(data)
+                if not all(math.isfinite(c.total_race_time_s) for c in payload):
+                    raise ValueError('Invalid final classification')
+            elif packet_id == 11:
+                payload = parse_session_history(data)
+                if not valid_history(payload):
+                    raise ValueError('Invalid session history')
             elif packet_id == 7:
                 all_status = parse_all_car_status(data)
                 payload = all_status[header.player_car_index]
@@ -189,10 +207,12 @@ class TelemetryStream:
             if header.session_time >= self.context_start_time:
                 self.analysis.race_control.handle_event(race_event, self.player_index, header.session_time)
             return False
-        previous = self.last_frames.get(packet_id)
+        # Session History comes one car per packet, so its frame filter is per car.
+        frame_key = (11, payload.car_index) if packet_id == 11 else packet_id
+        previous = self.last_frames.get(frame_key)
         if previous is not None and not newer_frame(header.frame_identifier, previous):
             return False
-        self.last_frames[packet_id] = header.frame_identifier
+        self.last_frames[frame_key] = header.frame_identifier
 
         if packet_id == 1:
             previous_context = self.analysis.session_context
@@ -213,14 +233,20 @@ class TelemetryStream:
                 update_web_state({'connected': False})
             return False
 
-        if packet_id in (0, 4, 7, 10):
-            # Motion, participants and strategy inputs arrive on their own cadence; they need
-            # no frame pairing.
+        if packet_id in (0, 4, 5, 7, 8, 10, 11):
+            # Motion, participants, strategy inputs and every car's history arrive on their own
+            # cadence; they need no frame pairing.
             if header.session_time >= self.context_start_time:
                 if packet_id == 0:
                     self.analysis.update_motion(payload)
                 elif packet_id == 4:
                     self.analysis.update_participants(payload)
+                elif packet_id == 5:
+                    self.analysis.update_car_setups(payload)
+                elif packet_id == 8:
+                    self.analysis.update_final_classification(payload)
+                elif packet_id == 11:
+                    self.analysis.update_session_history(payload)
                 elif packet_id == 7:
                     self.analysis.update_car_status(payload, all_status)
                     self.analysis.race_control.update_status(all_status, self.player_index)
@@ -253,7 +279,7 @@ class TelemetryStream:
             self.rewind_anchor = None
         self.analysis.radio.update_field(laps, self.player_index, lap_time, now=now)
         self.analysis.race_control.update_field(laps, self.player_index, lap_time)
-        self.analysis.update_field(laps, self.player_index)
+        self.analysis.update_field(laps, self.player_index, lap_time)
         self.analysis.update_telemetry(telemetry, lap)
         update_web_state({'last_update_monotonic': now})
         return True

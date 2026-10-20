@@ -30,6 +30,8 @@ import strategy_ml
 import race_strategy
 import rival_strategy
 import fitted_models
+import race_sim
+from session_history import SessionLog, lap_rows, stint_rows
 
 
 # ──────────────────────────────────────────────
@@ -131,8 +133,14 @@ class AnalysisEngine:
     """The brain of the AI Race Engineer."""
 
     def __init__(self, voice: VoiceEngine, history: TelemetryHistory | None = None,
-                 on_demand: bool = False, fitted: fitted_models.ModelStore | None = None):
+                 on_demand: bool = False, fitted: fitted_models.ModelStore | None = None,
+                 race_simulation: str = 'off', sim_runs: int = race_sim.DEFAULT_RUNS):
         self.voice = voice
+        # Monte Carlo race simulator (race_sim.py): 'async' live, 'sync' in tests, 'off'.
+        self.sim_runner = race_sim.SimRunner(race_simulation, sim_runs)
+        self.field_tracker = race_sim.FieldTracker()
+        self.field_laps = None
+        self.player_index = 0
         # Tyre/fuel models fitted to the game (tools/fit_models.py); empty = built-in priors.
         self.fitted = fitted if fitted is not None else fitted_models.ModelStore()
         self._history_records: list | None = None
@@ -164,6 +172,9 @@ class AnalysisEngine:
         self.race_control = RaceControl(self.speak)
         self.history = history
         self.capture_id: str | None = None
+        # Every car's laps, tyre stints, classification and setups (packets 11, 8 and 5).
+        self.session_log = SessionLog()
+        self._session_log_capture: str | None = None
         self.session_uid: int | None = None
         self.session_context = None
         self.weather_group: str | None = None
@@ -225,6 +236,8 @@ class AnalysisEngine:
             self.current_sector_times.clear()
             self.best_sector_times.clear()
             self.session_lap_stats.clear()
+            self.session_log = SessionLog(session_uid, player_index)
+            self._session_log_capture = None
             self._ml_cache = None
             self._forecast_cache = None
             self._history_records = None
@@ -234,6 +247,9 @@ class AnalysisEngine:
             self.compounds_used.clear()
             self._strategy_cache = None
             self.last_strategy_call = None
+            self.field_tracker.reset()
+            self.field_laps = None
+            self.sim_runner.reset()
             self.undercut_calls.clear()
             self.rivals.reset()
             self.rival_calls.clear()
@@ -310,7 +326,8 @@ class AnalysisEngine:
         if not (self.history and session.track_id >= 0):
             return
         try:
-            self.capture_id = self.history.start_session(session, session_uid)
+            self.capture_id = self.history.start_session(session, session_uid,
+                                                         self.session_log.player_index)
             self._session_captures.add(self.capture_id)
             self._history_records = None
             reference = self.history.best_reference(session)
@@ -799,20 +816,90 @@ class AnalysisEngine:
         if self.lap_start_fuel is None:
             self.lap_start_fuel = status.fuel_in_tank
 
+    def update_field(self, laps, player_index: int, session_time: float):
+        """Every car's Lap Data: rival stints for the stop model, and line-crossing times and
+        clean-lap pace for the race simulator."""
+        self.rivals.update_laps(laps, player_index)
+        self.field_laps, self.player_index = laps, player_index
+        if self.session is None or self.session_mode != session_modes.RACE:
+            return
+        self.field_tracker.update(laps, session_time, self.all_status,
+                                  neutralised=self.session.safety_car_status in (1, 2))
+
     def update_car_damage(self, damage: CarDamageData, all_damage: list[CarDamageData] | None = None):
         self.latest_damage = damage
         if all_damage is not None:
             self.rivals.update_damage(all_damage)
-
-    def update_field(self, laps, player_index):
-        """Every car's lap data: feeds the rival stint tracker."""
-        self.rivals.update_laps(laps, player_index)
 
     def update_participants(self, participants):
         """Driver names from the Participants packet, so radio calls can say who is where."""
         self.radio.set_driver_names({index: p.radio_name for index, p in enumerate(participants)
                                      if p.radio_name})
         self.race_control.update_participants(participants)
+        for index, p in enumerate(participants):
+            if p.name:
+                self.session_log.names[index] = p.radio_name or p.name
+
+    # ── Every car's laps and stints (Session History), result and setups ──
+
+    def update_session_history(self, history):
+        """One car's Session History packet: log its laps and tyre stints."""
+        self._sync_session_log_capture()
+        changed = self.session_log.update_history(history)
+        if changed is None or not (self.history and self.capture_id):
+            return
+        laps, stints, last_lap = changed
+        try:
+            self.history.record_car_history(self.capture_id, history.car_index, laps, stints, last_lap,
+                                            driver=self.session_log.names.get(history.car_index))
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'[History] Could not save car history: {error}')
+
+    def update_final_classification(self, classification):
+        self._sync_session_log_capture()
+        if not self.session_log.update_classification(classification):
+            return
+        if self.history and self.capture_id:
+            try:
+                self.history.record_final_classification(self.capture_id,
+                                                         self.session_log.classification_rows())
+            except (OSError, ValueError, sqlite3.Error) as error:
+                print(f'[History] Could not save final classification: {error}')
+
+    def update_car_setups(self, setups):
+        self._sync_session_log_capture()
+        changed = self.session_log.update_setups(setups)
+        if not (changed and self.history and self.capture_id):
+            return
+        try:
+            for index, setup in changed.items():
+                self.history.record_car_setup(self.capture_id, index, setup.as_dict())
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'[History] Could not save car setup: {error}')
+
+    @property
+    def player_setup(self):
+        """The player's latest setup from the Car Setups packet, or None."""
+        return self.session_log.setups.get(self.session_log.player_index)
+
+    def _sync_session_log_capture(self):
+        """A new history capture mid-session (rain arrived) gets every car's rows so far."""
+        if self._session_log_capture == self.capture_id:
+            return
+        self._session_log_capture = self.capture_id
+        if not (self.history and self.capture_id):
+            return
+        log = self.session_log
+        try:
+            for car, history in log.histories.items():
+                self.history.record_car_history(self.capture_id, car, lap_rows(history),
+                                                stint_rows(history), driver=log.names.get(car))
+            if log.classification:
+                self.history.record_final_classification(self.capture_id, log.classification_rows())
+            for index, setup in log.setups.items():
+                self.history.record_car_setup(self.capture_id, index, setup.as_dict())
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'[History] Could not save car history: {error}')
 
     def update_speed_trap(self, speed_kph: float):
         """Record the fastest Speed Trap event ('SPTP') seen so far on the current lap."""
@@ -1273,6 +1360,66 @@ class AnalysisEngine:
         self.last_strategy_call = {**call.as_dict(), 'lap': self.latest_lap.current_lap_num if self.latest_lap else None}
         self.speak(call.message, Priority.STRATEGY, key=key, ttl=10, cooldown=0)
 
+    # ── Monte Carlo race simulation (race_sim.py) ──
+
+    def race_sim_state(self) -> race_sim.RaceState | None:
+        """The race as it stands, for the simulator: every running car's gap, tyres and pace."""
+        if self.session_mode != session_modes.RACE or self.latest_lap is None:
+            return None
+        laps = self.field_laps
+        if not laps:                          # player only (no field data yet)
+            laps, index = [self.latest_lap], 0
+        else:
+            index = self.player_index
+        statuses = self.all_status if self.all_status else None
+        if statuses is None and self.latest_status is not None:
+            statuses = [None] * len(laps)
+            statuses[index] = self.latest_status
+        predictions = None
+        rival_predictions = getattr(self, 'rival_predictions', None)
+        if callable(rival_predictions):       # rival stop model, when there is one
+            try:
+                predictions = {p.car_index: p for p in (rival_predictions() or [])}
+            except Exception:                 # a broken rival model must not stop the sim
+                predictions = None
+        names = {i: self.radio.driver_name(i) for i in range(len(laps))}
+        return race_sim.build_state(laps, statuses, index, self.session, self.field_tracker, names,
+                                    predictions, self.fitted)
+
+    def update_race_simulation(self):
+        """Re-run the simulation once a lap (and when the race changes: SC, a stop, new tyres)."""
+        if not self.sim_runner.enabled or self.session_mode != session_modes.RACE:
+            return
+        status, lap, session = self.latest_status, self.latest_lap, self.session
+        if status is None or lap is None or session is None or lap.pit_status:
+            return
+        key = (lap.current_lap_num, session.safety_car_status, lap.num_pit_stops, status.compound_name)
+        if key == self.sim_runner.latest_key:
+            return
+        plan = self.strategy_plan()
+        candidates = race_sim.candidates_from_plan(plan)
+        if not candidates:
+            return
+        state = self.race_sim_state()
+        if state is None:
+            return
+        deg_scale, life_scale = self.strategy_scales()
+        seed = (lap.current_lap_num * 1009 + session.safety_car_status * 101 + lap.num_pit_stops) & 0xFFFFFFFF
+        self.sim_runner.submit(key, state, candidates, models=self.fitted, seed=seed,
+                               pit_loss_mean=race_strategy.pit_loss_s(session.track_id),
+                               player_deg_scale=deg_scale, player_life_scale=life_scale,
+                               player_deg=self.deg_forecast())
+
+    def race_simulation(self) -> dict | None:
+        """Latest simulation summary, or None when it is off, not run yet or out of date."""
+        result = self.sim_runner.latest
+        lap = self.latest_lap
+        if result is None or lap is None or self.session_mode != session_modes.RACE:
+            return None
+        if lap.current_lap_num - result.lap > 3:
+            return None
+        return result.summary()
+
     def strategy_summary(self) -> dict | None:
         """Plan plus the latest undercut/overcut call, for the HUD and the AI prompt."""
         plan = self.strategy_plan()
@@ -1287,6 +1434,10 @@ class AnalysisEngine:
             if worse != plan.best.stops:
                 words = {0: 'no stop', 1: 'one stop', 2: 'two stops', 3: 'three stops'}
                 summary['radio'] += f" If the tyres go off faster, it's {words.get(worse, worse)}."
+        simulation = self.race_simulation()
+        summary['simulation'] = simulation
+        if simulation and simulation.get('radio'):
+            summary['radio'] += ' ' + simulation['radio']
         summary['last_call'] = self.last_strategy_call
         status, rival = self.latest_status, self._rival_status(self.radio.car_ahead_index)
         wet = race_strategy.normalise_compound(status.compound_name if status else None) in race_strategy.WET_COMPOUNDS
@@ -1405,6 +1556,7 @@ class AnalysisEngine:
         self.update_corners(telemetry, lap)
         self.radio.update_strategy(lap)
         self.update_strategy_calls(lap)
+        self.update_race_simulation()
 
         # Priority Interrupts
         if self.session:

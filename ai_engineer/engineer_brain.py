@@ -43,6 +43,7 @@ Rules:
 - Tyre wear, degradation, pit-window and fuel predictions come as ranges [low, expected, high] (an 80% range). Quote the expected value and give the range when it matters ("box lap eighteen, window seventeen to twenty"). A wide range or a "built-in estimate" basis means the model is unsure: say so briefly.
 - The race strategy line is a model of stop count and compounds; its "slower by" numbers are total race time. Undercut gain is what boxing this lap gains on the car ahead by the time they have stopped too: it works only if the gain beats the gap.
 - Rival stop predictions are the model's guess of when nearby cars will box next and which tyre they will fit, from their tyre age, wear and the track's usual strategy. Say "likely" or "expect": they are forecasts, not facts.
+- The race simulation line is a Monte Carlo of the whole field (Safety Cars, VSCs, pit-stop spread, traffic, overtaking): quote its odds as odds ("two-stop comes out best 60% of the time"), never as certainties.
 - Opponent threats, when present, are nearby cars already ranked by how much pressure they put on the driver; mention one only if it changes what the driver should do right now.
 - When a rival's driver name is given, call them by that name like a real engineer would (for example "Hamilton is one point two ahead"). Never make up a name that is not in the data.
 - Sound like a real F1 engineer: calm, clipped, encouraging. Say lap times the way engineers do ("one thirty-two four"), talk about small time differences in tenths ("two tenths up", "a tenth down"), and say "box, box" only for an actual pit call.
@@ -164,6 +165,15 @@ def format_context(ctx: dict) -> str:
         rivals = strategy.get('rivals')
         if rivals and rivals.get('nearby'):
             add('Rival stop predictions', ' '.join(r['summary'] for r in rivals['nearby']))
+        sim = strategy.get('simulation')
+        if sim and sim.get('options'):
+            add(f"Race simulation ({sim['runs']} Monte Carlo races from lap {sim['lap']})", (
+                '; '.join(f"{o['label']}: best {round(o['p_best'] * 100)}% of runs, expected P{o['position_range'][1]} "
+                          f"(P{o['position_range'][0]}-P{o['position_range'][2]}), podium {round(o['p_podium'] * 100)}%"
+                          for o in sim['options'])
+                + f"; chance of a Safety Car {round(sim['p_safety_car'] * 100)}%, VSC {round(sim['p_vsc'] * 100)}%, "
+                  f"rain {round(sim['p_rain'] * 100)}%; pit loss {sim['pit_loss_s'][1]}s "
+                  f"({sim['pit_loss_s'][0]}-{sim['pit_loss_s'][2]}s); overtaking difficulty {sim['overtaking']}/5"))
         spread = strategy.get('uncertainty')
         if spread and spread.get('worse') and spread.get('better'):
             add('Strategy across the tyre-model range', (

@@ -18,6 +18,10 @@ the recording shows really happened:
                 vs the lap that car really pitted on and the tyre it fitted, against a
                 plan-from-tyre-age-only baseline and the "usual next tyre" rule
 
+When the recording has Session History packets (id 11), each race also lists every car's
+tyre stints (compound, first and last lap) and checks the pit laps they imply against the
+pit stops seen in the lap data, and the Final Classification (id 8) if the race finished.
+
 The ground truth is read straight from the datagrams (every car's distance and time, pit
 stops, lap times, tyre wear), independently of the engineer's own bookkeeping.
 
@@ -58,6 +62,7 @@ import race_strategy                                # noqa: E402
 import rival_strategy                               # noqa: E402
 import harness                                      # noqa: E402
 import recording                                    # noqa: E402
+import session_history                              # noqa: E402
 import telemetry_stream as stream_module            # noqa: E402
 from analysis import AnalysisEngine                 # noqa: E402
 from history import TelemetryHistory                # noqa: E402
@@ -328,6 +333,7 @@ class Segment:
     session_uid: int
     truth: GroundTruth
     snapshots: dict = field(default_factory=dict)   # lap -> snapshot
+    log: session_history.SessionLog | None = None   # every car's stints (Session History)
 
 
 @contextlib.contextmanager
@@ -350,6 +356,7 @@ def replay(path) -> list[Segment]:
     clock = harness.SimClock()
     voice = harness.RecordingVoice(clock)
     segments: dict[int, Segment] = {}
+    logs: dict = {}
     with tempfile.TemporaryDirectory() as tmp, harness.simulated_time(clock), no_hud():
         history = TelemetryHistory(Path(tmp) / 'history.sqlite3')
         try:
@@ -359,6 +366,7 @@ def replay(path) -> list[Segment]:
                 clock.t = record.t
                 data = record.data
                 stream.handle(data, now=clock.monotonic())
+                session_history.apply_datagram(logs, data)
                 segment = _feed_truth(segments, data)
                 if segment is None or engine.latest_lap is None or stream.session_uid != segment.session_uid:
                     continue
@@ -371,6 +379,8 @@ def replay(path) -> list[Segment]:
                     segment.snapshots[lap.current_lap_num] = engineer_snapshot(engine, truth)
         finally:
             history.close()
+    for segment in segments.values():
+        segment.log = logs.get(segment.session_uid)
     return [s for s in segments.values()
             if s.truth.session and s.truth.session.session_type in RACE_SESSION_TYPES and s.snapshots]
 
@@ -613,6 +623,56 @@ def merge_outcomes(outcome_dicts) -> dict:
 # Running and reporting
 # ──────────────────────────────────────────────
 
+def stint_check(segment: Segment) -> dict | None:
+    """Every car's stints from Session History, and whether the pit laps they imply match
+    the stops seen in the lap data (two independent readings of the same race)."""
+    log = segment.log
+    if log is None or not log.histories:
+        return None
+    truth = segment.truth
+    cars = []
+    agree = disagree = 0
+    for car in sorted(log.histories):
+        from_history = log.pit_laps(car)
+        from_laps = sorted(truth.stops.get(car, []))
+        match = from_history == from_laps
+        agree += match
+        disagree += not match
+        stints = [row for row in log.all_stint_rows() if row['car_index'] == car]
+        cars.append({'car_index': car, 'driver': log.names.get(car), 'player': car == truth.player_index,
+                     'stints': stints, 'pit_laps': from_history, 'pit_laps_lap_data': from_laps,
+                     'match': match})
+    return {'cars': cars, 'agree': agree, 'disagree': disagree,
+            'classification': log.classification_rows()}
+
+
+def _stint_text(stints) -> str:
+    return ', '.join(f"{s['compound']} {s['start_lap']}-{s['end_lap']}" for s in stints) or '–'
+
+
+def _stints_table(check) -> list[str]:
+    lines = [f"Pit laps from Session History agree with the lap data for {check['agree']} of "
+             f"{check['agree'] + check['disagree']} cars.", '',
+             '| Car | Stints (compound, laps) | Pit laps | Lap data agrees |', '|---|---|---|---|']
+    for car in check['cars']:
+        name = car['driver'] or f"Car {car['car_index']}"
+        if car['player']:
+            name += ' (you)'
+        lines.append(f"| {name} | {_stint_text(car['stints'])} | "
+                     f"{', '.join(map(str, car['pit_laps'])) or 'none'} | "
+                     f"{'yes' if car['match'] else 'no (' + (', '.join(map(str, car['pit_laps_lap_data'])) or 'none') + ')'} |")
+    if check['classification']:
+        lines += ['', '| Pos | Car | Grid | Laps | Stops | Result | Best lap | Tyres |',
+                  '|---:|---|---:|---:|---:|---|---|---|']
+        for c in sorted(check['classification'], key=lambda c: c['position'] or 99):
+            best = c['best_lap_time_ms']
+            best = f"{best // 60000}:{best % 60000 / 1000:06.3f}" if best else '–'
+            lines.append(f"| {c['position']} | {c['driver'] or 'Car ' + str(c['car_index'])} | "
+                         f"{c['grid_position']} | {c['num_laps']} | {c['num_pit_stops']} | {c['result']} | "
+                         f"{best} | {', '.join(c['tyre_stints'])} |")
+    return lines + ['']
+
+
 def is_simulated(metadata: dict) -> bool:
     return bool(metadata.get('simulated')) or metadata.get('source') == 'synthetic'
 
@@ -633,6 +693,7 @@ def backtest_file(path) -> list[dict]:
             'path': _display_path(path), 'simulated': is_simulated(metadata), 'metadata': metadata,
             'track': TRACK_NAMES.get(session.track_id, f'Track {session.track_id}'),
             **result, 'summary': summary_rows(result['samples']),
+            'stints': stint_check(segment),
         })
     return races
 
@@ -757,6 +818,9 @@ def render_markdown(report: dict) -> str:
         out += _summary_table(race['summary'])
         out += _pit_table(race['pit_outcomes'])
         out += _compound_table(race['pit_outcomes'])
+        if race.get('stints'):
+            out += ['#### Every car\'s stints', '']
+            out += _stints_table(race['stints'])
     if report['skipped']:
         out += ['## Skipped files', '']
         out += [f"* `{s['path']}`: {s['reason']}" for s in report['skipped']]

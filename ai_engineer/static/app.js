@@ -855,6 +855,21 @@ async function fetchTelemetry() {
                     <span class="gap-label">${o.stops}-STOP</span>
                     <span class="gap-val">+${o.slower_by_s.toFixed(1)}s</span>
                 </div>`));
+                // Monte Carlo race simulation: how often each plan comes out best
+                const sim = strat.simulation;
+                if (sim && sim.options && sim.options.length) {
+                    sim.options.forEach((o, i) => {
+                        const r = o.position_range;
+                        rows.push(`<div class="gap-item ${i === 0 ? 'threat-high' : 'threat-low'}">
+                            <span class="gap-label">SIM ${o.label.toUpperCase()} P${r[1]} (P${r[0]}–P${r[2]})</span>
+                            <span class="gap-val">${Math.round(o.p_best * 100)}%</span>
+                        </div>`);
+                    });
+                    rows.push(`<div class="gap-item threat-low">
+                        <span class="gap-label">SIM ${sim.runs} RACES · SC ${Math.round(sim.p_safety_car * 100)}% · VSC ${Math.round(sim.p_vsc * 100)}%</span>
+                        <span class="gap-val">PIT ${sim.pit_loss_s[1].toFixed(1)}s</span>
+                    </div>`);
+                }
                 const uc = strat.undercut_on_car_ahead;
                 if (uc) {
                     rows.push(`<div class="gap-item ${uc.works ? 'threat-high' : 'threat-low'}">
