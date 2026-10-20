@@ -73,7 +73,9 @@ def format_context(ctx: dict) -> str:
     add('Air temp C', ctx.get('air_temp_c'))
     add('Safety car out', ctx.get('safety_car') or None)
     add('Gap to car ahead (s)', None if ctx.get('gap_ahead_s') is None else round(ctx['gap_ahead_s'], 1))
+    add('Car ahead driver', ctx.get('car_ahead_name'))
     add('Gap to car behind (s)', None if ctx.get('gap_behind_s') is None else round(ctx['gap_behind_s'], 1))
+    add('Car behind driver', ctx.get('car_behind_name'))
     add('Last lap', _fmt_lap(ctx.get('last_lap_ms')))
     add('Best lap', _fmt_lap(ctx.get('best_lap_ms')))
     add('Race pace (avg of last 3)', _fmt_lap(ctx.get('race_pace_ms')))
@@ -109,7 +111,8 @@ def format_context(ctx: dict) -> str:
     threats = ctx.get('opponent_threats')
     if threats:
         add('Nearby cars ranked by threat', '; '.join(
-            f"{t['threat_level']} ({t['gap_s']:+.1f}s{', ' + ', '.join(t['factors']) if t['factors'] else ''})"
+            f"{t.get('driver_name') or 'Unknown driver'} {t['threat_level']} "
+            f"({t['gap_s']:+.1f}s{', ' + ', '.join(t['factors']) if t['factors'] else ''})"
             for t in threats))
     return '\n'.join(lines) if lines else 'No telemetry received yet.'
 
@@ -178,11 +181,14 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         return (f"{ctx['weather'].capitalize()}. Track {ctx.get('track_temp_c')} degrees, "
                 f"air {ctx.get('air_temp_c')}.")
     if command in ('gap_ahead', 'gap_behind'):
-        key, name = ('gap_ahead_s', 'ahead') if command == 'gap_ahead' else ('gap_behind_s', 'behind')
-        gap = ctx.get(key)
+        side = 'ahead' if command == 'gap_ahead' else 'behind'
+        gap = ctx.get(f'gap_{side}_s')
         if gap is None:
-            return f'No gap {name} reading right now.'
-        return f'Gap {name} is {_say_seconds(gap)}.'
+            return f'No gap {side} reading right now.'
+        driver = ctx.get(f'car_{side}_name')
+        if driver:
+            return f'Gap to {driver} {side} is {_say_seconds(gap)}.'
+        return f'Gap {side} is {_say_seconds(gap)}.'
     if command == 'tyre_temps':
         temps = ctx.get('tyre_surface_c')
         if not temps:
@@ -210,7 +216,9 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         top = threats[0]
         side = 'behind' if top['gap_s'] < 0 else 'ahead'
         note = f", {top['factors'][0]}" if top.get('factors') else ''
-        return f"{top['threat_level'].capitalize()} threat {side}, {abs(top['gap_s']):.1f}{note}."
+        driver = top.get('driver_name')
+        who = f'from {driver} {side}' if driver else side
+        return f"{top['threat_level'].capitalize()} threat {who}, {abs(top['gap_s']):.1f}{note}."
     if command == 'pace':
         parts = []
         if ctx.get('last_lap_ms'):

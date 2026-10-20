@@ -27,12 +27,23 @@ class RaceRadio:
         self.phrases = say.Phrasebook()
         self.reset(None)
 
+    def set_driver_names(self, names: dict[int, str]):
+        self.driver_names = dict(names)
+
+    def driver_name(self, index) -> str | None:
+        return None if index is None else self.driver_names.get(index)
+
+    def _gap_call(self, side: str, gap: float, index) -> str:
+        name = self.driver_name(index)
+        return f'Gap to {name} {side} is {gap:.1f}.' if name else f'Gap {side} is {gap:.1f}.'
+
     def reset(self, session):
         self.session = session
         self.trajectories = {}
         self.last_session_time = None
         self.last_gap_report = -math.inf
         self.gap_ahead_s = self.gap_behind_s = None
+        self.car_ahead_index = self.car_behind_index = None
         self.pit_notices = set()
         self.pit_window = None
         self.last_pit_stops = None
@@ -168,6 +179,7 @@ class RaceRadio:
             if lap.last_lap_time_ms:
                 self.last_lap_times_ms[index] = lap.last_lap_time_ms
         self.gap_ahead_s = self.gap_behind_s = None
+        self.car_ahead_index = self.car_behind_index = None
         player = active.get(player_index)
         if player is None:
             self.opponent_threats = []
@@ -191,15 +203,16 @@ class RaceRadio:
             if gap is None:
                 continue
             if offset == -1:
-                self.gap_ahead_s = gap
+                self.gap_ahead_s, self.car_ahead_index = gap, index
             elif offset == 1:
-                self.gap_behind_s = -gap
+                self.gap_behind_s, self.car_behind_index = -gap, index
             pace_delta = None
             player_best = self.last_lap_times_ms.get(player_index)
             opponent_best = self.last_lap_times_ms.get(index)
             if player_best and opponent_best:
                 pace_delta = (opponent_best - player_best) / 1000.0
-            threats.append(evaluate_opponent_threat(index, lap.car_position, gap, pace_delta))
+            threats.append(evaluate_opponent_threat(index, lap.car_position, gap, pace_delta,
+                                                   self.driver_name(index)))
         threats.sort(key=lambda t: t.threat_score, reverse=True)
         self.opponent_threats = threats[:5]
         self._call_drs_range(now)
