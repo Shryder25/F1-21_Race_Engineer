@@ -538,6 +538,10 @@ body.f1-theme {
     gap: 2px;
 }
 
+.gap-item.threat-high { border-color: #ff3b3b; }
+.gap-item.threat-medium { border-color: #ffb020; }
+.gap-item.threat-low { border-color: var(--border-color); }
+
 .gap-label {
     font-family: var(--font-heading);
     font-size: 10px;

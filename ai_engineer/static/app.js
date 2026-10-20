@@ -644,6 +644,24 @@ async function fetchTelemetry() {
             }
         }
 
+        // Nearby opponent threats (physics-model gap/pace scoring)
+        const threatsCard = document.getElementById('threatsCard');
+        const threatsList = document.getElementById('threatsList');
+        if (threatsCard && threatsList) {
+            const threats = data.opponent_threats || [];
+            threatsCard.style.display = threats.length ? '' : 'none';
+            threatsList.innerHTML = threats.map(t => {
+                const side = t.gap_s < 0 ? 'BEHIND' : 'AHEAD';
+                const cls = t.threat_level === 'HIGH' ? 'threat-high'
+                          : t.threat_level === 'MEDIUM' ? 'threat-medium' : 'threat-low';
+                const note = t.factors && t.factors.length ? ` — ${t.factors[0]}` : '';
+                return `<div class="gap-item ${cls}">
+                    <span class="gap-label">${side} ${Math.abs(t.gap_s).toFixed(1)}s</span>
+                    <span class="gap-val">${t.threat_level}${note}</span>
+                </div>`;
+            }).join('');
+        }
+
         // Sector Splits (Purple/Green/Yellow)
         const currentSectors = data.current_sectors_ms || {};
         const personalSectors = data.personal_sectors_ms || {};

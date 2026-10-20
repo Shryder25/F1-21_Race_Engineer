@@ -21,7 +21,7 @@ from voice_engine import Priority
 
 ACK_TEXT = 'We are checking.'
 
-COMMANDS = ('weather', 'tyre_temps', 'pit_window', 'gap_ahead', 'gap_behind', 'pace')
+COMMANDS = ('weather', 'tyre_temps', 'pit_window', 'gap_ahead', 'gap_behind', 'pace', 'threats')
 
 _WAKE_WORDS = re.compile(r'^(?:hey |ok |okay )?(?:engineer|race engineer|box box)[, ]+', re.IGNORECASE)
 
@@ -38,6 +38,8 @@ def match_command(text: str) -> str | None:
     t = normalise(t)
     if not t:
         return None
+    if re.search(r'\b(threat|threats|attacking|pressure|catching|closing)\b', t):
+        return 'threats'
     if 'behind' in t or 'chasing' in t:
         return 'gap_behind'
     if re.search(r'\b(pit|box|stop|window|strategy)\b', t):

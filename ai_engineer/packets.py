@@ -396,14 +396,24 @@ class CarStatusData:
                                     ACTUAL_COMPOUNDS.get(self.actual_tyre_compound, "Unknown"))
 
 
-def parse_player_car_status(data: bytes, player_index: int) -> CarStatusData:
-    v = struct.unpack_from(CAR_STATUS_FORMAT, data, HEADER_SIZE + player_index * CAR_STATUS_SIZE)
+def _car_status_from_values(v: tuple) -> CarStatusData:
     return CarStatusData(
         fuel_in_tank=v[5], fuel_capacity=v[6], fuel_remaining_laps=v[7],
         actual_tyre_compound=v[13], visual_tyre_compound=v[14], tyres_age_laps=v[15],
         fia_flags=v[16], ers_store_energy=v[17], ers_deploy_mode=v[18],
         ers_deployed_this_lap=v[21],
     )
+
+
+def parse_player_car_status(data: bytes, player_index: int) -> CarStatusData:
+    v = struct.unpack_from(CAR_STATUS_FORMAT, data, HEADER_SIZE + player_index * CAR_STATUS_SIZE)
+    return _car_status_from_values(v)
+
+
+def parse_all_car_status(data: bytes) -> list[CarStatusData]:
+    """Every car's status (tyre compound/age, fuel, ERS) from one Car Status packet."""
+    return [_car_status_from_values(struct.unpack_from(CAR_STATUS_FORMAT, data, HEADER_SIZE + i * CAR_STATUS_SIZE))
+            for i in range(22)]
 
 
 # ──────────────────────────────────────────────
@@ -445,13 +455,23 @@ class CarDamageData:
         return max(self.tyres_wear)
 
 
-def parse_player_car_damage(data: bytes, player_index: int) -> CarDamageData:
-    v = struct.unpack_from(CAR_DAMAGE_FORMAT, data, HEADER_SIZE + player_index * CAR_DAMAGE_SIZE)
+def _car_damage_from_values(v: tuple) -> CarDamageData:
     return CarDamageData(
         tyres_wear=tuple(v[0:4]), tyres_damage=tuple(v[4:8]),
         front_left_wing=v[12], front_right_wing=v[13], rear_wing=v[14],
         floor=v[15], gearbox=v[19], engine=v[20],
     )
+
+
+def parse_player_car_damage(data: bytes, player_index: int) -> CarDamageData:
+    v = struct.unpack_from(CAR_DAMAGE_FORMAT, data, HEADER_SIZE + player_index * CAR_DAMAGE_SIZE)
+    return _car_damage_from_values(v)
+
+
+def parse_all_car_damage(data: bytes) -> list[CarDamageData]:
+    """Every car's damage/tyre-wear from one Car Damage packet."""
+    return [_car_damage_from_values(struct.unpack_from(CAR_DAMAGE_FORMAT, data, HEADER_SIZE + i * CAR_DAMAGE_SIZE))
+            for i in range(22)]
 
 
 # ──────────────────────────────────────────────

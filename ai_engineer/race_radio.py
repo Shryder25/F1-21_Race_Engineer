@@ -2,7 +2,12 @@ import math
 import time
 from collections import deque
 
+from physics_models import evaluate_opponent_threat
 from voice_engine import Priority
+
+# How many cars ahead/behind of the player get a threat score each frame (beyond immediate
+# neighbours, Box-Box scores the wider nearby field rather than only P+1/P-1).
+THREAT_WINDOW_POSITIONS = 3
 
 
 class RaceRadio:
@@ -28,6 +33,8 @@ class RaceRadio:
         self.last_safety_car = session.safety_car_status if session else 0
         self.last_weather = session.weather if session else 0
         self.last_critical_alert = 0.0
+        self.last_lap_times_ms: dict[int, int] = {}    # car index -> most recent completed lap time
+        self.opponent_threats: list = []
 
     def update_strategy(self, lap):
         """Monitor pit stop windows with concise radio timing."""
@@ -137,20 +144,44 @@ class RaceRadio:
                 history.clear()
             if not history or (lap.total_distance > history[-1][0] and session_time > history[-1][1]):
                 history.append((lap.total_distance, session_time))
+        for index, lap in active.items():
+            if lap.last_lap_time_ms:
+                self.last_lap_times_ms[index] = lap.last_lap_time_ms
         self.gap_ahead_s = self.gap_behind_s = None
         player = active.get(player_index)
         if player is None:
+            self.opponent_threats = []
             return
+        threats = []
         for index, lap in active.items():
-            crossing = None
-            if lap.car_position == player.car_position - 1:
+            if index == player_index:
+                continue
+            offset = lap.car_position - player.car_position
+            if abs(offset) > THREAT_WINDOW_POSITIONS:
+                continue
+            # Positive gap = ahead of the player (offset < 0, i.e. a better position number);
+            # crossing time is read from whichever car's trajectory the other car's distance
+            # falls within, matching the existing immediate-neighbour calculation below.
+            if offset < 0:
                 crossing = self._crossing_time(self.trajectories[index], player.total_distance)
-                if crossing is not None:
-                    self.gap_ahead_s = max(0, session_time - crossing)
-            elif lap.car_position == player.car_position + 1:
+                gap = None if crossing is None else max(0.0, session_time - crossing)
+            else:
                 crossing = self._crossing_time(self.trajectories[player_index], lap.total_distance)
-                if crossing is not None:
-                    self.gap_behind_s = max(0, session_time - crossing)
+                gap = None if crossing is None else -max(0.0, session_time - crossing)
+            if gap is None:
+                continue
+            if offset == -1:
+                self.gap_ahead_s = gap
+            elif offset == 1:
+                self.gap_behind_s = -gap
+            pace_delta = None
+            player_best = self.last_lap_times_ms.get(player_index)
+            opponent_best = self.last_lap_times_ms.get(index)
+            if player_best and opponent_best:
+                pace_delta = (opponent_best - player_best) / 1000.0
+            threats.append(evaluate_opponent_threat(index, lap.car_position, gap, pace_delta))
+        threats.sort(key=lambda t: t.threat_score, reverse=True)
+        self.opponent_threats = threats[:5]
         if now - self.last_gap_report >= 20:
             messages = []
             if self.gap_ahead_s is not None:

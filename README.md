@@ -10,7 +10,9 @@ An intelligent, real-time virtual race engineer for the F1 2021 game. This proje
 
 **Predictive ML (`ai_engineer/strategy_ml.py`).** `numpy.polyfit` fits a wear-vs-tyre-age curve for the current compound using this stint plus your earlier sessions at the same track, and turns it into a pit window (lap numbers) and a "can finish without stopping" flag. It also learns fuel burn per lap and the fuel-corrected tyre fall-off in seconds per lap. With too little (or too noisy) data it says so instead of guessing.
 
-**DeepSeek brain (`ai_client.py`, `engineer_brain.py`).** Live telemetry and the ML predictions are placed in a system prompt that demands short F1-radio replies. Any OpenAI-compatible endpoint works:
+**Physics tyre/fuel/threat model (`ai_engineer/physics_models.py`).** Alongside the learned wear curve, every frame is also scored by a physics model adapted from the [Box-Box](https://github.com/ploverbyHB/Box-Box) race engineer project: a thermal grip curve per compound (ideal temperature window, overheat/cold penalties), a wear-cliff and competitive-loss budget that gives a 0-100 tyre health score and remaining-laps estimate from the very first lap (no history needed, unlike the learned curve), a fuel-margin check, and an opponent-threat score for nearby cars (gap, DRS range, pace delta, laps to catch) built from the game's per-car lap and car-status/damage packets. Ask *"any threats"* / *"who's attacking me"* for the nearest one.
+
+**DeepSeek brain (`ai_client.py`, `engineer_brain.py`).** Live telemetry, the ML predictions and the physics model are placed in a system prompt that demands short F1-radio replies, and the model is asked for structured JSON (`{"voice": "...", "advice": "..."}`, also following Box-Box's approach) rather than trusting it to self-format free text; a server that cannot do JSON mode falls back to plain text automatically. Any OpenAI-compatible endpoint works:
 
 | Provider | Flags |
 |---|---|
@@ -20,7 +22,7 @@ An intelligent, real-time virtual race engineer for the F1 2021 game. This proje
 
 The same settings can come from `F1_AI_BASE_URL`, `F1_AI_MODEL` and `F1_AI_API_KEY`. If the model is offline or slower than `--ai-timeout` (15 s), the engineer answers from the same data using built-in rules, so a command is never ignored. `--no-ai` forces rules only.
 
-**Voice commands (`voice_commands.py`).** The engineer no longer chats constantly. Ask for what you need: *"weather report"*, *"tyre temps"*, *"pit window"*, *"gap to car ahead"*, *"gap to car behind"*, *"pace update"* (optionally prefixed with "engineer"). The moment a command is recognised the engineer says **"We are checking"** while the AI works in the background, then speaks the answer. Only critical tyre overheating still interrupts on its own; `--chatty` restores the old callouts.
+**Voice commands (`voice_commands.py`).** The engineer no longer chats constantly. Ask for what you need: *"weather report"*, *"tyre temps"*, *"pit window"*, *"gap to car ahead"*, *"gap to car behind"*, *"pace update"*, *"any threats"* (optionally prefixed with "engineer"). The moment a command is recognised the engineer says **"We are checking"** while the AI works in the background, then speaks the answer. Only critical tyre overheating still interrupts on its own; `--chatty` restores the old callouts.
 
 - Speech-to-text: `pip install SpeechRecognition PyAudio`. Default engine is Google (online); `--stt-engine vosk` runs offline (`pip install vosk`, unpack a Vosk model to `./model`). `--mic-index N` picks a microphone, `--no-mic` disables it.
 - No microphone? Send text to the engineer: `curl -X POST localhost:5000/api/command -d "{\"text\": \"pit window\"}"`.

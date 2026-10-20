@@ -3,7 +3,11 @@
 Flow for every voice command:
   1. ``build_context`` (AnalysisEngine) -> telemetry stats + ML predictions
   2. ``build_prompt`` -> system prompt + data block for DeepSeek
-  3. ``AIClient.chat`` -> radio-style answer
+  3. ``AIClient.chat_json`` -> {"voice": "...", "advice": "..."}, forcing the model's JSON
+     mode instead of trusting it to follow a length/format instruction in free text (the
+     approach used by Box-Box's analyzer.py). ``voice`` is the short radio line that gets
+     spoken; ``advice`` is an optional longer note for the on-screen radio log. Falls back to
+     plain-text ``chat`` + prose cleanup for a server that cannot do JSON mode at all.
   4. If the model is slow, offline or returns junk, ``rule_based_answer`` still
      answers from the same data, so a command never goes unanswered.
 """
@@ -23,6 +27,7 @@ COMMAND_QUESTIONS = {
     'gap_ahead': 'What is the gap to the car ahead?',
     'gap_behind': 'What is the gap to the car behind?',
     'pace': 'Give me a pace update.',
+    'threats': 'Any threats nearby? Who is attacking or defending?',
 }
 
 SYSTEM_PROMPT = """You are the driver's Formula 1 race engineer speaking over team radio.
@@ -33,7 +38,10 @@ Rules:
 - Be direct and calm. Lead with the answer, then one useful instruction if it adds value.
 - The data states the session mode. Time trial: no rivals, no pit stops. Qualifying: no pit stops and rival gaps are not tracked. Free practice: gaps are not tracked. If asked about something the mode does not have, say so in a few words instead of inventing numbers.
 - Tyre temperatures are surface temperatures in Celsius; wear is a percentage. Gaps are in seconds.
+- Opponent threats, when present, are nearby cars already ranked by how much pressure they put on the driver; mention one only if it changes what the driver should do right now.
 Example: "Gap ahead is two point four, tyres are good, keep pushing."
+
+Return JSON only, no other text: {"voice": "<the radio line as described above>", "advice": "<one extra sentence of detail for the pit wall screen, or empty string if voice already says it all>"}.
 """
 
 
@@ -90,6 +98,17 @@ def format_context(ctx: dict) -> str:
                     f"{fuel['laps_of_fuel']} laps of fuel, margin {fuel['margin_laps']} laps")
     add('Last lap sector times ms', ctx.get('last_lap_sectors_ms'))
     add('Last lap sector deltas to personal best ms', ctx.get('last_lap_sector_deltas_ms'))
+    tire = ctx.get('tire_health')
+    if tire:
+        add('Tyre physics model', (
+            f"grip {tire['grip_factor']:.2f}, health {tire['health_score']:.0f}%, "
+            f"~{tire['remaining_laps']:.0f} competitive laps left (limited by {tire['limiting_factor']}), "
+            f"overheat risk {tire['overheat_risk']}"))
+    threats = ctx.get('opponent_threats')
+    if threats:
+        add('Nearby cars ranked by threat', '; '.join(
+            f"{t['threat_level']} ({t['gap_s']:+.1f}s{', ' + ', '.join(t['factors']) if t['factors'] else ''})"
+            for t in threats))
     return '\n'.join(lines) if lines else 'No telemetry received yet.'
 
 
@@ -139,7 +158,7 @@ def _mode_blocks(command: str, ctx: dict) -> str | None:
     if not mode or mode == session_modes.UNKNOWN:
         return None
     label = session_modes.MODE_LABELS[mode]
-    if command in ('gap_ahead', 'gap_behind') and not session_modes.reports_gaps(mode):
+    if command in ('gap_ahead', 'gap_behind', 'threats') and not session_modes.reports_gaps(mode):
         return 'No other cars in time trial.' if mode == session_modes.TIME_TRIAL \
             else f'Gaps are only tracked in the race, not in {label.lower()}.'
     if command == 'pit_window' and not session_modes.has_pit_strategy(mode):
@@ -182,6 +201,14 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         if window:
             return f'Game window is lap {window[0]} to {window[1]}.'
         return 'Not enough laps on these tyres to predict a window yet.'
+    if command == 'threats':
+        threats = ctx.get('opponent_threats')
+        if not threats:
+            return 'No immediate threats.'
+        top = threats[0]
+        side = 'behind' if top['gap_s'] < 0 else 'ahead'
+        note = f", {top['factors'][0]}" if top.get('factors') else ''
+        return f"{top['threat_level'].capitalize()} threat {side}, {abs(top['gap_s']):.1f}{note}."
     if command == 'pace':
         parts = []
         if ctx.get('last_lap_ms'):
@@ -200,22 +227,36 @@ class EngineerBrain:
     def __init__(self, context_provider: Callable[[], dict], client: AIClient | None = None):
         self.context_provider = context_provider
         self.client = client
-        self.last_source = None   # 'ai' or 'fallback' - useful for the HUD and tests
+        self.last_source = None     # 'ai' or 'fallback' or 'rules' - useful for the HUD and tests
+        self.last_advice = ''        # longer note from the last AI answer, for an on-screen log
 
     def answer(self, command: str) -> str:
         ctx = self.context_provider()
         blocked = _mode_blocks(command, ctx)
         if blocked:                       # e.g. "gap ahead" in time trial: answer instantly, no AI needed
             self.last_source = 'rules'
+            self.last_advice = ''
             return blocked
         if self.client is not None:
+            system, user = build_prompt(command, ctx)
+            if hasattr(self.client, 'chat_json'):
+                try:
+                    result = self.client.chat_json(system, user)
+                    voice = clean_radio_text(str(result.get('voice') or ''))
+                    if voice:
+                        self.last_source = 'ai'
+                        self.last_advice = str(result.get('advice') or '').strip()
+                        return voice
+                except AIUnavailable as error:
+                    print(f'[Engineer] AI JSON reply unavailable ({error}); trying plain text.')
             try:
-                system, user = build_prompt(command, ctx)
                 text = clean_radio_text(self.client.chat(system, user))
                 if text:
                     self.last_source = 'ai'
+                    self.last_advice = ''
                     return text
             except AIUnavailable as error:
                 print(f'[Engineer] AI unavailable ({error}); answering from rules.')
         self.last_source = 'fallback'
+        self.last_advice = ''
         return rule_based_answer(command, ctx)

@@ -18,6 +18,7 @@ from typing import Optional
 from packets import (CarTelemetryData, LapData, SessionData, CarStatusData, CarDamageData,
                      CarMotionData, TRACK_NAMES, SESSION_TYPES)
 from track_data import get_braking_points, get_setup_advice, corner_zones, resolve_track_id
+import physics_models
 import session_modes
 from voice_engine import VoiceEngine, Priority
 from history import TelemetryHistory
@@ -740,6 +741,25 @@ class AnalysisEngine:
                  and st['tyre_age_laps'] is not None]
         return strategy_ml.pace_degradation(stint[-8:])
 
+    def tire_health(self):
+        """Instant physics-model tyre read: grip, health and overheat risk, no lap history needed.
+
+        Complements pit_prediction() (which learns a wear curve from observed laps and needs
+        several of them): this scores the current instant from a model of the compound, so it
+        is available from the first telemetry frame of a fresh set.
+        """
+        if self.latest_status is None:
+            return None
+        return physics_models.evaluate_tire(
+            self.latest_status.compound_name,
+            self.latest_status.tyres_age_laps,
+            self.latest_damage.tyres_wear if self.latest_damage else None,
+            self.latest_telemetry.tyres_surface_temperature if self.latest_telemetry else None)
+
+    def opponent_threats(self) -> list[dict]:
+        """Nearby cars ranked by how much pressure they put on the player right now."""
+        return [t.__dict__ for t in self.radio.opponent_threats]
+
     def build_context(self) -> dict:
         """Snapshot of live telemetry plus ML predictions, for the AI prompt and fallbacks."""
         t, lap, s, st, dmg = (self.latest_telemetry, self.latest_lap, self.session,
@@ -770,6 +790,18 @@ class AnalysisEngine:
         ctx['pit_prediction'] = prediction.as_dict() if prediction else None
         ctx['fuel'] = self.fuel_prediction()
         ctx['pace_trend_s_per_lap'] = self.pace_trend()
+        tire = self.tire_health()
+        ctx['tire_health'] = None if tire is None else {
+            'grip_factor': tire.grip_factor, 'health_score': tire.health_score,
+            'deg_rate_s_per_lap': tire.deg_rate_s_per_lap, 'remaining_laps': tire.remaining_laps,
+            'performance_loss_s': tire.performance_loss_s, 'overheat_risk': tire.overheat_risk.value,
+            'limiting_factor': tire.limiting_factor}
+        threats = self.opponent_threats()
+        ctx['opponent_threats'] = [
+            {'threat_level': t['threat_level'], 'threat_score': t['threat_score'],
+             'gap_s': t['gap_s'], 'pace_delta_s': t['pace_delta_s'],
+             'laps_to_catch': t['laps_to_catch'], 'factors': t['factors']}
+            for t in threats] or None
         if self.session_lap_stats:
             last = self.session_lap_stats[-1]
             ctx['last_lap_sectors_ms'] = last['sectors'] or None
@@ -848,6 +880,11 @@ class AnalysisEngine:
             "gap_behind_s": self.radio.gap_behind_s,
             "race_pace_ms": self.radio.race_pace_ms,
             "pit_window": self.radio.pit_window,
+            "opponent_threats": self.opponent_threats(),
+            "tire_health": (lambda t: None if t is None else {
+                'grip_factor': t.grip_factor, 'health_score': t.health_score,
+                'remaining_laps': t.remaining_laps, 'overheat_risk': t.overheat_risk.value,
+                'limiting_factor': t.limiting_factor})(self.tire_health()),
             "safety_car": ("VSC" if self.session and self.session.safety_car_status == 2
                            else "SAFETY CAR" if self.session and self.session.safety_car_status == 1
                            else "NONE"),
