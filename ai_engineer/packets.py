@@ -500,6 +500,76 @@ def parse_all_car_damage(data: bytes) -> list[CarDamageData]:
 
 
 # ──────────────────────────────────────────────
+# Packet ID 4: Participants (driver names, teams, race numbers)
+# ──────────────────────────────────────────────
+# header(24) + numActiveCars(1) + 22 cars x 56 bytes = 1,257 bytes. Sent every 5 seconds.
+PARTICIPANT_FORMAT = (
+    "<"
+    "B"       # aiControlled (1 = AI, 0 = human)
+    "B"       # driverId (255 if network human)
+    "B"       # networkId
+    "B"       # teamId
+    "B"       # myTeam flag
+    "B"       # raceNumber
+    "B"       # nationality
+    "48s"     # name (UTF-8, null terminated)
+    "B"       # yourTelemetry (0 = restricted, 1 = public)
+)
+PARTICIPANT_SIZE = struct.calcsize(PARTICIPANT_FORMAT)  # 56 bytes
+PARTICIPANTS_PACKET_SIZE = HEADER_SIZE + 1 + 22 * PARTICIPANT_SIZE  # 1,257 bytes
+
+# Names the game uses when it hides a human player's real name; not worth saying on the radio.
+_PLACEHOLDER_NAMES = {"", "player", "driver"}
+
+@dataclass
+class ParticipantData:
+    ai_controlled: bool
+    driver_id: int
+    team_id: int
+    race_number: int
+    nationality: int
+    name: str
+    telemetry_public: bool
+
+    @property
+    def radio_name(self) -> str | None:
+        """How an engineer would say this driver on the radio: the surname, or None.
+
+        The game sends AI drivers in upper case ("HAMILTON") and online players as their
+        gamertag. All-upper-case words at the end of a name are treated as the surname so
+        "Nyck DE VRIES" becomes "De Vries"; otherwise the full name is used as given.
+        """
+        name = " ".join(self.name.split())
+        if name.lower() in _PLACEHOLDER_NAMES:
+            return None
+        if name.isupper():
+            return " ".join(word.capitalize() for word in name.split(" "))
+        surname = []
+        for word in reversed(name.split(" ")):
+            if not (word.isupper() and len(word) > 1):
+                break
+            surname.insert(0, word.capitalize())
+        return " ".join(surname) if surname else name
+
+
+def _participant_from_values(v: tuple) -> ParticipantData:
+    raw = v[7].split(b"\x00", 1)[0]
+    return ParticipantData(
+        ai_controlled=bool(v[0]), driver_id=v[1], team_id=v[3], race_number=v[5],
+        nationality=v[6], name=raw.decode("utf-8", errors="replace").strip(),
+        telemetry_public=bool(v[8]),
+    )
+
+
+def parse_participants(data: bytes) -> list[ParticipantData]:
+    """Every active car's participant entry, indexed like every other per-car array."""
+    active = min(struct.unpack_from("<B", data, HEADER_SIZE)[0], 22)
+    return [_participant_from_values(struct.unpack_from(PARTICIPANT_FORMAT, data,
+                                                        HEADER_SIZE + 1 + i * PARTICIPANT_SIZE))
+            for i in range(active)]
+
+
+# ──────────────────────────────────────────────
 # Track ID → Name Mapping (F1 2021)
 # ──────────────────────────────────────────────
 TRACK_NAMES = {

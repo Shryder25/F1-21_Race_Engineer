@@ -224,10 +224,12 @@ class OpponentThreat:
     pace_delta_s: float | None  # positive = this car is faster per lap than the player
     laps_to_catch: float | None
     factors: list[str]
+    driver_name: str | None = None   # radio name from the Participants packet, if known
 
 
 def evaluate_opponent_threat(car_index: int, position: int | None, gap_s: float,
-                             pace_delta_s: float | None) -> OpponentThreat:
+                             pace_delta_s: float | None,
+                             driver_name: str | None = None) -> OpponentThreat:
     """Score how much pressure one nearby car puts on the player right now.
 
     ``gap_s`` follows RaceRadio's convention: positive means the car is ahead of the player
@@ -267,4 +269,5 @@ def evaluate_opponent_threat(car_index: int, position: int | None, gap_s: float,
     return OpponentThreat(
         car_index=car_index, position=position, threat_score=round(score, 1), threat_level=level,
         gap_s=round(gap_s, 2), pace_delta_s=round(pace_delta_s, 3) if pace_delta_s is not None else None,
-        laps_to_catch=round(laps_to_catch, 1) if laps_to_catch is not None else None, factors=factors)
+        laps_to_catch=round(laps_to_catch, 1) if laps_to_catch is not None else None, factors=factors,
+        driver_name=driver_name)
