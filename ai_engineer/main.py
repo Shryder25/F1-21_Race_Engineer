@@ -40,7 +40,8 @@ from voice_engine import VoiceEngine, Priority
 from analysis import AnalysisEngine
 from history import TelemetryHistory
 from telemetry_stream import TelemetryStream
-from web_hud import start_web_hud_server, add_voice_log, set_command_handler, set_setup_ai_client
+from web_hud import (start_web_hud_server, add_voice_log, set_command_handler,
+                     set_setup_ai_client, set_reset_map_handler)
 from ai_client import AIClient
 from engineer_brain import EngineerBrain
 from voice_commands import CommandDispatcher, VoiceCommandListener
@@ -195,6 +196,7 @@ def main():
     dispatcher = CommandDispatcher(voice, brain, on_log=add_voice_log)
     set_command_handler(dispatcher.handle_text)
     set_setup_ai_client(client)
+    set_reset_map_handler(analysis.reset_map)
     listener = None
     if not args.no_mic and not args.no_voice:
         listener = VoiceCommandListener(dispatcher, engine=args.stt_engine,

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from packets import (CarTelemetryData, LapData, SessionData, CarStatusData, CarDamageData,
-                     CarMotionData, TRACK_NAMES, SESSION_TYPES)
+                     CarMotionData, TRACK_NAMES, SESSION_TYPES, ACTUAL_COMPOUNDS)
 from track_data import get_braking_points, get_setup_advice, corner_zones, resolve_track_id
 import physics_models
 import session_modes
@@ -34,6 +34,12 @@ TYRE_TEMP_HIGH = 104     # °C – surface temp above this = overheating
 TYRE_TEMP_LOW = 80       # °C – surface temp below this = cold
 TYRE_TEMP_CRITICAL = 112 # °C – critical degradation
 TYRE_TEMP_SUSTAIN_SECS = 2.5
+
+# Critical-overheat alert: require the temperature to actually be climbing, not just
+# momentarily above the threshold, and respect a cooldown so one real overheat event
+# doesn't repeat every single frame while the tyre stays hot.
+TYRE_TEMP_RISE_RATE_C_PER_S = 1.5   # minimum ΔT/Δt to treat a spike as genuine overheating
+TYRE_TEMP_ALERT_COOLDOWN_SECS = 40.0  # between 30-45s, per the requested fix
 
 BRAKING_WARN_DISTANCE = 220  # Metres before braking zone to announce
 
@@ -69,6 +75,12 @@ class TyreState:
     hot_since: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
     cold_since: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
     last_alert_time: float = 0.0
+    # Rate-of-change tracking for the critical-overheat alert: a momentary noisy spike
+    # (common in the game's telemetry, e.g. a brief lockup reading) should not trigger a
+    # radio call on its own — only a temperature that is genuinely climbing fast should.
+    last_temp_sample: list[float] | None = None
+    last_temp_sample_time: float = 0.0
+    last_critical_alert_time: float = 0.0
 
 
 @dataclass
@@ -107,6 +119,8 @@ class AnalysisEngine:
         self.latest_status: CarStatusData | None = None
         self.latest_damage: CarDamageData | None = None
         self.lap_start_fuel: float | None = None
+        self.current_lap_speed_trap_kph: float | None = None
+        self.last_speed_trap_kph: float | None = None
         self.session_lap_stats: list[dict] = []
         self._ml_cache: tuple | None = None
         self.session_mode = session_modes.UNKNOWN
@@ -173,6 +187,8 @@ class AnalysisEngine:
             self._ml_cache = None
             self.latest_status = self.latest_damage = None
             self.lap_start_fuel = None
+            self.current_lap_speed_trap_kph = None
+            self.last_speed_trap_kph = None
             self.announced_braking.clear()
             self.last_sector = 0
             self.session_started = False
@@ -289,13 +305,25 @@ class AnalysisEngine:
         if telemetry.speed < 40:
             return
 
+        # Rate-of-change (ΔT/Δt) per wheel since the last sample, used to tell a genuine
+        # overheat climb apart from a single noisy spike that happens to be above the
+        # critical threshold for one frame (a false positive the static-threshold check
+        # had no way to rule out).
+        rise_rates = [0.0, 0.0, 0.0, 0.0]
+        prev_sample, prev_time = self.tyre_state.last_temp_sample, self.tyre_state.last_temp_sample_time
+        if prev_sample is not None and now > prev_time:
+            dt = now - prev_time
+            rise_rates = [(temps[i] - prev_sample[i]) / dt for i in range(4)]
+        self.tyre_state.last_temp_sample = list(temps)
+        self.tyre_state.last_temp_sample_time = now
+
         hot_wheels = []
         cold_wheels = []
         critical_wheels = []
 
         for i in range(4):
             temp = temps[i]
-            if temp >= TYRE_TEMP_CRITICAL:
+            if temp >= TYRE_TEMP_CRITICAL and rise_rates[i] >= TYRE_TEMP_RISE_RATE_C_PER_S:
                 critical_wheels.append((WHEEL_NAMES[i], temp))
             elif temp > TYRE_TEMP_HIGH:
                 if self.tyre_state.hot_since[i] == 0.0:
@@ -313,17 +341,20 @@ class AnalysisEngine:
             else:
                 self.tyre_state.cold_since[i] = 0.0
 
-        if now - self.tyre_state.last_alert_time < 25.0:
-            return
-
-        if critical_wheels:
+        if critical_wheels and now - self.tyre_state.last_critical_alert_time >= TYRE_TEMP_ALERT_COOLDOWN_SECS:
             names = " and ".join(w[0] for w in critical_wheels)
             self.speak(
                 f"Critical! {names} overheating at {critical_wheels[0][1]} degrees! Manage your tyres!",
                 Priority.CRITICAL, key='tyre_temperature', ttl=5, cooldown=25
             )
+            self.tyre_state.last_critical_alert_time = now
             self.tyre_state.last_alert_time = now
-        elif hot_wheels:
+            return
+
+        if now - self.tyre_state.last_alert_time < 25.0:
+            return
+
+        if hot_wheels:
             fronts = [w for w in hot_wheels if "Front" in w[0]]
             rears = [w for w in hot_wheels if "Rear" in w[0]]
             if fronts and rears:
@@ -570,7 +601,10 @@ class AnalysisEngine:
         if 1 in sectors and 2 in sectors and lap.last_lap_time_ms > sectors[1] + sectors[2]:
             sectors[3] = lap.last_lap_time_ms - sectors[1] - sectors[2]
         if prev_lap_num > 0 and lap.last_lap_time_ms > 0:
-            self._record_lap_stats(prev_lap_num, lap.last_lap_time_ms, complete, sectors)
+            self._record_lap_stats(prev_lap_num, lap.last_lap_time_ms, complete, sectors,
+                                   self.current_lap_speed_trap_kph)
+        self.last_speed_trap_kph = self.current_lap_speed_trap_kph
+        self.current_lap_speed_trap_kph = None
         if prev_lap_num > 0 and self.delta.current_lap_samples:
             recording = {
                 'lap_time_ms': lap.last_lap_time_ms, 'lap_num': prev_lap_num,
@@ -639,6 +673,22 @@ class AnalysisEngine:
     # Learning Engine: tyre wear, fuel and ML predictions
     # ──────────────────────────────────────────
 
+    def reset_map(self):
+        """Manually wipe the recorded track map/braking/ERS trail (driver pressed 'Reset Map').
+
+        Unlike a new-lap or new-session reset, this does not touch lap timing, tyre or
+        AI state — it only clears the coordinate trail so a dirty out-lap or a spin that
+        left stray points doesn't junk up the map for the rest of the session.
+        """
+        self.current_lap_map_points.clear()
+        self.track_map_points.clear()
+        self.current_lap_braking_zones.clear()
+        self.current_lap_ers_zones.clear()
+        self.braking_zones_best.clear()
+        self.ers_zones_best.clear()
+        self.last_map_dist = -999.0
+        update_web_state({'track_map': [], 'braking_zones': [], 'ers_zones': []})
+
     def update_car_status(self, status: CarStatusData):
         self.latest_status = status
         if self.lap_start_fuel is None:
@@ -647,7 +697,13 @@ class AnalysisEngine:
     def update_car_damage(self, damage: CarDamageData):
         self.latest_damage = damage
 
-    def _record_lap_stats(self, lap_num: int, lap_time_ms: int, eligible: bool, sectors: dict):
+    def update_speed_trap(self, speed_kph: float):
+        """Record the fastest Speed Trap event ('SPTP') seen so far on the current lap."""
+        if self.current_lap_speed_trap_kph is None or speed_kph > self.current_lap_speed_trap_kph:
+            self.current_lap_speed_trap_kph = speed_kph
+
+    def _record_lap_stats(self, lap_num: int, lap_time_ms: int, eligible: bool, sectors: dict,
+                          speed_trap_kph: float | None = None):
         """Log tyre wear, fuel burn and sector deltas for the lap that just finished."""
         status, damage = self.latest_status, self.latest_damage
         deltas = {sector: ms - self.best_sector_times[sector]
@@ -660,6 +716,7 @@ class AnalysisEngine:
             'fuel_start': self.lap_start_fuel,
             'fuel_end': status.fuel_in_tank if status else None,
             'sectors': dict(sectors), 'sector_deltas': deltas,
+            'speed_trap_kph': speed_trap_kph,
         }
         self.session_lap_stats.append(stats)
         self._ml_cache = None
@@ -759,6 +816,24 @@ class AnalysisEngine:
     def opponent_threats(self) -> list[dict]:
         """Nearby cars ranked by how much pressure they put on the player right now."""
         return [t.__dict__ for t in self.radio.opponent_threats]
+
+    def race_report(self) -> list[dict]:
+        """This session's completed laps for the HUD race-report table: lap number, lap
+        time, each sector, speed trap and tyre compound. Reads from the in-memory
+        session_lap_stats (so it works even with no history DB attached) rather than
+        querying SQLite on every telemetry frame.
+        """
+        report = []
+        for st in self.session_lap_stats:
+            sectors = st.get('sectors') or {}
+            report.append({
+                'lap_num': st['lap_num'], 'lap_time_ms': st['lap_time_ms'],
+                'eligible': bool(st.get('eligible')),
+                'compound': ACTUAL_COMPOUNDS.get(st.get('compound'), '--'),
+                's1_ms': sectors.get(1), 's2_ms': sectors.get(2), 's3_ms': sectors.get(3),
+                'speed_trap_kph': st.get('speed_trap_kph'),
+            })
+        return report
 
     def build_context(self) -> dict:
         """Snapshot of live telemetry plus ML predictions, for the AI prompt and fallbacks."""
@@ -881,6 +956,7 @@ class AnalysisEngine:
             "race_pace_ms": self.radio.race_pace_ms,
             "pit_window": self.radio.pit_window,
             "opponent_threats": self.opponent_threats(),
+            "race_report": self.race_report(),
             "tire_health": (lambda t: None if t is None else {
                 'grip_factor': t.grip_factor, 'health_score': t.health_score,
                 'remaining_laps': t.remaining_laps, 'overheat_risk': t.overheat_risk.value,

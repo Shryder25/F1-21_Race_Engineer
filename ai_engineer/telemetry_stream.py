@@ -6,10 +6,13 @@ import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
                      parse_player_telemetry, parse_player_car_status, parse_player_car_damage,
-                     parse_player_motion)
+                     parse_player_motion, parse_speed_trap_event)
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
 
-PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 3: 36, 6: 1347, 7: 1058, 10: 882}
+PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 6: 1347, 7: 1058, 10: 882}
+# Packet ID 3 (Event) is a fixed header plus a variable-size, event-code-specific body, so
+# unlike every other packet type it does not have one single valid length.
+EVENT_PACKET_SIZES = {b'FLBK': 36, b'SPTP': 40}
 
 
 def newer_frame(frame: int, previous: int) -> bool:
@@ -55,10 +58,16 @@ class TelemetryStream:
         try:
             header = PacketHeader.from_bytes(data)
             packet_id = header.packet_id
-            if packet_id not in PACKET_SIZES:
+            if packet_id != 3 and packet_id not in PACKET_SIZES:
                 return False
+            if packet_id == 3:
+                expected_size = EVENT_PACKET_SIZES.get(bytes(data[24:28]))
+                if expected_size is None:
+                    return False  # an event sub-type we don't need (and don't know the size of)
+            else:
+                expected_size = PACKET_SIZES[packet_id]
             if (header.packet_format != 2021 or header.packet_version != 1
-                    or len(data) != PACKET_SIZES[packet_id]
+                    or len(data) != expected_size
                     or not 0 <= header.player_car_index < 22
                     or not math.isfinite(header.session_time)):
                 raise ValueError('Wrong packet format, version, length, timestamp, or player index')
@@ -80,6 +89,13 @@ class TelemetryStream:
                     raise ValueError('Invalid lap state')
                 payload = all_laps
             elif packet_id == 3:
+                if data[24:28] == b'SPTP':
+                    speed_trap = parse_speed_trap_event(data)
+                    if (speed_trap is None or not math.isfinite(speed_trap.speed_kph)
+                            or speed_trap.vehicle_index != header.player_car_index):
+                        return False
+                    self.analysis.update_speed_trap(speed_trap.speed_kph)
+                    return False
                 if data[24:28] != b'FLBK':
                     return False
                 payload = struct.unpack_from('<If', data, 28)

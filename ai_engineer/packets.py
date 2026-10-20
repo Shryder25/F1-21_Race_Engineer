@@ -33,6 +33,31 @@ from typing import Optional
 HEADER_FORMAT = "<HBBBBQfIBB"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # 24 bytes
 
+# Packet ID 3 (Event) sub-type payloads start right after the header with a 4-byte
+# ASCII event code, then a sub-type-specific body. We only need Speed Trap ('SPTP') —
+# vehicleIdx(B), speed_kph(f), isOverallFastestInSession(B), isDriverFastestInSession(B),
+# fastestVehicleIdx(B), fastestSpeedInSession_kph(f) — 12 bytes, at offset HEADER_SIZE+4.
+SPEED_TRAP_FORMAT = "<BfBBBf"
+SPEED_TRAP_SIZE = struct.calcsize(SPEED_TRAP_FORMAT)
+
+
+@dataclass
+class SpeedTrapEvent:
+    vehicle_index: int
+    speed_kph: float
+    is_overall_fastest: bool
+    is_driver_fastest: bool
+    fastest_vehicle_index: int
+    fastest_speed_kph: float
+
+
+def parse_speed_trap_event(data: bytes) -> SpeedTrapEvent | None:
+    """Parse a Speed Trap ('SPTP') event packet's body, or None if it isn't one."""
+    if data[HEADER_SIZE:HEADER_SIZE + 4] != b'SPTP':
+        return None
+    values = struct.unpack_from(SPEED_TRAP_FORMAT, data, HEADER_SIZE + 4)
+    return SpeedTrapEvent(values[0], values[1], bool(values[2]), bool(values[3]), values[4], values[5])
+
 
 @dataclass
 class PacketHeader:

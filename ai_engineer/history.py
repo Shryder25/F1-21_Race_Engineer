@@ -41,6 +41,13 @@ class TelemetryHistory:
             CREATE INDEX IF NOT EXISTS lap_stats_compound
                 ON lap_stats(compound, tyre_age_laps);
         ''')
+        # speed_trap_kph was added after the initial lap_stats schema; ALTER a pre-existing
+        # database that predates it rather than forcing users to delete their history file.
+        existing_columns = {row[1] for row in
+                            self.connection.execute('PRAGMA table_info(lap_stats)').fetchall()}
+        if 'speed_trap_kph' not in existing_columns:
+            self.connection.execute('ALTER TABLE lap_stats ADD COLUMN speed_trap_kph REAL')
+            self.connection.commit()
 
     @staticmethod
     def weather_group(weather: int) -> str:
@@ -105,14 +112,30 @@ class TelemetryHistory:
             self.connection.execute(
                 'INSERT OR REPLACE INTO lap_stats(capture_id,lap_num,lap_time_ms,eligible,compound,'
                 'tyre_age_laps,wear_rl,wear_rr,wear_fl,wear_fr,fuel_start,fuel_end,'
-                's1_ms,s2_ms,s3_ms,s1_delta_ms,s2_delta_ms,s3_delta_ms) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                's1_ms,s2_ms,s3_ms,s1_delta_ms,s2_delta_ms,s3_delta_ms,speed_trap_kph) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (capture_id, stats['lap_num'], stats['lap_time_ms'], int(stats.get('eligible', False)),
                  stats.get('compound'), stats.get('tyre_age_laps'),
                  wear[0], wear[1], wear[2], wear[3],
                  stats.get('fuel_start'), stats.get('fuel_end'),
                  sectors.get(1), sectors.get(2), sectors.get(3),
-                 deltas.get(1), deltas.get(2), deltas.get(3)))
+                 deltas.get(1), deltas.get(2), deltas.get(3),
+                 stats.get('speed_trap_kph')))
+
+    def race_report(self, capture_id: str, limit: int = 100) -> list[dict]:
+        """This session's completed laps for the HUD race-report table: lap number, lap
+        time, each sector, speed trap and tyre compound — newest-first lap order is left
+        to the caller; this returns laps in the order they were driven."""
+        rows = self.connection.execute('''
+            SELECT lap_num, lap_time_ms, eligible, compound, s1_ms, s2_ms, s3_ms, speed_trap_kph
+            FROM lap_stats WHERE capture_id=? ORDER BY lap_num ASC LIMIT ?
+        ''', (capture_id, limit)).fetchall()
+        return [
+            {'lap_num': lap_num, 'lap_time_ms': lap_time_ms, 'eligible': bool(eligible),
+             'compound': compound, 's1_ms': s1, 's2_ms': s2, 's3_ms': s3,
+             'speed_trap_kph': speed_trap_kph}
+            for lap_num, lap_time_ms, eligible, compound, s1, s2, s3, speed_trap_kph in rows
+        ]
 
     def tyre_wear_samples(self, session, compound: int, exclude_capture: str | None = None,
                           limit: int = 400) -> list[tuple[int, float]]:

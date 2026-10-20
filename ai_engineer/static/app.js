@@ -107,10 +107,14 @@ function initCanvas() {
     });
 
     document.getElementById('btnClearTrace')?.addEventListener('click', () => {
+        // Clear the local trail immediately so the button feels instant...
         lastKnownCoords = [];
         lastBrakingZones = [];
         lastErsZones = [];
         drawTrackMap([], 0, 0, [], []);
+        // ...then tell the server to drop its recorded points too, otherwise the very
+        // next telemetry poll repopulates the map from the old (un-cleared) trail.
+        fetch('/api/reset_map', { method: 'POST' }).catch(() => {});
     });
 }
 
@@ -865,6 +869,9 @@ async function fetchTelemetry() {
             speedChart.update('none');
         }
 
+        // 11. Race Report Table (Feature: lap/sector/speed-trap report)
+        renderRaceReport(data.race_report);
+
     } catch (err) {
         // Disconnected state
         const beacon = document.getElementById('statusBeacon');
@@ -872,4 +879,32 @@ async function fetchTelemetry() {
         if (beacon) beacon.classList.remove('connected');
         if (statusText) statusText.innerText = 'DISCONNECTED';
     }
+}
+
+// ──────────────────────────────────────────────
+// 12. Race Report Table (lap/sector/speed-trap telemetry report)
+// ──────────────────────────────────────────────
+function fmtSector(ms) {
+    if (!ms || ms <= 0) return '--';
+    return (ms / 1000).toFixed(3) + 's';
+}
+
+function renderRaceReport(laps) {
+    const body = document.getElementById('reportTableBody');
+    if (!body) return;
+    if (!laps || laps.length === 0) {
+        body.innerHTML = '<tr class="report-empty-row"><td colspan="7">No completed laps yet this session.</td></tr>';
+        return;
+    }
+    body.innerHTML = laps.map(lap => `
+        <tr class="${lap.eligible ? '' : 'report-row-invalid'}" title="${lap.eligible ? 'Valid lap' : 'Invalid / in-pit lap, excluded from reference comparisons'}">
+            <td>${lap.lap_num}</td>
+            <td>${fmtTime(lap.lap_time_ms)}</td>
+            <td>${fmtSector(lap.s1_ms)}</td>
+            <td>${fmtSector(lap.s2_ms)}</td>
+            <td>${fmtSector(lap.s3_ms)}</td>
+            <td>${lap.speed_trap_kph ? Math.round(lap.speed_trap_kph) + ' km/h' : '--'}</td>
+            <td>${lap.compound || '--'}</td>
+        </tr>
+    `).join('');
 }

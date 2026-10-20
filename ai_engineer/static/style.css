@@ -1496,3 +1496,59 @@ body.f1-theme {
         grid-template-columns: 1fr;
     }
 }
+
+/* =====================================================================
+   Race Report Table (lap/sector/speed-trap telemetry report)
+   ===================================================================== */
+.report-tab-container {
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.report-table-wrapper {
+    overflow-x: auto;
+    margin-top: 12px;
+}
+
+.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.report-table thead th {
+    text-align: left;
+    padding: 10px 14px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.report-table tbody td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-white);
+    font-family: 'Consolas', 'Courier New', monospace;
+    white-space: nowrap;
+}
+
+.report-table tbody tr:hover {
+    background-color: var(--bg-card);
+}
+
+.report-table tbody tr.report-row-invalid td {
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+.report-empty-row td {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 24px 14px;
+    font-family: inherit;
+}

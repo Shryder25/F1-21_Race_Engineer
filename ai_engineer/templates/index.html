@@ -60,6 +60,9 @@
         <button class="tab-btn" data-tab="tab-corners">
             <span class="tab-icon">📊</span> CORNER DELTA & SPEED TRACE
         </button>
+        <button class="tab-btn" data-tab="tab-report">
+            <span class="tab-icon">🗒️</span> RACE REPORT
+        </button>
     </nav>
 
     <!-- MAIN TAB 1: Live Broadcast & Track Map -->
@@ -176,7 +179,7 @@
                     </div>
                     <div class="canvas-controls">
                         <button class="mini-btn" id="btnFitMap" title="Recenter and Fit Map">⛶ Fit Map</button>
-                        <button class="mini-btn" id="btnClearTrace" title="Clear Path">↺ Reset Trail</button>
+                        <button class="mini-btn" id="btnClearTrace" title="Clear recorded map on the server too">↺ Reset Map</button>
                     </div>
                 </div>
             </section>
@@ -545,6 +548,36 @@
                 <div class="corner-list" id="cornerList">
                     <!-- Populated dynamically -->
                 </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MAIN TAB 5: Race Report -->
+    <main class="tab-content" id="tab-report">
+        <div class="report-tab-container">
+            <div class="panel-header">
+                <h2>LAP-BY-LAP TELEMETRY REPORT</h2>
+                <span style="font-size:11px; color:var(--text-dim, #8b949e); text-transform:none;">
+                    Lap time, sector splits, speed trap and tyre compound for every completed lap this session.
+                </span>
+            </div>
+            <div class="report-table-wrapper">
+                <table class="report-table" id="reportTable">
+                    <thead>
+                        <tr>
+                            <th>Lap</th>
+                            <th>Lap Time</th>
+                            <th>Sector 1</th>
+                            <th>Sector 2</th>
+                            <th>Sector 3</th>
+                            <th>Speed Trap</th>
+                            <th>Compound</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportTableBody">
+                        <tr class="report-empty-row"><td colspan="7">No completed laps yet this session.</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </main>

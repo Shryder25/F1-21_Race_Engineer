@@ -67,6 +67,7 @@ dashboard_state: dict[str, Any] = {
     "pit_window": None,
     "opponent_threats": [],
     "tire_health": None,
+    "race_report": [],
     "voice_log": [],
     "corner_analysis": [],
     "speed_trace_current": [],
@@ -106,6 +107,16 @@ _command_handler = None
 def set_command_handler(handler):
     global _command_handler
     _command_handler = handler
+
+
+# Manual "Reset Map" hook: main.py registers AnalysisEngine.reset_map so the HUD button
+# can wipe the recorded track/braking/ERS trail without touching lap timing or AI state.
+_reset_map_handler = None
+
+
+def set_reset_map_handler(handler):
+    global _reset_map_handler
+    _reset_map_handler = handler
 
 
 # DeepSeek client for the Setup tab's "consult" button (None = engineered baseline only).
@@ -696,6 +707,18 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps({"command": command}).encode("utf-8"))
+
+        elif path == "/api/reset_map":
+            if _reset_map_handler is not None:
+                try:
+                    _reset_map_handler()
+                except Exception as error:
+                    print(f'[WebHUD] reset_map handler failed: {error}')
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
 
         elif path == "/api/setup/consult":
             try:
