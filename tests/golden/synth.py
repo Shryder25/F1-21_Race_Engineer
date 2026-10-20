@@ -42,7 +42,7 @@ COMPOUNDS = {
 SLICKS = ('soft', 'medium', 'hard')
 
 DT = 0.05                 # integration step (s)
-FRAME_EVERY = 4           # lap + telemetry packets every 2 steps -> 10 Hz
+FRAME_EVERY = 4           # lap + telemetry packets every 4 steps -> 5 Hz (keeps files small)
 STATUS_EVERY = 10         # car status / damage / motion -> 2 Hz
 SESSION_EVERY = 20        # session packet -> 1 Hz
 PARTICIPANTS_EVERY = 100  # participants -> every 5 s
