@@ -1282,6 +1282,9 @@ def get_track_setup(track_id: int, weather: str = "dry") -> Dict[str, Any]:
     circuit = TRACK_DATABASE.get(resolve_track_id(track_id), TRACK_DATABASE[7])  # default to Silverstone
     setup = circuit["setup"]
     is_wet = "wet" in weather.lower() or "rain" in weather.lower()
+    if is_wet:
+        from track_analysis import wet_setup        # lazy: track_analysis imports this module
+        setup = wet_setup(setup, circuit.get("wet_adjustments"))
     return {
         "track_id": circuit["id"],
         "track_name": circuit["name"],
@@ -1314,13 +1317,15 @@ Keep your output structured, technical, and realistic for F1 2021."""
 
 def build_setup_advisor_prompt(track_id: int, weather: str = "dry", handling_issue: str = "balanced") -> Tuple[str, str]:
     """Build system and user prompts for DeepSeek / AI model to advise on setup."""
-    circuit = TRACK_DATABASE.get(track_id, TRACK_DATABASE[7])
+    circuit = TRACK_DATABASE.get(resolve_track_id(track_id), TRACK_DATABASE[7])
+    from track_analysis import model_analysis       # lazy: track_analysis imports this module
+    tyre_deg = model_analysis(circuit["id"], weather)["tyre_degradation"]
     user_prompt = (
         f"Circuit: {circuit['name']} ({circuit['country']})\n"
         f"Length: {circuit['length_m']}m, {circuit['turns']} Turns\n"
         f"Track Profile: {circuit['characteristics']}\n"
         f"Baseline Downforce Level: {circuit['downforce']}\n"
-        f"Tyre Degradation: {circuit['tyre_wear']}\n"
+        f"Tyre Degradation ({weather}): {tyre_deg}\n"
         f"Weather Conditions: {weather}\n"
         f"Driver Balance Preference: {handling_issue}\n\n"
         f"Please provide the recommended 6-category F1 2021 car setup values and tactical setup notes."

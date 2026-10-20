@@ -22,6 +22,19 @@ An intelligent, real-time virtual race engineer for the F1 2021 game. This proje
 
 The same settings can come from `F1_AI_BASE_URL`, `F1_AI_MODEL` and `F1_AI_API_KEY`. If the model is offline or slower than `--ai-timeout` (15 s), the engineer answers from the same data using built-in rules, so a command is never ignored. `--no-ai` forces rules only.
 
+**Track Database & DeepSeek track analyst (`track_analysis.py`, `track_profiles.py`).** The HUD's Track Database tab no longer just echoes stored values. Each of the 24 circuits has a real-race profile (Pirelli severity ratings for abrasion, traction, braking, lateral load and tyre stress, plus real race history: pit-lane loss, Safety Car and rain frequency, track temperature, overtaking difficulty). From that the analysis model computes, for the chosen conditions and race distance (25/50/100%):
+- tyre degradation per compound in seconds per lap of tyre age and laps before the cliff, with a Low / Medium / High / Very High verdict that differs by track (Monaco and Baku Low, Silverstone, Suzuka and Bahrain Very High) and by weather (inters and full wets in the rain);
+- the fastest pit strategy and the best alternative with a different stop count (two dry compounds enforced, track position valued where passing is hard);
+- a setup that really changes in the wet (more wing, open diff, softer car, higher ride, lower brake pressure, rearward bias) and with the handling preference.
+
+DeepSeek then analyses the circuit automatically using all of that data and returns its own degradation verdict, strategy, setup numbers (validated and clamped to the game's ranges), per-category setup notes, key corners and a radio briefing. Answers are cached per track/conditions; "Re-analyse with DeepSeek" asks again. If DeepSeek is offline the page shows the data model's answer and says so. The track analyst uses the same `--ai-*` settings with a 90 s timeout, since a full analysis is longer than a radio reply.
+
+*Calibrating from real races.* `tools/build_real_race_calibration.py` loads real Grands Prix through [FastF1](https://github.com/theOehrly/Fast-F1), the data source [f1-race-replay](https://github.com/IAmTomShaw/f1-race-replay) replays, and measures fuel-corrected tyre degradation per compound (Theil-Sen slope per stint, the method of f1-race-replay's Bayesian tyre model), stint lengths, pit loss, stop counts, Safety Car and rain frequency. It writes `ai_engineer/data/real_race_calibration.json`, which then overrides the baseline ratings for those tracks:
+```
+pip install fastf1
+python tools/build_real_race_calibration.py --years 2021 2022 2023
+```
+
 **Voice commands (`voice_commands.py`).** The engineer no longer chats constantly. Ask for what you need: *"weather report"*, *"tyre temps"*, *"pit window"*, *"gap to car ahead"*, *"gap to car behind"*, *"pace update"*, *"any threats"* (optionally prefixed with "engineer"). The moment a command is recognised the engineer says **"We are checking"** while the AI works in the background, then speaks the answer. Only critical tyre overheating still interrupts on its own — and only when the temperature is genuinely climbing fast (rate-of-change, not a single static-threshold reading), with a 40-second cooldown so one real overheat event doesn't repeat every frame while the tyre stays hot; `--chatty` restores the old callouts.
 
 - Speech-to-text: `pip install SpeechRecognition PyAudio`. Default engine is Google (online); `--stt-engine vosk` runs offline (`pip install vosk`, unpack a Vosk model to `./model`). `--mic-index N` picks a microphone, `--no-mic` disables it.
