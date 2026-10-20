@@ -29,6 +29,7 @@ COMMAND_QUESTIONS = {
     'pace': 'Give me a pace update.',
     'threats': 'Any threats nearby? Who is attacking or defending?',
     'strategy': 'What is the strategy? How many stops, which tyres, and is the undercut or overcut on?',
+    'rivals': 'When are the cars around me going to box, and onto which tyres?',
 }
 
 SYSTEM_PROMPT = """You are the driver's Formula 1 race engineer speaking over team radio.
@@ -41,6 +42,7 @@ Rules:
 - Tyre temperatures are surface temperatures in Celsius; wear is a percentage. Gaps are in seconds.
 - Tyre wear, degradation, pit-window and fuel predictions come as ranges [low, expected, high] (an 80% range). Quote the expected value and give the range when it matters ("box lap eighteen, window seventeen to twenty"). A wide range or a "built-in estimate" basis means the model is unsure: say so briefly.
 - The race strategy line is a model of stop count and compounds; its "slower by" numbers are total race time. Undercut gain is what boxing this lap gains on the car ahead by the time they have stopped too: it works only if the gain beats the gap.
+- Rival stop predictions are the model's guess of when nearby cars will box next and which tyre they will fit, from their tyre age, wear and the track's usual strategy. Say "likely" or "expect": they are forecasts, not facts.
 - Opponent threats, when present, are nearby cars already ranked by how much pressure they put on the driver; mention one only if it changes what the driver should do right now.
 - When a rival's driver name is given, call them by that name like a real engineer would (for example "Hamilton is one point two ahead"). Never make up a name that is not in the data.
 - Sound like a real F1 engineer: calm, clipped, encouraging. Say lap times the way engineers do ("one thirty-two four"), talk about small time differences in tenths ("two tenths up", "a tenth down"), and say "box, box" only for an actual pit call.
@@ -159,6 +161,9 @@ def format_context(ctx: dict) -> str:
         if strategy.get('last_call'):
             add('Last strategy call', strategy['last_call']['message'])
         add('Game rejoin position if boxing now', strategy.get('game_rejoin_position'))
+        rivals = strategy.get('rivals')
+        if rivals and rivals.get('nearby'):
+            add('Rival stop predictions', ' '.join(r['summary'] for r in rivals['nearby']))
         spread = strategy.get('uncertainty')
         if spread and spread.get('worse') and spread.get('better'):
             add('Strategy across the tyre-model range', (
@@ -219,7 +224,7 @@ def _mode_blocks(command: str, ctx: dict) -> str | None:
             else f'Gaps are only tracked in the race, not in {label.lower()}.'
     if command == 'pit_window' and not session_modes.has_pit_strategy(mode):
         return f'No pit stops in {label.lower()}.'
-    if command == 'strategy' and mode != session_modes.RACE:
+    if command in ('strategy', 'rivals') and mode != session_modes.RACE:
         return f'No race strategy in {label.lower()}.'
     return None
 
@@ -292,6 +297,13 @@ def rule_based_answer(command: str, ctx: dict) -> str:
             text += (' Undercut on the car ahead is on.' if undercut['works']
                      else ' Undercut on the car ahead will not work yet.')
         return text
+    if command == 'rivals':
+        strategy = ctx.get('strategy') or {}
+        rivals = strategy.get('rivals')
+        if not rivals or not rivals.get('nearby'):
+            return 'No read on the other cars yet.'
+        picks = [rivals[side] for side in ('ahead', 'behind') if rivals.get(side)] or rivals['nearby'][:2]
+        return ' '.join(r['summary'] for r in picks)
     if command == 'pace':
         parts = []
         if ctx.get('last_lap_ms'):

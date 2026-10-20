@@ -5,7 +5,7 @@ import struct
 import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
-                     parse_player_telemetry, parse_player_car_damage,
+                     parse_player_telemetry, parse_all_car_damage,
                      parse_player_motion, parse_speed_trap_event, parse_all_car_status,
                      parse_race_event, race_event_body_size, parse_participants)
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
@@ -123,7 +123,8 @@ class TelemetryStream:
                            (payload.fuel_in_tank, payload.fuel_capacity, payload.fuel_remaining_laps)):
                     raise ValueError('Invalid car status')
             elif packet_id == 10:
-                payload = parse_player_car_damage(data, header.player_car_index)
+                all_damage = parse_all_car_damage(data)
+                payload = all_damage[header.player_car_index]
                 if not all(math.isfinite(w) and 0 <= w <= 100 for w in payload.tyres_wear):
                     raise ValueError('Invalid car damage')
             else:
@@ -224,7 +225,7 @@ class TelemetryStream:
                     self.analysis.update_car_status(payload, all_status)
                     self.analysis.race_control.update_status(all_status, self.player_index)
                 else:
-                    self.analysis.update_car_damage(payload)
+                    self.analysis.update_car_damage(payload, all_damage)
             return False
 
         if header.session_time < self.context_start_time:
@@ -252,6 +253,7 @@ class TelemetryStream:
             self.rewind_anchor = None
         self.analysis.radio.update_field(laps, self.player_index, lap_time, now=now)
         self.analysis.race_control.update_field(laps, self.player_index, lap_time)
+        self.analysis.update_field(laps, self.player_index)
         self.analysis.update_telemetry(telemetry, lap)
         update_web_state({'last_update_monotonic': now})
         return True

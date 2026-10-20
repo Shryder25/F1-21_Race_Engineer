@@ -14,6 +14,9 @@ the recording shows really happened:
                 you then drove
   * gaps        the live gap to the cars ahead and behind vs the true gap, and the gap 1 and
                 3 laps later predicted from the last-lap pace difference vs the true gap then
+  * rival stops every rival's predicted next stop lap and next compound (rival_strategy.py)
+                vs the lap that car really pitted on and the tyre it fitted, against a
+                plan-from-tyre-age-only baseline and the "usual next tyre" rule
 
 The ground truth is read straight from the datagrams (every car's distance and time, pit
 stops, lap times, tyre wear), independently of the engineer's own bookkeeping.
@@ -51,13 +54,15 @@ for _path in (ROOT / 'ai_engineer', GOLDEN):
         sys.path.insert(0, str(_path))
 
 import analysis as analysis_module                  # noqa: E402
+import race_strategy                                # noqa: E402
+import rival_strategy                               # noqa: E402
 import harness                                      # noqa: E402
 import recording                                    # noqa: E402
 import telemetry_stream as stream_module            # noqa: E402
 from analysis import AnalysisEngine                 # noqa: E402
 from history import TelemetryHistory                # noqa: E402
-from packets import (HEADER_SIZE, TRACK_NAMES, PacketHeader, parse_all_lap_data,  # noqa: E402
-                     parse_player_car_damage, parse_session_data)
+from packets import (HEADER_SIZE, TRACK_NAMES, PacketHeader, parse_all_car_status,  # noqa: E402
+                     parse_all_lap_data, parse_player_car_damage, parse_session_data)
 from telemetry_stream import PACKET_SIZES, TelemetryStream   # noqa: E402
 
 RACE_SESSION_TYPES = (10, 11, 12)
@@ -74,6 +79,7 @@ METRICS = {
     'lap_time': ('Lap time', 's'),
     'gap_now': ('Gap, live reading', 's'),
     'gap': ('Gap forecast', 's'),
+    'rival_pit_lap': ('Rival next stop lap', 'laps'),
 }
 PREDICTORS = {
     'ml_ideal': 'Engineer fitted wear model, target lap (60% wear)',
@@ -87,7 +93,11 @@ PREDICTORS = {
     'engineer': 'Engineer',
     'pace_delta': 'Engineer gap + last-lap pace difference',
     'hold': 'Gap stays the same (baseline)',
+    'rival_model': 'Rival stop model (wear + plan + game window, learns from the field)',
+    'rival_plan_only': 'Rival race plan from tyre age only (baseline)',
+    'rival_rule': 'Usual next tyre: soft to medium, medium to hard (baseline)',
 }
+RIVAL_PREDICTORS = ('rival_model', 'rival_plan_only')
 
 
 # ──────────────────────────────────────────────
@@ -106,6 +116,8 @@ class GroundTruth:
         self.stop_counts: dict[int, int] = {}
         self.pit_status: dict[int, int] = {}
         self.stops: dict[int, list[int]] = defaultdict(list)   # car -> in-lap of each stop
+        self.compounds: dict[int, list[str]] = defaultdict(list)  # car -> each set it ran, in order
+        self._ages: dict[int, int] = {}
         self._pit_entry_lap: dict[int, int] = {}
         self.player_lap = None
         self.player_lap_distance = 0.0
@@ -169,6 +181,17 @@ class GroundTruth:
 
     def on_damage(self, damage):
         self.worst_wear = max(damage.tyres_wear)
+
+    def on_status(self, all_status):
+        """Every car's tyre sets in order (a new set = new compound or the tyre age dropping)."""
+        for index, status in enumerate(all_status):
+            compound = race_strategy.normalise_compound(status.compound_name)
+            if compound is None:
+                continue
+            sets, age = self.compounds[index], status.tyres_age_laps
+            if not sets or sets[-1] != compound or age < self._ages.get(index, age):
+                sets.append(compound)
+            self._ages[index] = age
 
     @staticmethod
     def _crossing(path, distance):
@@ -268,7 +291,35 @@ def engineer_snapshot(engine: AnalysisEngine, truth: GroundTruth) -> dict:
                      'rate_s_per_lap': None if rate is None else round(rate, 3),
                      'name': radio.driver_name(car)})
     snap['gaps'] = gaps
+    snap['rivals'] = rival_snapshot(engine)
     return snap
+
+
+def _rival_value(prediction):
+    if prediction is None:
+        return None
+    if not prediction.will_stop:
+        return {'lap': 'none'}
+    low, mid, high = prediction.stop_lap_range
+    return {'lap': mid, 'low': low, 'high': high, 'next': prediction.next_compound}
+
+
+def rival_snapshot(engine: AnalysisEngine) -> dict:
+    """Each rival's predicted next stop, from the full model and from the age-only baseline."""
+    ctx = engine._race_context()
+    if ctx is None:
+        return {}
+    bare_ctx = rival_strategy.RaceContext(ctx.track_id, ctx.total_laps, ctx.track_length, ctx.pit_loss_s)
+    out = {}
+    for prediction in engine.rival_predictions():
+        index = prediction.car_index
+        state = engine.rivals.state(index, prediction.name, ctx.track_length)
+        baseline = rival_strategy.predict_rival(state, bare_ctx) if state else None
+        out[index] = {'sets_done': len(engine.rivals.cars[index].stints) - 1,
+                      'compound': prediction.compound,
+                      'rival_model': _rival_value(prediction),
+                      'rival_plan_only': _rival_value(baseline)}
+    return out
 
 
 @dataclass
@@ -334,7 +385,7 @@ def _feed_truth(segments: dict, data: bytes):
     if header.packet_format != 2021 or not 0 <= header.player_car_index < 22:
         return None
     packet_id = header.packet_id
-    if packet_id not in (1, 2, 10) or len(data) != PACKET_SIZES[packet_id]:
+    if packet_id not in (1, 2, 7, 10) or len(data) != PACKET_SIZES[packet_id]:
         return segments.get(header.session_uid)
     if packet_id == 1:
         session = parse_session_data(data)
@@ -349,6 +400,8 @@ def _feed_truth(segments: dict, data: bytes):
         return segment
     if packet_id == 2:
         segment.truth.on_laps(parse_all_lap_data(data), header.session_time, header.player_car_index)
+    elif packet_id == 7:
+        segment.truth.on_status(parse_all_car_status(data))
     else:
         segment.truth.on_damage(parse_player_car_damage(data, header.player_car_index))
     return segment
@@ -444,8 +497,50 @@ def evaluate(segment: Segment) -> dict:
                     samples.append(_sample('gap', 'pace_delta', horizon, lap,
                                            round(gap['engineer_gap'] + k * gap['rate_s_per_lap'], 3), actual))
 
+        # ── every rival's next stop and compound
+        _evaluate_rivals(snap, truth, lap, samples, outcomes)
+
     return {'samples': samples, 'pit_outcomes': {p: dict(c) for p, c in outcomes.items()},
             'player_stops': my_stops, 'laps_snapshotted': len(snaps), 'total_laps': total}
+
+
+def _evaluate_rivals(snap, truth, lap, samples, outcomes):
+    total = truth.session.total_laps if truth.session else 0
+    for car, rival in (snap.get('rivals') or {}).items():
+        car = int(car)
+        stops = sorted(truth.stops.get(car, []))
+        next_stop = next((s for s in stops if s >= lap), None)
+        for predictor in RIVAL_PREDICTORS:
+            value = rival.get(predictor)
+            counts = outcomes[predictor]
+            counts['laps'] += 1
+            if value is None:
+                continue
+            counts['predicted'] += 1
+            if value['lap'] == 'none':
+                counts['missed_stop' if next_stop else 'correct_no_stop'] += 1
+                continue
+            if next_stop is None:
+                if lap < total:
+                    counts['stop_that_never_came'] += 1
+                continue
+            counts['lap_compared'] += 1
+            laps_before = next_stop - lap
+            bucket = next(label for lo, hi, label in PIT_HORIZON_BUCKETS if lo <= laps_before <= hi)
+            high = value['high'] if value.get('high') is not None else total + 1
+            samples.append(_sample('rival_pit_lap', predictor, bucket, lap, value['lap'], next_stop,
+                                   value.get('low'), high))
+        # Next compound: the set this car really fitted at that stop.
+        sets = truth.compounds.get(car, [])
+        actual = sets[rival['sets_done'] + 1] if next_stop and len(sets) > rival['sets_done'] + 1 else None
+        model = rival.get('rival_model') or {}
+        if actual is None or model.get('lap') in (None, 'none'):
+            continue
+        for predictor, guess in (('rival_model', model.get('next')),
+                                 ('rival_rule', race_strategy.next_compound(rival['compound']))):
+            counts = outcomes[f'{predictor}_compound']
+            counts['compared'] += 1
+            counts['correct'] += int(guess == actual)
 
 
 def _gap_disturbed(snap, target, car, player, truth, lap, k) -> bool:
@@ -591,16 +686,27 @@ def _summary_table(rows) -> list[str]:
 
 
 def _pit_table(outcomes) -> list[str]:
-    lines = ['| Predictor | Laps | Made a call | Lap compared | Said no stop, you pitted | '
+    lines = ['| Predictor | Laps | Made a call | Lap compared | Said no stop, car pitted | '
              'Called a stop that never came | Correct "no more stops" |',
              '|---|---:|---:|---:|---:|---:|---:|']
-    for predictor in ('ml_ideal', 'ml_latest', 'strategy', 'game_window'):
+    for predictor in ('ml_ideal', 'ml_latest', 'strategy', 'game_window', *RIVAL_PREDICTORS):
         c = outcomes.get(predictor)
         if not c:
             continue
         lines.append(f"| {PREDICTORS[predictor]} | {c.get('laps', 0)} | {c.get('predicted', 0)} | "
                      f"{c.get('lap_compared', 0)} | {c.get('missed_stop', 0)} | "
                      f"{c.get('stop_that_never_came', 0)} | {c.get('correct_no_stop', 0)} |")
+    return lines + ['']
+
+
+def _compound_table(outcomes) -> list[str]:
+    rows = [(p, outcomes.get(f'{p}_compound')) for p in ('rival_model', 'rival_rule')]
+    rows = [(p, c) for p, c in rows if c and c.get('compared')]
+    if not rows:
+        return []
+    lines = ['| Predictor | Rival stops compared | Right tyre |', '|---|---:|---:|']
+    for predictor, c in rows:
+        lines.append(f"| {PREDICTORS[predictor]} | {c['compared']} | {c['correct'] / c['compared'] * 100:.0f}% |")
     return lines + ['']
 
 
@@ -629,12 +735,18 @@ def render_markdown(report: dict) -> str:
             '* **Lap time** excludes lap 1, in- and out-laps and Safety Car laps. **Gap forecasts** '
             'skip any window where either car pitted or a Safety Car came out.',
             '* Rows marked baseline are simple rules of thumb; the engineer should beat them.',
+            "* **Rival next stop** is each rival's predicted next in-lap against the lap that car "
+            'really pitted on; its range is the model\'s 80% stop window.',
             '* **Inside 80% range**: how often the truth landed inside the range the fitted model '
             'gave. About 80% means the ranges are honest; much lower means they are too narrow.', '',
             '## All races', '']
     out += _summary_table(report['aggregate']['summary'])
-    out += ['### Pit-stop calls', '']
+    out += ['### Pit-stop calls', '',
+            'Rival rows count one prediction per rival per lap.', '']
     out += _pit_table(report['aggregate']['pit_outcomes'])
+    compounds = _compound_table(report['aggregate']['pit_outcomes'])
+    if compounds:
+        out += ['### Rivals: next tyre', ''] + compounds
     out += ['## Per race', '']
     for race in races:
         kind = 'simulated' if race['simulated'] else 'recorded in F1 2021'
@@ -644,6 +756,7 @@ def render_markdown(report: dict) -> str:
                 f"{race['laps_snapshotted']} laps with predictions. `{race['path']}`", '']
         out += _summary_table(race['summary'])
         out += _pit_table(race['pit_outcomes'])
+        out += _compound_table(race['pit_outcomes'])
     if report['skipped']:
         out += ['## Skipped files', '']
         out += [f"* `{s['path']}`: {s['reason']}" for s in report['skipped']]
@@ -688,7 +801,54 @@ def backtest_scenarios():
         + field_of('soft', (10, 13, 15, 17)),
         fuel_kg=26 * 1.7 + 3, pit_window=(8, 12),
         description='26-lap dry two-stop race at Monza, soft-medium-soft.')
-    return [spain, monza]
+    return [spain, monza, wear_driven_race()]
+
+
+def wear_driven_race(seed: int = 21):
+    """A race where every rival boxes on tyre wear, the way game AI roughly does.
+
+    Each rival has its own wear threshold (50-70%) and boxes at the end of the lap that takes
+    its worst tyre past it, then picks a tyre for the laps left (short run: soft, medium run:
+    medium, long run: hard), stopping again if that set would also wear out. Unlike the
+    scripted races, the right answer is in the data the rival stop model sees.
+    """
+    import random
+    from synth import COMPOUNDS, Car, Scenario
+    from scenarios import FIELD, NUMBERS
+
+    rng = random.Random(seed)
+    total, wear_scale = 32, 1.15
+    starts = ('soft', 'medium', 'medium', 'hard')
+
+    def plan(compound, threshold):
+        pits, lap, current, used = {}, 0, compound, {compound}
+        while True:
+            rate = COMPOUNDS[current][4] * wear_scale
+            stop = lap + math.ceil(threshold / rate)
+            if stop >= total and len(used) < 2:
+                stop = total - 2                    # the mandatory stop, late
+            if stop >= total:
+                return pits
+            left = total - stop
+            choice = 'soft' if left <= 9 else 'medium' if left <= 18 else 'hard'
+            last_stint = left * COMPOUNDS[choice][4] * wear_scale < threshold
+            if last_stint and used == {choice}:     # two dry compounds are mandatory
+                choice = {'soft': 'medium', 'hard': 'medium'}.get(choice, 'hard' if left > 13 else 'soft')
+            current = choice
+            used.add(current)
+            pits[stop] = current
+            lap = stop
+
+    cars = [Car('Player', pace=0.6, compound='medium', grid=8, pits={17: 'hard'}, race_number=NUMBERS[0])]
+    for index in range(1, len(FIELD)):
+        compound = starts[index % len(starts)]
+        cars.append(Car(FIELD[index], pace=0.2 * (index - 1) - 0.8, compound=compound,
+                        grid=index if index < 8 else index + 1,
+                        pits=plan(compound, rng.uniform(50.0, 70.0)), race_number=NUMBERS[index]))
+    return Scenario(
+        name='backtest_silverstone_wear_stops', track_id=7, track_length=5891, session_type=10,
+        total_laps=total, cars=cars, fuel_kg=total * 1.7 + 3, wear_scale=wear_scale,
+        description=f'{total}-lap dry race at Silverstone where rivals box on tyre wear.')
 
 
 def simulated_recordings(regenerate=False) -> list[Path]:

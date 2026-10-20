@@ -862,6 +862,19 @@ async function fetchTelemetry() {
                         <span class="gap-val">${uc.works ? 'ON' : 'OFF'}</span>
                     </div>`);
                 }
+                // Rival stop model: who is likely to box when, and onto what
+                const rivals = (strat.rivals && strat.rivals.nearby) || [];
+                rivals.forEach(r => {
+                    const who = r.name ? `${r.name} ` : '';
+                    const [soon, , late] = r.stop_lap_range || [];
+                    const when = !r.will_stop ? 'NO STOP'
+                        : `L${r.stop_lap}${late == null ? '+' : (late - soon >= 3 ? ` (${soon}-${late})` : '')}`;
+                    const onto = r.will_stop && r.next_compound ? ` → ${r.next_compound[0]}` : '';
+                    rows.push(`<div class="gap-item threat-low">
+                        <span class="gap-label">P${r.position} ${who}${r.compound[0]}${r.tyre_age}</span>
+                        <span class="gap-val">${when}${onto}</span>
+                    </div>`);
+                });
                 if (strat.last_call) {
                     rows.push(`<div class="gap-item threat-medium">
                         <span class="gap-label">L${strat.last_call.lap ?? '-'} ${strat.last_call.kind.toUpperCase()}</span>

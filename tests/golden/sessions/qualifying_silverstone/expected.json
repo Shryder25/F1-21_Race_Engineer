@@ -113,7 +113,8 @@
     "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
     "pace": "Last lap 1:44.200.",
     "threats": "Gaps are only tracked in the race, not in qualifying.",
-    "strategy": "No race strategy in qualifying."
+    "strategy": "No race strategy in qualifying.",
+    "rivals": "No race strategy in qualifying."
    }
   },
   {
@@ -154,7 +155,8 @@
     "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
     "pace": "Last lap 1:29.900.",
     "threats": "Gaps are only tracked in the race, not in qualifying.",
-    "strategy": "No race strategy in qualifying."
+    "strategy": "No race strategy in qualifying.",
+    "rivals": "No race strategy in qualifying."
    }
   },
   {
@@ -195,7 +197,8 @@
     "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
     "pace": "Last lap 1:29.550. 0.0 slower than your best.",
     "threats": "Gaps are only tracked in the race, not in qualifying.",
-    "strategy": "No race strategy in qualifying."
+    "strategy": "No race strategy in qualifying.",
+    "rivals": "No race strategy in qualifying."
    }
   },
   {
@@ -236,7 +239,8 @@
     "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
     "pace": "Last lap 1:29.700.",
     "threats": "Gaps are only tracked in the race, not in qualifying.",
-    "strategy": "No race strategy in qualifying."
+    "strategy": "No race strategy in qualifying.",
+    "rivals": "No race strategy in qualifying."
    }
   }
  ],
@@ -283,6 +287,7 @@
   "gap_behind": "Gaps are only tracked in the race, not in qualifying.",
   "pace": "Last lap 1:29.700. 4.0 slower than your best.",
   "threats": "Gaps are only tracked in the race, not in qualifying.",
-  "strategy": "No race strategy in qualifying."
+  "strategy": "No race strategy in qualifying.",
+  "rivals": "No race strategy in qualifying."
  }
 }
