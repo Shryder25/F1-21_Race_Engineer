@@ -41,6 +41,24 @@ python main.py [--port 20777] [--no-voice] [--debug] [--voice-rate 175] [--voice
 | `--voice-rate` | Speech speed in WPM (default: 175) |
 | `--voice-index` | Select system voice by index |
 | `--history-dir` | Directory for saved telemetry (default: `telemetry-history` in the project root) |
+| `--tts` | `system` (default, pyttsx3) or `kokoro` (natural neural voice, see below) |
+| `--kokoro-voice` | Kokoro voice, e.g. `bm_george`, `bm_lewis`, `bm_daniel` (default: `bm_george`) |
+| `--kokoro-speed` | Kokoro speaking speed (default: 1.1) |
+| `--no-radio-fx` | Kokoro only: clean voice without the team-radio effect |
+
+### Natural engineer voice (optional, free, offline)
+The default voice is your operating system's. For a realistic British race-engineer
+voice, use [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) (Apache 2.0, runs on CPU):
+```
+pip install kokoro-onnx sounddevice
+# download kokoro-v1.0.onnx and voices-v1.0.bin from
+# https://github.com/thewh1teagle/kokoro-onnx/releases (model-files-v1.0)
+# into F1-21_Race_Engineer/models/kokoro/
+python main.py --tts kokoro
+```
+Calls are run through a team-radio filter (narrow band, light distortion, static and
+open/close beeps). If Kokoro or its files are missing, the engineer falls back to the
+system voice automatically.
 
 Completed lap recordings are saved locally in `telemetry-history/telemetry.sqlite3`.
 Each recording belongs to its own track and session capture. Invalid or incomplete
@@ -110,6 +128,9 @@ ai_engineer/
 ├── history.py       # Track/session SQLite lap archive
 ├── race_radio.py    # Pit strategy, measured gaps, sectors, race pace
 ├── voice_engine.py  # Expiring priority queue and interruptible TTS
+├── neural_voice.py  # Optional Kokoro neural voice (same queue, better voice)
+├── radio_fx.py      # Team-radio audio effect
+├── radio_phrases.py # How an engineer says times, gaps and deltas
 ├── web_hud.py       # Browser dashboard and telemetry API
 ├── track_data.py    # Braking points + setup advice per track
 └── requirements.txt # pip dependencies

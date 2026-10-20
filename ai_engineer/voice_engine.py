@@ -46,7 +46,10 @@ class VoiceEngine:
 
     def __init__(self, rate: int = 175, volume: float = 0.9,
                  cooldown_seconds: float = 30.0, voice_index: int = 0,
-                 on_spoken=None):
+                 on_spoken=None, driver_factory=None):
+        # driver_factory builds a pyttsx3-shaped speech driver (e.g. neural_voice's Kokoro
+        # driver); None means the system voice through pyttsx3.
+        self._driver_factory = driver_factory
         self._rate = rate
         self._volume = volume
         self._cooldown = cooldown_seconds
@@ -150,10 +153,13 @@ class VoiceEngine:
         engine = None
         loop_started = False
         try:
-            if pyttsx3 is None:
+            if self._driver_factory is not None:
+                engine = self._driver_factory()
+            elif pyttsx3 is None:
                 print('[VoiceEngine] pyttsx3 unavailable. Voice disabled.')
                 return
-            engine = pyttsx3.init()
+            else:
+                engine = pyttsx3.init()
             engine.setProperty('rate', self._rate)
             engine.setProperty('volume', self._volume)
             voices = engine.getProperty('voices')
