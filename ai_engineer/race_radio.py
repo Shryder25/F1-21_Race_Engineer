@@ -25,6 +25,9 @@ class RaceRadio:
     def __init__(self, speak):
         self.speak = speak
         self.phrases = say.Phrasebook()
+        # Car index -> radio name from the Participants packet. Kept across reset() because a
+        # flashback rewinds the timeline but not who is in the field; cleared on session change.
+        self.driver_names: dict[int, str] = {}
         self.reset(None)
 
     def set_driver_names(self, names: dict[int, str]):
@@ -33,9 +36,6 @@ class RaceRadio:
     def driver_name(self, index) -> str | None:
         return None if index is None else self.driver_names.get(index)
 
-    def _gap_call(self, side: str, gap: float, index) -> str:
-        name = self.driver_name(index)
-        return f'Gap to {name} {side} is {gap:.1f}.' if name else f'Gap {side} is {gap:.1f}.'
 
     def reset(self, session):
         self.session = session
@@ -56,7 +56,10 @@ class RaceRadio:
         self.last_critical_alert = 0.0
         self.last_lap_times_ms: dict[int, int] = {}    # car index -> most recent completed lap time
         self.opponent_threats: list = []
-        self.car_ahead_index = self.car_behind_index = None
+        self.reported_gaps = (None, None)       # (ahead, behind) at the last routine gap call
+        self.drs_armed = {'ahead': True, 'behind': True}
+        self.clean_race_laps = 0
+        self.reported_race_pace_ms = None
         self.rival_gaps: dict[int, tuple[float, float]] = {}   # car index -> (signed gap s, session time)
         self.rival_in_pits: dict[int, bool] = {}
         self.rival_pit_events: list[dict] = []
@@ -251,14 +254,18 @@ class RaceRadio:
         last_ahead, last_behind = self.reported_gaps
         messages = []
         if self.gap_ahead_s is not None:
-            text = f'Gap ahead {say.gap_value(self.gap_ahead_s)}'
+            name = self.driver_name(self.car_ahead_index)
+            who = f'Gap to {name} ahead' if name else 'Gap ahead'
+            text = f'{who} {say.gap_value(self.gap_ahead_s)}'
             if last_ahead is not None and last_ahead - self.gap_ahead_s >= GAP_TREND_MIN_S:
                 text += ", you're catching"
             elif last_ahead is not None and self.gap_ahead_s - last_ahead >= GAP_TREND_MIN_S:
                 text += ", they're pulling away"
             messages.append(text + '.')
         if self.gap_behind_s is not None:
-            text = f'Car behind {say.gap_value(self.gap_behind_s)}'
+            name = self.driver_name(self.car_behind_index)
+            who = f'{name} behind' if name else 'Car behind'
+            text = f'{who} {say.gap_value(self.gap_behind_s)}'
             if last_behind is not None and last_behind - self.gap_behind_s >= GAP_TREND_MIN_S:
                 text += ", they're closing"
             elif last_behind is not None and self.gap_behind_s - last_behind >= GAP_TREND_MIN_S:
@@ -339,4 +346,22 @@ class RaceRadio:
                     message += f' {say.time_amount(change).capitalize()} quicker than before, good pace.'
                 elif change >= 0.3:
                     message += f' Dropping off, {say.time_amount(change)} slower. Look after the tyres.'
+            comparison = self.pace_comparison(milliseconds)
+            if comparison:
+                message += ' ' + comparison
             self.speak(message, Priority.RACE, key='race_pace', ttl=12, cooldown=0)
+
+    def pace_comparison(self, player_lap_ms) -> str:
+        """Compare the player's last lap with the cars directly ahead and behind, by name."""
+        parts = []
+        for side, index in (('ahead', self.car_ahead_index), ('behind', self.car_behind_index)):
+            other = self.last_lap_times_ms.get(index) if index is not None else None
+            if not other or not player_lap_ms:
+                continue
+            who = self.driver_name(index) or 'Car'
+            delta = (other - player_lap_ms) / 1000.0
+            if abs(delta) < 0.05:
+                parts.append(f'{who} {side} on the same pace.')
+            else:
+                parts.append(f"{who} {side} {say.time_amount(delta)} {'slower' if delta > 0 else 'quicker'}.")
+        return ' '.join(parts)
