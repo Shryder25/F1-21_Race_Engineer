@@ -71,7 +71,9 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 
 
 def _compound_params(name: str | None) -> CompoundParams:
-    key = (name or "MEDIUM").upper().replace("INTER", "INTERMEDIATE")
+    key = (name or "MEDIUM").upper()
+    if key.startswith("INTER"):           # 'Inter', 'Intermediate' (not 'INTERMEDIATEMEDIATE')
+        key = "INTERMEDIATE"
     return _COMPOUND_PARAMS.get(key, _COMPOUND_PARAMS["MEDIUM"])
 
 

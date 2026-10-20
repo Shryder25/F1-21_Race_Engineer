@@ -30,19 +30,18 @@
   {"t": 103.8, "key": "sector_1", "priority": "TIMING", "proactive": false, "text": "Green sector one, five point nine seconds up."},
   {"t": 107.2, "key": "live_delta", "priority": "LOW", "proactive": false, "text": "Five point nine seconds up on your best. Keep it going."},
   {"t": 111.0, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Flowing mid-speed corners, keep rhythm, 210 metres."},
-  {"t": 114.0, "key": "session", "priority": "LOW", "proactive": false, "text": "Radio check. Hungaroring, race day. I'll keep you posted on gaps, pace and the pit window. Let's have a good one."},
-  {"t": 115.0, "key": "drs_behind", "priority": "RACE", "proactive": false, "text": "Car behind has DRS, nine tenths. Cover the inside."},
+  {"t": 114.0, "key": "weather_rain", "priority": "CRITICAL", "proactive": true, "text": "Rain starting to fall. Grip will drop, stay off the kerbs and white lines."},
   {"t": 126.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Fast right-hander, clip kerb cleanly, 210 metres."},
   {"t": 135.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "90-degree right, precise braking, 220 metres."},
   {"t": 140.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Long penultimate carousel, smooth exit for pit straight, 210 metres."},
-  {"t": 142.6, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Car ahead has boxed for hards. Overcut is marginal, we stay on plan."},
-  {"t": 143.4, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Car ahead has boxed for hards. Overcut is marginal, we stay on plan."},
-  {"t": 147.0, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Car behind has boxed. Gap is 1.6, undercut will not work. Stay out."},
+  {"t": 141.2, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Bottas ahead one point five, they're pulling away. Perez behind one point zero."},
+  {"t": 142.6, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Hamilton ahead has boxed. Overcut is marginal, we stay on plan."},
+  {"t": 143.4, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Verstappen ahead has boxed. Overcut is marginal, we stay on plan."},
+  {"t": 147.0, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Norris behind has boxed. Gap is 1.6, undercut will not work. Stay out."},
   {"t": 147.55, "key": "fastest_lap", "priority": "NORMAL", "proactive": false, "text": "Bottas sets the fastest lap, 1:09.850."},
   {"t": 148.8, "key": "position", "priority": "TIMING", "proactive": false, "text": "P2."},
   {"t": 150.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy downhill braking zone, main overtaking spot, 210 metres."},
   {"t": 159.0, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Downhill off-camber left-hander, easy to slide wide, 220 metres."},
-  {"t": 160.0, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Bottas ahead one point seven. Perez behind one point zero."},
   {"t": 167.6, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Blind crest uphill left, high-speed commitment, 210 metres."},
   {"t": 168.6, "key": "rival_pit_1", "priority": "RACE", "proactive": false, "text": "Hamilton has pitted from P1, 2.3 second stop, onto the inters. Rejoins P13."},
   {"t": 169.4, "key": "rival_pit_2", "priority": "RACE", "proactive": false, "text": "Verstappen has pitted from P2, 2.4 second stop, onto the inters. Rejoins P15."},
@@ -50,23 +49,22 @@
   {"t": 175.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy stop for the chicane, 210 metres."},
   {"t": 175.6, "key": "sector_1", "priority": "TIMING", "proactive": false, "text": "Sector one, twenty-six four."},
   {"t": 183.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Flowing mid-speed corners, keep rhythm, 220 metres."},
+  {"t": 186.2, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Bottas ahead one point nine, they're pulling away. Perez behind one point one."},
   {"t": 198.6, "key": "sector_2", "priority": "TIMING", "proactive": false, "text": "Sector two, twenty-three zero."},
   {"t": 199.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Fast right-hander, clip kerb cleanly, 220 metres."},
-  {"t": 205.0, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Bottas ahead two point one, they're pulling away. Perez behind one point one."},
   {"t": 207.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "90-degree right, precise braking, 210 metres."},
   {"t": 213.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Long penultimate carousel, smooth exit for pit straight, 220 metres."},
   {"t": 236.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy downhill braking zone, main overtaking spot, 220 metres."},
+  {"t": 244.0, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead one point eight."},
   {"t": 244.0, "key": "own_pit_stop", "priority": "RACE", "proactive": false, "text": "Good stop, 2.4 seconds, on the inters. Rejoining P5."},
   {"t": 245.0, "key": "rival_pit_4", "priority": "RACE", "proactive": false, "text": "Perez has pitted from P3, 2.4 second stop, onto the inters. Rejoins P6."},
   {"t": 247.2, "key": "rival_pit_6", "priority": "RACE", "proactive": false, "text": "Leclerc has pitted from P4, 2.2 second stop, onto the inters. Rejoins P7."},
   {"t": 249.0, "key": "rival_pit_7", "priority": "RACE", "proactive": false, "text": "Sainz has pitted from P5, 2.4 second stop, onto the inters. Rejoins P8."},
-  {"t": 250.0, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead two point nine, they're pulling away. Perez behind one point two."},
   {"t": 251.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Downhill off-camber left-hander, easy to slide wide, 220 metres."},
   {"t": 259.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Blind crest uphill left, high-speed commitment, 210 metres."},
   {"t": 266.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy stop for the chicane, 220 metres."},
   {"t": 274.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Flowing mid-speed corners, keep rhythm, 210 metres."},
-  {"t": 285.0, "key": "session", "priority": "LOW", "proactive": false, "text": "Radio check. Hungaroring, race day. I'll keep you posted on gaps, pace and the pit window. Let's have a good one."},
-  {"t": 286.4, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Perez behind one point three."},
+  {"t": 289.0, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead two point nine, they're pulling away. Perez behind one point three."},
   {"t": 289.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Fast right-hander, clip kerb cleanly, 210 metres."},
   {"t": 297.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "90-degree right, precise braking, 220 metres."},
   {"t": 302.55, "key": "fastest_lap", "priority": "NORMAL", "proactive": false, "text": "Hamilton sets the fastest lap, 1:08.100."},
@@ -74,7 +72,7 @@
   {"t": 311.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy downhill braking zone, main overtaking spot, 220 metres."},
   {"t": 320.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Downhill off-camber left-hander, easy to slide wide, 210 metres."},
   {"t": 328.6, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Blind crest uphill left, high-speed commitment, 210 metres."},
-  {"t": 331.4, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead two point eight. Perez behind one point four."},
+  {"t": 334.0, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead two point eight. Perez behind one point four."},
   {"t": 335.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy stop for the chicane, 220 metres."},
   {"t": 336.4, "key": "sector_1", "priority": "TIMING", "proactive": false, "text": "Sector one, twenty-five four."},
   {"t": 343.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Flowing mid-speed corners, keep rhythm, 210 metres."},
@@ -82,7 +80,7 @@
   {"t": 359.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Fast right-hander, clip kerb cleanly, 210 metres."},
   {"t": 367.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "90-degree right, precise braking, 210 metres."},
   {"t": 372.6, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Long penultimate carousel, smooth exit for pit straight, 220 metres."},
-  {"t": 376.4, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead two point eight. Perez behind one point four."},
+  {"t": 379.0, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead two point eight. Perez behind one point four."},
   {"t": 381.0, "key": "sector_3", "priority": "TIMING", "proactive": false, "text": "Sector three, twenty-two four."},
   {"t": 381.0, "key": "lap_time", "priority": "TIMING", "proactive": false, "text": "One ten zero. Personal best, nice job."},
   {"t": 381.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy downhill braking zone, main overtaking spot, 210 metres."},
@@ -92,7 +90,7 @@
   {"t": 405.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy stop for the chicane, 220 metres."},
   {"t": 406.2, "key": "sector_1", "priority": "TIMING", "proactive": false, "text": "Sector one, matching your best."},
   {"t": 413.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Flowing mid-speed corners, keep rhythm, 200 metres."},
-  {"t": 421.4, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead two point seven. Perez behind one point five."},
+  {"t": 424.0, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead two point seven. Perez behind one point five."},
   {"t": 428.4, "key": "sector_2", "priority": "TIMING", "proactive": false, "text": "Sector two, matching your best."},
   {"t": 429.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Fast right-hander, clip kerb cleanly, 210 metres."},
   {"t": 437.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "90-degree right, precise braking, 210 metres."},
@@ -102,6 +100,17 @@
   {"t": 450.8, "key": "race_finish", "priority": "RACE", "proactive": false, "text": "That's the flag. We finish P5."}
  ],
  "race_control_feed": [
+  {"kind": "start", "text": "Lights out.", "lap": 1, "session_time": 5.0},
+  {"kind": "position", "text": "End of lap one, P4.", "lap": 2, "session_time": 79.0},
+  {"kind": "fastest_lap", "text": "Bottas sets the fastest lap, 1:09.850.", "lap": 2, "session_time": 147.6},
+  {"kind": "position", "text": "P2.", "lap": 2, "session_time": 148.8},
+  {"kind": "pit", "text": "Hamilton has pitted from P1, 2.3 second stop, onto the inters. Rejoins P13.", "lap": 3, "session_time": 168.6},
+  {"kind": "pit", "text": "Verstappen has pitted from P2, 2.4 second stop, onto the inters. Rejoins P15.", "lap": 3, "session_time": 169.4},
+  {"kind": "pit", "text": "Norris has pitted from P6, 2.2 second stop, onto the inters. Rejoins P18.", "lap": 3, "session_time": 173.0},
+  {"kind": "pit", "text": "Good stop, 2.4 seconds, on the inters. Rejoining P5.", "lap": 4, "session_time": 244.0},
+  {"kind": "pit", "text": "Perez has pitted from P3, 2.4 second stop, onto the inters. Rejoins P6.", "lap": 4, "session_time": 245.0},
+  {"kind": "pit", "text": "Leclerc has pitted from P4, 2.2 second stop, onto the inters. Rejoins P7.", "lap": 4, "session_time": 247.2},
+  {"kind": "pit", "text": "Sainz has pitted from P5, 2.4 second stop, onto the inters. Rejoins P8.", "lap": 4, "session_time": 249.0},
   {"kind": "fastest_lap", "text": "Hamilton sets the fastest lap, 1:08.100.", "lap": 4, "session_time": 302.5},
   {"kind": "overtake", "text": "Hamilton takes the lead from Bottas.", "lap": 6, "session_time": 398.6},
   {"kind": "finish", "text": "Chequered flag is out. Bring it home.", "lap": 6, "session_time": 441.9},
@@ -195,7 +204,7 @@
     "Perez",
     "LOW"
    ],
-   "race_report_laps": 1,
+   "race_report_laps": 2,
    "answers": {
     "weather": "Light rain. Track 24 degrees, air 19.",
     "tyre_temps": "Fronts 77 and 77, rears 77 and 77. Worst wear 3 percent.",
@@ -229,14 +238,16 @@
    "fuel_margin_laps": 3.2,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
-   "tyre_health": 95.4,
-   "tyre_remaining_laps": 20.0,
+   "tyre_health": 77.0,
+   "tyre_remaining_laps": 16.0,
    "pace_trend_s_per_lap": null,
-   "strategy_stops": null,
-   "strategy_plan": null,
-   "strategy_pit_laps": null,
+   "strategy_stops": 0,
+   "strategy_plan": [
+    "INTERMEDIATE"
+   ],
+   "strategy_pit_laps": [],
    "top_threat": null,
-   "race_report_laps": 2,
+   "race_report_laps": 3,
    "answers": {
     "weather": "Light rain. Track 24 degrees, air 19.",
     "tyre_temps": "Fronts 94 and 94, rears 94 and 94. Worst wear 0 percent.",
@@ -245,7 +256,7 @@
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:23.100.",
     "threats": "No immediate threats.",
-    "strategy": "No strategy data yet."
+    "strategy": "No more stops. Bring the intermediates home."
    }
   },
   {
@@ -270,17 +281,19 @@
    "fuel_margin_laps": 2.2,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
-   "tyre_health": 94.5,
-   "tyre_remaining_laps": 18.0,
+   "tyre_health": 69.2,
+   "tyre_remaining_laps": 12.1,
    "pace_trend_s_per_lap": null,
-   "strategy_stops": null,
-   "strategy_plan": null,
-   "strategy_pit_laps": null,
+   "strategy_stops": 0,
+   "strategy_plan": [
+    "INTERMEDIATE"
+   ],
+   "strategy_pit_laps": [],
    "top_threat": [
     "Perez",
     "LOW"
    ],
-   "race_report_laps": 1,
+   "race_report_laps": 4,
    "answers": {
     "weather": "Heavy rain. Track 24 degrees, air 19.",
     "tyre_temps": "Fronts 91 and 91, rears 91 and 91. Worst wear 6 percent.",
@@ -289,7 +302,7 @@
     "gap_behind": "Gap to Perez behind is 1.3.",
     "pace": "Last lap 1:18.600.",
     "threats": "Low threat from Perez behind, 1.3.",
-    "strategy": "No strategy data yet."
+    "strategy": "No more stops. Bring the intermediates home."
    }
   },
   {
@@ -314,17 +327,19 @@
    "fuel_margin_laps": 3.2,
    "ml_pit_window": null,
    "ml_wear_per_lap_pct": null,
-   "tyre_health": 94.8,
-   "tyre_remaining_laps": 18.0,
+   "tyre_health": 70.2,
+   "tyre_remaining_laps": 12.6,
    "pace_trend_s_per_lap": null,
-   "strategy_stops": null,
-   "strategy_plan": null,
-   "strategy_pit_laps": null,
+   "strategy_stops": 0,
+   "strategy_plan": [
+    "INTERMEDIATE"
+   ],
+   "strategy_pit_laps": [],
    "top_threat": [
     "Perez",
     "LOW"
    ],
-   "race_report_laps": 1,
+   "race_report_laps": 4,
    "answers": {
     "weather": "Heavy rain. Track 24 degrees, air 19.",
     "tyre_temps": "Fronts 90 and 90, rears 90 and 90. Worst wear 6 percent.",
@@ -333,7 +348,7 @@
     "gap_behind": "Gap to Perez behind is 1.4.",
     "pace": "Last lap 1:09.950.",
     "threats": "Low threat from Perez behind, 1.4.",
-    "strategy": "No strategy data yet."
+    "strategy": "No more stops. Bring the intermediates home."
    }
   },
   {
@@ -357,22 +372,22 @@
    "fuel_per_lap_kg": 1.7,
    "fuel_margin_laps": 3.2,
    "ml_pit_window": [
-    24,
-    29
+    null,
+    null
    ],
    "ml_wear_per_lap_pct": 3.02,
-   "tyre_health": 85.3,
-   "tyre_remaining_laps": 17.0,
+   "tyre_health": 62.7,
+   "tyre_remaining_laps": 9.6,
    "pace_trend_s_per_lap": null,
    "strategy_stops": null,
    "strategy_plan": null,
    "strategy_pit_laps": null,
    "top_threat": null,
-   "race_report_laps": 2,
+   "race_report_laps": 5,
    "answers": {
     "weather": "Heavy rain. Track 24 degrees, air 19.",
     "tyre_temps": "Fronts 95 and 95, rears 95 and 95. Worst wear 9 percent.",
-    "pit_window": "Box around lap 24, latest lap 29.",
+    "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "No gap ahead reading right now.",
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:09.950.",
@@ -382,6 +397,9 @@
   }
  ],
  "race_report": [
+  {"lap_num": 1, "lap_time_ms": 73900, "eligible": true, "compound": "C3", "s1_ms": 30650, "s2_ms": 21500, "s3_ms": 21750, "speed_trap_kph": null},
+  {"lap_num": 2, "lap_time_ms": 70250, "eligible": false, "compound": "C3", "s1_ms": 24750, "s2_ms": 22300, "s3_ms": 23200, "speed_trap_kph": null},
+  {"lap_num": 3, "lap_time_ms": 83100, "eligible": false, "compound": "Intermediate", "s1_ms": 26350, "s2_ms": 22950, "s3_ms": 33800, "speed_trap_kph": null},
   {"lap_num": 4, "lap_time_ms": 78600, "eligible": false, "compound": "Intermediate", "s1_ms": 34600, "s2_ms": 21600, "s3_ms": 22400, "speed_trap_kph": null},
   {"lap_num": 5, "lap_time_ms": 69950, "eligible": true, "compound": "Intermediate", "s1_ms": 25400, "s2_ms": 22150, "s3_ms": 22400, "speed_trap_kph": null}
  ],
@@ -404,23 +422,23 @@
   "fuel_per_lap_kg": 1.7,
   "fuel_margin_laps": 2.2,
   "ml_pit_window": [
-   24,
-   29
+   null,
+   null
   ],
   "ml_wear_per_lap_pct": 3.02,
-  "tyre_health": 82.7,
-  "tyre_remaining_laps": 16.0,
+  "tyre_health": 60.3,
+  "tyre_remaining_laps": 8.9,
   "pace_trend_s_per_lap": null,
   "strategy_stops": null,
   "strategy_plan": null,
   "strategy_pit_laps": null,
   "top_threat": null,
-  "race_report_laps": 2
+  "race_report_laps": 5
  },
  "answers": {
   "weather": "Heavy rain. Track 24 degrees, air 19.",
   "tyre_temps": "Fronts 95 and 95, rears 95 and 95. Worst wear 12 percent.",
-  "pit_window": "Box around lap 24, latest lap 29.",
+  "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
   "gap_ahead": "No gap ahead reading right now.",
   "gap_behind": "No gap behind reading right now.",
   "pace": "Last lap 1:09.950.",

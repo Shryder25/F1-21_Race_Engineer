@@ -123,12 +123,18 @@ def predict_pit_window(model: TyreModel | None, current_age: float, current_lap:
     to_latest = laps_until_wear(model, current_age, latest_pct)
 
     def lap(delta):
-        return None if delta is None else current_lap + int(delta)
+        if delta is None:
+            return None
+        target = current_lap + int(delta)
+        # A stop after the chequered flag is no stop at all.
+        return None if total_laps > 0 and target > total_laps else target
 
     finish_ok = False
     if total_laps > current_lap:
         wear_at_flag = model.wear_at(current_age + (total_laps - current_lap))
         finish_ok = wear_at_flag <= latest_pct
+    elif total_laps > 0:
+        finish_ok = True                # on the last lap (or past the flag): nothing to plan
     return PitPrediction(
         wear_now_pct=round(max(0.0, model.wear_at(current_age)), 1),
         wear_per_lap_pct=round(model.wear_rate(current_age), 2),

@@ -145,6 +145,7 @@ class AnalysisEngine:
         self.capture_id: str | None = None
         self.session_uid: int | None = None
         self.session_context = None
+        self.weather_group: str | None = None
         self.best_sector_times: dict[int, int] = {}
         self.current_sector_times: dict[int, int] = {}
 
@@ -184,10 +185,14 @@ class AnalysisEngine:
     # ──────────────────────────────────────────
 
     def update_session(self, session: SessionData, session_uid: int | None = None, player_index=None):
+        # Weather is deliberately not part of the session identity: rain arriving mid-race is
+        # the same session (a reset here would wipe the race state and swallow the rain call).
         context = (session_uid, session.track_id, session.track_length, session.formula,
-                   session.session_type, TelemetryHistory.weather_group(session.weather), player_index)
+                   session.session_type, player_index)
+        weather_group = TelemetryHistory.weather_group(session.weather)
         if context != self.session_context:
             self.session_context = context
+            self.weather_group = weather_group
             self.session_uid = session_uid
             self.delta = DeltaTracker()
             self.tyre_state = TyreState()
@@ -224,19 +229,7 @@ class AnalysisEngine:
             self.radio.set_driver_names({})
             if hasattr(self.voice, 'clear'):
                 self.voice.clear()
-            if self.history and session.track_id >= 0:
-                try:
-                    self.capture_id = self.history.start_session(session, session_uid)
-                    reference = self.history.best_reference(session)
-                    if reference:
-                        self.delta.best_lap_time_ms = reference['lap_time_ms']
-                        self.delta.best_lap_num = reference['lap_num']
-                        self.delta.best_lap_times = {float(k): v for k, v in reference['times'].items()}
-                        self.delta.best_lap_speeds = reference['speeds']
-                        self.best_corner_data = reference['corners']
-                        self.best_sector_times = self.history.personal_sectors(session)
-                except (OSError, ValueError, KeyError, sqlite3.Error) as error:
-                    print(f'[History] Could not load track history: {error}')
+            self._load_history_reference(session, session_uid)
             update_web_state({
                 'connected': False, 'corner_analysis': [], 'voice_log': [],
                 'speed_trace_current': [], 'speed_trace_best': self.delta.best_lap_speeds,
@@ -253,6 +246,9 @@ class AnalysisEngine:
             self.radio.reset(session)
             self.race_control.reset(session)
             update_web_state({'race_control': []})
+        elif weather_group != self.weather_group:
+            self._change_conditions(session)
+            self.weather_group = weather_group
         self.session = session
         self.radio.session = session
         self.race_control.session = session
@@ -281,6 +277,41 @@ class AnalysisEngine:
             self.session_started = True
             self.speak(session_modes.welcome_line(self.session_mode, self.track_name),
                        Priority.LOW, key='session', ttl=10, cooldown=0)
+
+    def _load_history_reference(self, session: SessionData, session_uid):
+        """Open a history capture for these conditions and load the best reference lap for them."""
+        if not (self.history and session.track_id >= 0):
+            return
+        try:
+            self.capture_id = self.history.start_session(session, session_uid)
+            reference = self.history.best_reference(session)
+            if reference:
+                self.delta.best_lap_time_ms = reference['lap_time_ms']
+                self.delta.best_lap_num = reference['lap_num']
+                self.delta.best_lap_times = {float(k): v for k, v in reference['times'].items()}
+                self.delta.best_lap_speeds = reference['speeds']
+                self.best_corner_data = reference['corners']
+                self.best_sector_times = self.history.personal_sectors(session)
+        except (OSError, ValueError, KeyError, sqlite3.Error) as error:
+            print(f'[History] Could not load track history: {error}')
+
+    def _change_conditions(self, session: SessionData):
+        """Dry -> intermediate -> wet within one session: keep the race, swap the references.
+
+        A dry best lap, sector or corner is no yardstick on a wet track, and laps recorded
+        from here on belong with wet history, so only the timing references and the history
+        capture change. Race state (gaps, positions, strategy, radio) carries on.
+        """
+        best = DeltaTracker()
+        self.delta.best_lap_times, self.delta.best_lap_speeds = best.best_lap_times, best.best_lap_speeds
+        self.delta.best_lap_time_ms, self.delta.best_lap_num = 0, 0
+        self.delta.current_lap_invalid = True          # this lap was run in mixed conditions
+        self.best_corner_data = {}
+        self.best_sector_times = {}
+        self._load_history_reference(session, self.session_uid)
+        update_web_state({'speed_trace_best': self.delta.best_lap_speeds,
+                          'best_lap_time_ms': self.delta.best_lap_time_ms,
+                          'personal_sectors_ms': self.best_sector_times, 'capture_id': self.capture_id})
 
     def speak(self, message: str, priority: Priority = Priority.NORMAL, **options):
         """Queue speech; priority interrupts in PROACTIVE_KEYS break on-demand silence."""
@@ -915,11 +946,12 @@ class AnalysisEngine:
             call = race_strategy.react_to_rival_stop(
                 'ahead' if event['gap_s'] > 0 else 'behind', event['gap_s'], status.compound_name,
                 status.tyres_age_laps, rival.compound_name if rival else None, None,
-                plan.laps_remaining, plan.best.stops, deg_scale, life_scale, event['car_index'])
+                plan.laps_remaining, plan.best.stops, deg_scale, life_scale, event['car_index'],
+                rival_name=self.radio.driver_name(event['car_index']))
             self._make_strategy_call(call, 'rival_pit')
 
-        if plan.best.stops == 0:
-            return
+        if plan.best.stops == 0 or race_strategy.normalise_compound(status.compound_name) in race_strategy.WET_COMPOUNDS:
+            return          # no undercut maths on a wet track: the crossover decides stops there
         token = (lap.num_pit_stops, lap.current_lap_num)
         if token in self.undercut_calls:
             return
@@ -947,7 +979,8 @@ class AnalysisEngine:
         summary['radio'] = race_strategy.describe_plan(plan)
         summary['last_call'] = self.last_strategy_call
         status, rival = self.latest_status, self._rival_status(self.radio.car_ahead_index)
-        if self.radio.gap_ahead_s is not None and rival is not None and status is not None:
+        wet = race_strategy.normalise_compound(status.compound_name if status else None) in race_strategy.WET_COMPOUNDS
+        if self.radio.gap_ahead_s is not None and rival is not None and status is not None and not wet:
             deg_scale, life_scale = self.strategy_scales()
             gain = race_strategy.undercut_gain(rival.compound_name, rival.tyres_age_laps,
                                                race_strategy.next_compound(status.compound_name),

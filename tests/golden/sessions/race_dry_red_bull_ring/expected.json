@@ -48,7 +48,7 @@
   {"t": 186.2, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Norris ahead eight tenths. Leclerc behind one point seven, you're pulling away."},
   {"t": 188.0, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Double fast lefts, commit to apex speed, 210 metres."},
   {"t": 196.0, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "High-speed rights, watch track limits on exit, 220 metres."},
-  {"t": 201.4, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Car ahead has boxed for mediums. Overcut is marginal, we stay on plan."},
+  {"t": 201.4, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Perez ahead has boxed. Overcut is marginal, we stay on plan."},
   {"t": 205.2, "key": "position", "priority": "TIMING", "proactive": false, "text": "P5."},
   {"t": 206.4, "key": "sector_3", "priority": "TIMING", "proactive": false, "text": "Sector three, matching your best."},
   {"t": 206.4, "key": "race_pace", "priority": "RACE", "proactive": false, "text": "Last three laps averaging one oh seven one. Norris ahead on the same pace."},
@@ -64,7 +64,7 @@
   {"t": 248.8, "key": "sector_2", "priority": "TIMING", "proactive": false, "text": "Sector two, less than a tenth down."},
   {"t": 252.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Double fast lefts, commit to apex speed, 210 metres."},
   {"t": 261.0, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "High-speed rights, watch track limits on exit, 210 metres."},
-  {"t": 264.0, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Car ahead has boxed for hards. Overcut is marginal, we stay on plan."},
+  {"t": 264.0, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Hamilton ahead has boxed. Overcut is marginal, we stay on plan."},
   {"t": 272.6, "key": "live_delta", "priority": "LOW", "proactive": false, "text": "Three point two seconds down on your best."},
   {"t": 285.8, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Uphill 90-degree right, brake at 70m board, 220 metres."},
   {"t": 287.0, "key": "live_delta", "priority": "LOW", "proactive": false, "text": "Three point nine seconds down on your best."},
@@ -253,8 +253,8 @@
    "fuel_per_lap_kg": 1.7,
    "fuel_margin_laps": 3.4,
    "ml_pit_window": [
-    25,
-    31
+    null,
+    null
    ],
    "ml_wear_per_lap_pct": 2.59,
    "tyre_health": 94.8,
@@ -394,8 +394,8 @@
    "fuel_per_lap_kg": 1.7,
    "fuel_margin_laps": 2.4,
    "ml_pit_window": [
-    36,
-    45
+    null,
+    null
    ],
    "ml_wear_per_lap_pct": 1.84,
    "tyre_health": 80.9,
@@ -414,7 +414,7 @@
    "answers": {
     "weather": "Clear. Track 38 degrees, air 26.",
     "tyre_temps": "Fronts 91 and 91, rears 91 and 91. Worst wear 6 percent.",
-    "pit_window": "Box around lap 36, latest lap 45.",
+    "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "Gap to Norris ahead is 1.4.",
     "gap_behind": "Gap to Perez behind is 1.0.",
     "pace": "Last lap 1:05.000.",
@@ -443,8 +443,8 @@
    "fuel_per_lap_kg": 1.7,
    "fuel_margin_laps": 2.4,
    "ml_pit_window": [
-    36,
-    45
+    null,
+    null
    ],
    "ml_wear_per_lap_pct": 1.84,
    "tyre_health": 88.3,
@@ -458,7 +458,7 @@
    "answers": {
     "weather": "Clear. Track 38 degrees, air 26.",
     "tyre_temps": "Fronts 95 and 95, rears 95 and 95. Worst wear 7 percent.",
-    "pit_window": "Box around lap 36, latest lap 45.",
+    "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "No gap ahead reading right now.",
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:05.050.",
@@ -494,8 +494,8 @@
   "fuel_per_lap_kg": 1.7,
   "fuel_margin_laps": 2.4,
   "ml_pit_window": [
-   36,
-   45
+   null,
+   null
   ],
   "ml_wear_per_lap_pct": 1.84,
   "tyre_health": 88.3,
@@ -510,7 +510,7 @@
  "answers": {
   "weather": "Clear. Track 38 degrees, air 26.",
   "tyre_temps": "Fronts 95 and 95, rears 95 and 95. Worst wear 7 percent.",
-  "pit_window": "Box around lap 36, latest lap 45.",
+  "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
   "gap_ahead": "No gap ahead reading right now.",
   "gap_behind": "No gap behind reading right now.",
   "pace": "Last lap 1:05.050.",

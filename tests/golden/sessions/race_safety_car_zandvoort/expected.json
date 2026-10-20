@@ -61,8 +61,8 @@
   {"t": 215.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Right-hand sweep into the final banking, 210 metres."},
   {"t": 218.6, "key": "live_delta", "priority": "LOW", "proactive": false, "text": "Twenty-two point one seconds down on your best."},
   {"t": 224.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Steep 18-degree banking, DRS wide open onto front straight, 220 metres."},
-  {"t": 227.6, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Car ahead has boxed for mediums. Overcut is marginal, we stay on plan."},
-  {"t": 230.6, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Car ahead has boxed for hards. Overcut is marginal, we stay on plan."},
+  {"t": 227.6, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Bottas ahead has boxed. Overcut is marginal, we stay on plan."},
+  {"t": 230.6, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Norris ahead has boxed. Overcut is marginal, we stay on plan."},
   {"t": 231.2, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Leclerc behind one point two."},
   {"t": 232.6, "key": "live_delta", "priority": "LOW", "proactive": false, "text": "Twenty-six point five seconds down on your best."},
   {"t": 239.0, "key": "wing_damage", "priority": "CRITICAL", "proactive": true, "text": "We can see front wing damage. Box this lap for a new nose. Box, box."},
@@ -425,8 +425,8 @@
    "fuel_per_lap_kg": 1.7,
    "fuel_margin_laps": 3.4,
    "ml_pit_window": [
-    36,
-    45
+    null,
+    null
    ],
    "ml_wear_per_lap_pct": 1.84,
    "tyre_health": 80.9,
@@ -445,7 +445,7 @@
    "answers": {
     "weather": "Clear. Track 30 degrees, air 22.",
     "tyre_temps": "Fronts 91 and 91, rears 91 and 91. Worst wear 6 percent.",
-    "pit_window": "Box around lap 36, latest lap 45.",
+    "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "Gap to Norris ahead is 1.1.",
     "gap_behind": "Gap to Sainz behind is 3.2.",
     "pace": "Last lap 1:13.250.",
@@ -474,8 +474,8 @@
    "fuel_per_lap_kg": 1.7,
    "fuel_margin_laps": 2.4,
    "ml_pit_window": [
-    35,
-    44
+    null,
+    null
    ],
    "ml_wear_per_lap_pct": 1.84,
    "tyre_health": 76.4,
@@ -489,7 +489,7 @@
    "answers": {
     "weather": "Clear. Track 30 degrees, air 22.",
     "tyre_temps": "Fronts 89 and 89, rears 89 and 89. Worst wear 9 percent.",
-    "pit_window": "Box around lap 35, latest lap 44.",
+    "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "No gap ahead reading right now.",
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:05.850.",
@@ -525,8 +525,8 @@
   "fuel_per_lap_kg": 1.7,
   "fuel_margin_laps": 2.4,
   "ml_pit_window": [
-   35,
-   44
+   null,
+   null
   ],
   "ml_wear_per_lap_pct": 1.84,
   "tyre_health": 76.4,
@@ -541,7 +541,7 @@
  "answers": {
   "weather": "Clear. Track 30 degrees, air 22.",
   "tyre_temps": "Fronts 89 and 89, rears 89 and 89. Worst wear 9 percent.",
-  "pit_window": "Box around lap 35, latest lap 44.",
+  "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
   "gap_ahead": "No gap ahead reading right now.",
   "gap_behind": "No gap behind reading right now.",
   "pace": "Last lap 1:05.850.",

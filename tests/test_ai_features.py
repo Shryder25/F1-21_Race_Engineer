@@ -53,6 +53,15 @@ class StrategyMLTests(unittest.TestCase):
         prediction = strategy_ml.predict_pit_window(model, 8, 9, total_laps=30)
         self.assertTrue(prediction.finish_without_stop)
 
+    def test_window_after_the_flag_is_no_window(self):
+        model = strategy_ml.fit_wear_curve(linear_samples(rate=2.5, laps=8))
+        prediction = strategy_ml.predict_pit_window(model, current_age=2, current_lap=3, total_laps=7)
+        self.assertIsNone(prediction.ideal_lap)            # would be lap 25 in a 7-lap race
+        self.assertIsNone(prediction.latest_lap)
+        self.assertTrue(prediction.finish_without_stop)
+        last_lap = strategy_ml.predict_pit_window(model, current_age=6, current_lap=7, total_laps=7)
+        self.assertTrue(last_lap.finish_without_stop)
+
     def test_accelerating_wear_uses_quadratic(self):
         samples = [(age, 0.05 * age ** 2 + 1.0 * age) for age in range(1, 13)]
         model = strategy_ml.fit_wear_curve(samples)
