@@ -4,6 +4,6 @@ SpeechRecognition>=3.10
 PyAudio>=0.2.14
 # Push-to-talk radio button on a wheel or controller (docs/push-to-talk.md):
 pygame>=2.5
-# Optional natural engineer voice (python main.py --tts kokoro):
-# kokoro-onnx>=0.4
-# sounddevice>=0.4
+# Natural engineer voice (Kokoro; falls back to pyttsx3 if these are missing):
+kokoro-onnx>=0.4
+sounddevice>=0.4

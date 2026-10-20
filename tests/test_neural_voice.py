@@ -117,3 +117,40 @@ class NeuralDriverTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class KokoroDownloadTests(unittest.TestCase):
+    def test_downloads_missing_files_once(self):
+        import io
+        import tempfile
+        from pathlib import Path
+        import neural_voice
+
+        fetched = []
+
+        class Response(io.BytesIO):
+            headers = {'Content-Length': '6'}
+
+        def opener(url, timeout):
+            fetched.append(url.rsplit('/', 1)[-1])
+            return Response(b'abcdef')
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(neural_voice.download_model_files(tmp, lambda _: None, opener=opener))
+            self.assertEqual(sorted(fetched), ['kokoro-v1.0.onnx', 'voices-v1.0.bin'])
+            self.assertEqual((Path(tmp) / 'voices-v1.0.bin').read_bytes(), b'abcdef')
+            self.assertTrue(neural_voice.download_model_files(tmp, lambda _: None, opener=opener))
+            self.assertEqual(len(fetched), 2)       # already there, nothing fetched again
+
+    def test_failed_download_leaves_no_partial_file(self):
+        import tempfile
+        import urllib.error
+        from pathlib import Path
+        import neural_voice
+
+        def opener(url, timeout):
+            raise urllib.error.URLError('offline')
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(neural_voice.download_model_files(tmp, lambda _: None, opener=opener))
+            self.assertEqual(list(Path(tmp).iterdir()), [])
