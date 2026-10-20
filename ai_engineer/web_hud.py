@@ -89,6 +89,7 @@ dashboard_state: dict[str, Any] = {
     "pit_lane": [],
     "track_map_source": "recording",
     "pit_status": 0,
+    "cars": [],                 # every car: [x, z, team_id, position, is_player, in_pit]
     "flashback_count": 0,
     "braking_zones": [],
     "ers_zones": []

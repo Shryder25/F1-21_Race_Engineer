@@ -6,7 +6,7 @@ import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
                      parse_player_telemetry, parse_all_car_damage,
-                     parse_player_motion, parse_speed_trap_event, parse_all_car_status,
+                     parse_player_motion, parse_all_positions, parse_speed_trap_event, parse_all_car_status,
                      parse_race_event, race_event_body_size, parse_participants,
                      parse_car_setups, parse_final_classification, parse_session_history)
 from session_history import valid_history
@@ -84,6 +84,7 @@ class TelemetryStream:
                 raise ValueError('Wrong packet format, version, length, timestamp, or player index')
             if packet_id == 0:
                 payload = parse_player_motion(data, header.player_car_index)
+                all_positions = parse_all_positions(data)
                 if not all(math.isfinite(x) for x in (payload.world_position_x, payload.world_position_z, payload.g_force_lateral)):
                     raise ValueError('Invalid car motion')
             elif packet_id == 1:
@@ -240,7 +241,7 @@ class TelemetryStream:
             # cadence; they need no frame pairing.
             if header.session_time >= self.context_start_time:
                 if packet_id == 0:
-                    self.analysis.update_motion(payload)
+                    self.analysis.update_motion(payload, all_positions)
                 elif packet_id == 4:
                     self.analysis.update_participants(payload)
                 elif packet_id == 5:

@@ -8,6 +8,7 @@ Real-time telemetry analysis producing:
   4. Real-time speed trace comparison vs session best
 """
 
+import math
 import time
 import copy
 import sqlite3
@@ -222,10 +223,14 @@ class AnalysisEngine:
         self.track_outline: list[list[float]] = []      # whole circuit, stored or first clean lap
         self.pit_lane_points: list[list[float]] = []
         self.current_pit_points: list[list[float]] = []
+        self.field_mapper: track_maps.FieldMapper | None = None
+        self.field_pit_points: dict[int, list[list[float]]] = {}   # other cars' pit runs
+        self.car_teams: dict[int, int] = {}
         self.map_lap_has_pit = False
         self.map_rewind_pending = False
         self.flashback_count = 0
         self._map_revision = 0
+        self.field_cars: list = []
         self._sent_map_revision = -1
 
     # ──────────────────────────────────────────
@@ -287,6 +292,10 @@ class AnalysisEngine:
             self.last_map_dist = -999.0
             self._clear_trail_distances()
             self.current_pit_points.clear()
+            self.field_pit_points.clear()
+            self.field_mapper = track_maps.FieldMapper(session.track_length)
+            self.car_teams = {}
+            self.field_cars = []
             self.map_lap_has_pit = False
             self.map_rewind_pending = False
             self._load_track_map(session)
@@ -390,9 +399,13 @@ class AnalysisEngine:
         if not queued and not getattr(self.voice, 'is_running', False):
             add_voice_log(message, status='muted')
 
-    def update_motion(self, motion: CarMotionData):
-        """Update live world position coordinates and lateral/longitudinal G-forces."""
+    def update_motion(self, motion: CarMotionData, all_positions: list | None = None):
+        """Update live world position coordinates and lateral/longitudinal G-forces.
+        `all_positions` is every car's (x, z) from the same Motion packet: it maps the
+        circuit from the whole field and places every car on the HUD map."""
         self.latest_motion = motion
+        if all_positions is not None:
+            self._update_field_map(all_positions)
         x = round(motion.world_position_x, 2)
         z = round(motion.world_position_z, 2)
         if self.latest_lap and self.latest_telemetry and not self.map_rewind_pending:
@@ -424,6 +437,41 @@ class AnalysisEngine:
     # ──────────────────────────────────────────
     # Track map: stored outline, pit lane, flashbacks
     # ──────────────────────────────────────────
+
+    def _update_field_map(self, positions: list):
+        """Every car on the map, and every car's laps feeding the outline and pit lane."""
+        laps = self.field_laps
+        if not laps or not self.session:
+            self.field_cars = []
+            return
+        cars, grew = [], False
+        for index, (x, z) in enumerate(positions[:len(laps)]):
+            lap = laps[index]
+            if (lap.result_status not in (2, 3) or (x == 0 and z == 0)
+                    or not (math.isfinite(x) and math.isfinite(z))):
+                continue
+            cars.append([round(x, 1), round(z, 1), self.car_teams.get(index, -1), lap.car_position,
+                         int(index == self.player_index), int(bool(lap.pit_status))])
+            if self.track_outline and self.pit_lane_points:
+                continue                                   # nothing left to map
+            if lap.pit_status:
+                track_maps.append_pit_point(self.field_pit_points.setdefault(index, []), x, z)
+                continue
+            pit_run = self.field_pit_points.pop(index, None)
+            if pit_run and not self.pit_lane_points and len(pit_run) >= track_maps.MIN_PIT_POINTS:
+                self.pit_lane_points = pit_run
+                self.track_store.save(self.track_id, self.session.track_length, pit_lane=pit_run)
+                self._push_track_map()
+            if lap.driver_status != 0 and self.field_mapper and not self.track_outline:
+                grew |= self.field_mapper.add(lap.lap_distance, x, z)
+        self.field_cars = cars
+        if grew:
+            outline = self.field_mapper.outline()
+            if outline:
+                self.track_outline = outline
+                self.track_store.save(self.track_id, self.session.track_length, outline=outline)
+                self._push_track_map()
+            self._map_revision += 1
 
     def _load_track_map(self, session: SessionData):
         stored = self.track_store.get(session.track_id, session.track_length)
@@ -913,8 +961,10 @@ class AnalysisEngine:
         self.last_map_dist = -999.0
         # Also forget the stored outline/pit lane, so a bad one can be mapped again.
         self.track_outline, self.pit_lane_points = [], []
+        self.field_pit_points.clear()
         if self.session:
             self.track_store.forget(self.track_id)
+            self.field_mapper = track_maps.FieldMapper(self.session.track_length)
         self._map_revision += 1
         self._sent_map_revision = self._map_revision
         update_web_state({'track_map': [], 'braking_zones': [], 'ers_zones': []})
@@ -953,6 +1003,7 @@ class AnalysisEngine:
         self.radio.set_driver_names({index: p.radio_name for index, p in enumerate(participants)
                                      if p.radio_name})
         self.race_control.update_participants(participants)
+        self.car_teams = {index: p.team_id for index, p in enumerate(participants)}
         for index, p in enumerate(participants):
             if p.name:
                 self.session_log.names[index] = p.radio_name or p.name
@@ -1700,6 +1751,9 @@ class AnalysisEngine:
         if self._map_revision != self._sent_map_revision:
             self._sent_map_revision = self._map_revision
             trail = [] if self.track_outline else (self.track_map_points or self.current_lap_map_points)
+            if (not self.track_outline and self.field_mapper
+                    and len(self.field_mapper.bins) * 1.3 > len(trail)):
+                trail = self.field_mapper.partial()      # the field has seen more of the track
             map_update = {
                 'track_map': trail,
                 'current_lap_trail': self.current_lap_map_points,
@@ -1769,5 +1823,6 @@ class AnalysisEngine:
             "g_force_lat": g_lat,
             "g_force_lon": g_lon,
             "pit_status": lap.pit_status,
+            "cars": self.field_cars,
             **map_update,
         })
