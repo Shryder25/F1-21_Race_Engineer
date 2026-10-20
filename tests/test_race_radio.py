@@ -52,7 +52,7 @@ class RaceRadioTests(unittest.TestCase):
     def test_sector_and_clean_race_pace_have_timing_priority(self):
         from voice_engine import Priority
         self.radio.report_sector(1, 1, 28000, 28500)
-        self.assertIn('faster', self.voice.messages[-1][0])
+        self.assertIn('half a second up', self.voice.messages[-1][0])
         self.assertEqual(self.voice.messages[-1][1], Priority.TIMING)
         for lap_num, lap_time in enumerate([90000, 92000, 91000], 1):
             self.radio.completed_lap(lap_time, lap_num, {}, {})

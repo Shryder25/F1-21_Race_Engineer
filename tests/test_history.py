@@ -1,3 +1,4 @@
+import re
 import json
 import pathlib
 import sys
@@ -108,7 +109,7 @@ class HistoryTests(unittest.TestCase):
             engine.update_telemetry(self.telemetry, replace(
                 self.lap, lap_distance=distance, current_lap_time_ms=100 + distance * 50,
                 sector=int(distance >= 300), sector1_time_ms=14800))
-        self.assertTrue(any('faster than your personal best sector' in message[0]
+        self.assertTrue(any(re.search(r'\bup\.|quicker', message[0])
                             for message in voice.messages))
 
 

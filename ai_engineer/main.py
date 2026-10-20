@@ -179,7 +179,7 @@ def main():
     if not args.no_voice:
         voice.start()
         time.sleep(0.5)
-        voice.say('Engine online. Waiting for telemetry.', Priority.LOW, key='startup', ttl=10)
+        voice.say('Radio check. Engineer standing by, waiting for the car.', Priority.LOW, key='startup', ttl=10)
     else:
         print("[INFO] Voice output disabled (--no-voice)")
 
@@ -308,7 +308,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\n\n[INFO] Shutting down...")
-        voice.say_immediate("Engineer signing off. Good session.")
+        voice.say_immediate("That's it from us. Good work today, see you in the garage.")
         time.sleep(2)
     finally:
         sock.close()
