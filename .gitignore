@@ -7,3 +7,6 @@ __pycache__/
 
 # Kokoro voice model files (download separately, ~350 MB)
 models/
+
+# Raw UDP session recordings (ai_engineer/record_udp.py, main.py --record)
+recordings/
