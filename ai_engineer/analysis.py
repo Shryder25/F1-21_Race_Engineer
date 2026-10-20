@@ -29,6 +29,7 @@ from web_hud import update_web_state, add_voice_log
 import strategy_ml
 import race_strategy
 import fitted_models
+from session_history import SessionLog, lap_rows, stint_rows
 
 
 # ──────────────────────────────────────────────
@@ -149,6 +150,9 @@ class AnalysisEngine:
         self.race_control = RaceControl(self.speak)
         self.history = history
         self.capture_id: str | None = None
+        # Every car's laps, tyre stints, classification and setups (packets 11, 8 and 5).
+        self.session_log = SessionLog()
+        self._session_log_capture: str | None = None
         self.session_uid: int | None = None
         self.session_context = None
         self.weather_group: str | None = None
@@ -210,6 +214,8 @@ class AnalysisEngine:
             self.current_sector_times.clear()
             self.best_sector_times.clear()
             self.session_lap_stats.clear()
+            self.session_log = SessionLog(session_uid, player_index)
+            self._session_log_capture = None
             self._ml_cache = None
             self._forecast_cache = None
             self._history_records = None
@@ -292,7 +298,8 @@ class AnalysisEngine:
         if not (self.history and session.track_id >= 0):
             return
         try:
-            self.capture_id = self.history.start_session(session, session_uid)
+            self.capture_id = self.history.start_session(session, session_uid,
+                                                         self.session_log.player_index)
             self._session_captures.add(self.capture_id)
             self._history_records = None
             reference = self.history.best_reference(session)
@@ -786,6 +793,70 @@ class AnalysisEngine:
         self.radio.set_driver_names({index: p.radio_name for index, p in enumerate(participants)
                                      if p.radio_name})
         self.race_control.update_participants(participants)
+        for index, p in enumerate(participants):
+            if p.name:
+                self.session_log.names[index] = p.radio_name or p.name
+
+    # ── Every car's laps and stints (Session History), result and setups ──
+
+    def update_session_history(self, history):
+        """One car's Session History packet: log its laps and tyre stints."""
+        self._sync_session_log_capture()
+        changed = self.session_log.update_history(history)
+        if changed is None or not (self.history and self.capture_id):
+            return
+        laps, stints, last_lap = changed
+        try:
+            self.history.record_car_history(self.capture_id, history.car_index, laps, stints, last_lap,
+                                            driver=self.session_log.names.get(history.car_index))
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'[History] Could not save car history: {error}')
+
+    def update_final_classification(self, classification):
+        self._sync_session_log_capture()
+        if not self.session_log.update_classification(classification):
+            return
+        if self.history and self.capture_id:
+            try:
+                self.history.record_final_classification(self.capture_id,
+                                                         self.session_log.classification_rows())
+            except (OSError, ValueError, sqlite3.Error) as error:
+                print(f'[History] Could not save final classification: {error}')
+
+    def update_car_setups(self, setups):
+        self._sync_session_log_capture()
+        changed = self.session_log.update_setups(setups)
+        if not (changed and self.history and self.capture_id):
+            return
+        try:
+            for index, setup in changed.items():
+                self.history.record_car_setup(self.capture_id, index, setup.as_dict())
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'[History] Could not save car setup: {error}')
+
+    @property
+    def player_setup(self):
+        """The player's latest setup from the Car Setups packet, or None."""
+        return self.session_log.setups.get(self.session_log.player_index)
+
+    def _sync_session_log_capture(self):
+        """A new history capture mid-session (rain arrived) gets every car's rows so far."""
+        if self._session_log_capture == self.capture_id:
+            return
+        self._session_log_capture = self.capture_id
+        if not (self.history and self.capture_id):
+            return
+        log = self.session_log
+        try:
+            for car, history in log.histories.items():
+                self.history.record_car_history(self.capture_id, car, lap_rows(history),
+                                                stint_rows(history), driver=log.names.get(car))
+            if log.classification:
+                self.history.record_final_classification(self.capture_id, log.classification_rows())
+            for index, setup in log.setups.items():
+                self.history.record_car_setup(self.capture_id, index, setup.as_dict())
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'[History] Could not save car history: {error}')
 
     def update_speed_trap(self, speed_kph: float):
         """Record the fastest Speed Trap event ('SPTP') seen so far on the current lap."""
