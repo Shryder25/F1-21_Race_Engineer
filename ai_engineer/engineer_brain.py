@@ -32,6 +32,9 @@ COMMAND_QUESTIONS = {
     'rivals': 'When are the cars around me going to box, and onto which tyres?',
 }
 
+UNKNOWN_QUESTION_REPLY = ("Copy, can't answer that one without the AI. "
+                          "Ask me about gaps, tyres, pace, the pit window, weather or strategy.")
+
 SYSTEM_PROMPT = """You are the driver's Formula 1 race engineer speaking over team radio.
 Rules:
 - Reply in at most two short sentences, under 25 words total, like a real F1 radio call.
@@ -47,6 +50,7 @@ Rules:
 - Opponent threats, when present, are nearby cars already ranked by how much pressure they put on the driver; mention one only if it changes what the driver should do right now.
 - When a rival's driver name is given, call them by that name like a real engineer would (for example "Hamilton is one point two ahead"). Never make up a name that is not in the data.
 - Sound like a real F1 engineer: calm, clipped, encouraging. Say lap times the way engineers do ("one thirty-two four"), talk about small time differences in tenths ("two tenths up", "a tenth down"), and say "box, box" only for an actual pit call.
+- The driver may ask anything in their own words. Answer what they actually asked from the data. If the data cannot answer it, say so in a few words and offer the closest thing you do know.
 - Never repeat the driver's question back, never say "as an AI", and avoid filler like "great question" or "currently".
 Examples: "Gap ahead two point four, you're catching. Tyres are good, keep pushing." / "Fronts are a bit hot, ninety-eight. Be gentle on turn-in."
 
@@ -342,26 +346,58 @@ class EngineerBrain:
             self.last_source = 'rules'
             self.last_advice = ''
             return blocked
-        if self.client is not None:
-            system, user = build_prompt(command, ctx)
-            if hasattr(self.client, 'chat_json'):
-                try:
-                    result = self.client.chat_json(system, user)
-                    voice = clean_radio_text(str(result.get('voice') or ''))
-                    if voice:
-                        self.last_source = 'ai'
-                        self.last_advice = str(result.get('advice') or '').strip()
-                        return voice
-                except AIUnavailable as error:
-                    print(f'[Engineer] AI JSON reply unavailable ({error}); trying plain text.')
-            try:
-                text = clean_radio_text(self.client.chat(system, user))
-                if text:
-                    self.last_source = 'ai'
-                    self.last_advice = ''
-                    return text
-            except AIUnavailable as error:
-                print(f'[Engineer] AI unavailable ({error}); answering from rules.')
+        text = self._ask_ai(command, ctx)
+        if text:
+            return text
         self.last_source = 'fallback'
         self.last_advice = ''
         return rule_based_answer(command, ctx)
+
+    def answer_question(self, question: str, command: str | None = None) -> str:
+        """Answer anything the driver asked over push-to-talk, in their own words.
+
+        ``command`` is the fixed command the question also matches, if any. It is used for the
+        instant session-mode answer and for the rule-based fallback; the AI always gets the
+        driver's real words so it can answer exactly what was asked.
+        """
+        ctx = self.context_provider()
+        if command:
+            blocked = _mode_blocks(command, ctx)
+            if blocked:
+                self.last_source = 'rules'
+                self.last_advice = ''
+                return blocked
+        question = re.sub(r'\s+', ' ', question.replace('"', "'")).strip()
+        text = self._ask_ai(question, ctx) if question else None
+        if text:
+            return text
+        self.last_source = 'fallback'
+        self.last_advice = ''
+        if command:
+            return rule_based_answer(command, ctx)
+        return UNKNOWN_QUESTION_REPLY
+
+    def _ask_ai(self, question: str, ctx: dict) -> str | None:
+        """The AI's radio line for a command id or a free-form question, or None."""
+        if self.client is None:
+            return None
+        system, user = build_prompt(question, ctx)
+        if hasattr(self.client, 'chat_json'):
+            try:
+                result = self.client.chat_json(system, user)
+                voice = clean_radio_text(str(result.get('voice') or ''))
+                if voice:
+                    self.last_source = 'ai'
+                    self.last_advice = str(result.get('advice') or '').strip()
+                    return voice
+            except AIUnavailable as error:
+                print(f'[Engineer] AI JSON reply unavailable ({error}); trying plain text.')
+        try:
+            text = clean_radio_text(self.client.chat(system, user))
+            if text:
+                self.last_source = 'ai'
+                self.last_advice = ''
+                return text
+        except AIUnavailable as error:
+            print(f'[Engineer] AI unavailable ({error}); answering from rules.')
+        return None

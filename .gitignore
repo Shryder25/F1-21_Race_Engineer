@@ -10,3 +10,6 @@ models/
 
 # Raw UDP session recordings (ai_engineer/record_udp.py, main.py --record)
 recordings/
+
+# Saved push-to-talk button (python main.py --find-ptt-button)
+push_to_talk.json

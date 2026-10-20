@@ -44,7 +44,8 @@ python tools/build_real_race_calibration.py --years 2021 2022 2023
 **Voice commands (`voice_commands.py`).** The engineer no longer chats constantly. Ask for what you need: *"weather report"*, *"tyre temps"*, *"pit window"*, *"gap to car ahead"*, *"gap to car behind"*, *"pace update"*, *"any threats"* (optionally prefixed with "engineer"). The moment a command is recognised the engineer says **"We are checking"** while the AI works in the background, then speaks the answer. Only critical tyre overheating still interrupts on its own — and only when the temperature is genuinely climbing fast (rate-of-change, not a single static-threshold reading), with a 40-second cooldown so one real overheat event doesn't repeat every frame while the tyre stays hot; `--chatty` restores the old callouts.
 
 - Speech-to-text: `pip install SpeechRecognition PyAudio`. Default engine is Google (online); `--stt-engine vosk` runs offline (`pip install vosk`, unpack a Vosk model to `./model`). `--mic-index N` picks a microphone, `--no-mic` disables it.
-- No microphone? Send text to the engineer: `curl -X POST localhost:5000/api/command -d "{\"text\": \"pit window\"}"`.
+- **Push-to-talk on your wheel or controller (`push_to_talk.py`).** Run `python main.py --find-ptt-button` once and press the button you want; after that, hold it, ask anything in your own words ("can I make it to the end on these?"), let go, and the engineer answers from the live data. Setup and button tips: [docs/push-to-talk.md](docs/push-to-talk.md).
+- No microphone? Send text to the engineer: `curl -X POST localhost:5000/api/command -d "{\"text\": \"pit window\"}"`. Typed text can be any question, like the radio button.
 - Test without the game: `test_simulation.bat` now also sends tyre wear and fuel packets.
 
 ---

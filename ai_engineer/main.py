@@ -8,6 +8,7 @@ Usage:
     python main.py [--port 20777] [--no-voice] [--debug]
     python main.py --record race.f1rec.gz        # also save every datagram for replay
     python main.py --replay race.f1rec.gz [--replay-speed 1|10|max]   # run from a recording
+    python main.py --find-ptt-button             # pick the wheel/controller radio button once
 
 Game Setup (F1 2021 Settings → Telemetry):
     UDP Telemetry:  ON
@@ -48,6 +49,7 @@ from web_hud import (start_web_hud_server, add_voice_log, set_command_handler,
 from ai_client import AIClient
 from engineer_brain import EngineerBrain
 from voice_commands import CommandDispatcher, VoiceCommandListener
+import push_to_talk
 from udp_recording import (MAX_DATAGRAM, RecordingWriter, ReplayFinished, ReplaySource,
                            parse_speed)
 import webbrowser
@@ -188,6 +190,18 @@ def main():
     cmd.add_argument('--mic-index', type=int, default=None, help='Microphone device index')
     cmd.add_argument('--chatty', action='store_true',
                      help='Keep the old constant callouts instead of speaking only when asked')
+    ptt = parser.add_argument_group('push-to-talk radio button (wheel or controller)')
+    ptt.add_argument('--find-ptt-button', action='store_true',
+                     help='Press the wheel/controller button you want as the radio button; saves it to push_to_talk.json and exits')
+    ptt.add_argument('--ptt-button', default=None, metavar='BUTTON',
+                     help='Radio button: a button number like 5, or a D-pad direction like hat0:up (default: saved choice)')
+    ptt.add_argument('--ptt-device', default=None, metavar='DEVICE',
+                     help='Controller index or part of its name, e.g. 0 or "T300" (default: saved choice, else any)')
+    ptt.add_argument('--ptt-mode', choices=push_to_talk.MODES, default=None,
+                     help='hold: talk while held (default). toggle: press to talk, press again to send')
+    ptt.add_argument('--no-ptt', action='store_true', help='Ignore the saved push-to-talk button')
+    ptt.add_argument('--always-listen', action='store_true',
+                     help='Keep the hands-free wake-word microphone on as well as the radio button')
     rec = parser.add_argument_group('recording and replay (format: docs/udp-recording-format.md)')
     rec.add_argument('--record', type=Path, default=None, metavar='FILE',
                      help='Save every incoming UDP datagram with its arrival time to FILE '
@@ -199,6 +213,14 @@ def main():
     args = parser.parse_args()
     if args.record and args.replay:
         parser.error('--record and --replay cannot be used together')
+    if args.find_ptt_button:
+        sys.exit(push_to_talk.run_button_finder(args.ptt_mode or push_to_talk.HOLD))
+    ptt_settings = None
+    if not args.no_ptt and not args.no_mic and not args.no_voice:
+        try:
+            ptt_settings = push_to_talk.resolve_settings(args.ptt_button, args.ptt_device, args.ptt_mode)
+        except ValueError as error:
+            parser.error(str(error))
 
     # ─── Initialize Voice Engine ───
     driver_factory = None
@@ -246,13 +268,19 @@ def main():
                                               args.ai_api_key, args.ai_timeout)
     brain = EngineerBrain(analysis.build_context, client)
     dispatcher = CommandDispatcher(voice, brain, on_log=add_voice_log)
-    set_command_handler(dispatcher.handle_text)
+    # Typed HUD questions are deliberate, so they may be free-form like the radio button.
+    set_command_handler(lambda text: dispatcher.handle_text(text, free_form=True))
     set_setup_ai_client(client)
     set_reset_map_handler(analysis.reset_map)
     listener = None
-    if not args.no_mic and not args.no_voice:
+    radio = None
+    if ptt_settings:
+        radio = push_to_talk.start(ptt_settings, dispatcher, voice=voice, engine=args.stt_engine,
+                                   mic_index=args.mic_index, on_log=add_voice_log)
+    if not args.no_mic and not args.no_voice and (radio is None or args.always_listen):
         listener = VoiceCommandListener(dispatcher, engine=args.stt_engine,
-                                        device_index=args.mic_index, voice=voice)
+                                        device_index=args.mic_index, voice=voice,
+                                        ignore_when=radio.recently_active if radio else None)
         listener.start()
     if client:
         print(f"[AI] Engineer brain: {client.model} @ {client.base_url} "
@@ -400,6 +428,8 @@ def main():
             print(f"[REC] Saved {recorder.count} datagrams to {args.record}")
         if listener:
             listener.stop()
+        if radio:
+            radio.stop()
         dispatcher.shutdown()
         history.close()
         if web_server:

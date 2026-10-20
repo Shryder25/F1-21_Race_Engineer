@@ -20,6 +20,8 @@ from concurrent.futures import ThreadPoolExecutor
 from voice_engine import Priority
 
 ACK_TEXT = 'We are checking.'
+QUESTION = 'question'          # handle_text() result for a free-form question
+MAX_QUESTION_CHARS = 300
 
 COMMANDS = ('weather', 'tyre_temps', 'pit_window', 'gap_ahead', 'gap_behind', 'pace', 'threats', 'strategy',
             'rivals')
@@ -88,29 +90,45 @@ class CommandDispatcher:
         if not queued and not getattr(self.voice, 'is_running', False) and self.on_log:
             self.on_log(message, status='muted')
 
-    def handle_text(self, text: str) -> str | None:
-        """Process a transcript. Returns the command id if one was recognised."""
+    def handle_text(self, text: str, *, free_form: bool = False) -> str | None:
+        """Process a transcript. Returns the command id, ``QUESTION`` or None.
+
+        The always-on microphone hears everything, so by default only the fixed commands are
+        answered. ``free_form=True`` is for deliberate requests (push-to-talk button, the HUD
+        text box): any question is sent to the brain, which answers it from the live data.
+        """
         command = match_command(text)
-        if command is None:
+        question = None
+        if free_form and hasattr(self.brain, 'answer_question'):
+            question = re.sub(r'\s+', ' ', str(text or '')).strip()[:MAX_QUESTION_CHARS]
+            if not normalise(question):
+                return None
+            debounce_key = command or f'question:{normalise(question)}'
+        elif command is None:
             return None
+        else:
+            debounce_key = command
         now = time.monotonic()
         with self._lock:
-            if self._last and self._last[0] == command and now - self._last[1] < self.debounce_s:
-                return command  # duplicate recognition of the same request
-            self._last = (command, now)
+            if self._last and self._last[0] == debounce_key and now - self._last[1] < self.debounce_s:
+                return command or QUESTION  # duplicate recognition of the same request
+            self._last = (debounce_key, now)
             self._sequence += 1
             sequence = self._sequence
         # CRITICAL so the cue is instant: it skips the braking/cornering silence filter, and the
         # STRATEGY-priority answer behind it can never interrupt it.
         self._speak(self.ack_text, f'cmd_ack:{sequence}', 6, Priority.CRITICAL)
-        self._executor.submit(self._answer, command, sequence)         # AI works in the background
-        return command
+        self._executor.submit(self._answer, command, sequence, question)  # AI works in the background
+        return command or QUESTION
 
-    def _answer(self, command: str, sequence: int):
+    def _answer(self, command: str | None, sequence: int, question: str | None = None):
         try:
-            message = self.brain.answer(command)
+            if question is not None:
+                message = self.brain.answer_question(question, command)
+            else:
+                message = self.brain.answer(command)
         except Exception as error:  # never let a bad answer kill the worker silently
-            print(f'[Engineer] Could not answer {command}: {error}')
+            print(f'[Engineer] Could not answer {question or command}: {error}')
             message = 'Sorry, I could not get that. Try again.'
         self._speak(message, f'cmd_answer:{sequence}', self.answer_ttl)
 
@@ -118,13 +136,27 @@ class CommandDispatcher:
         self._executor.shutdown(wait=False, cancel_futures=True)
 
 
+def transcribe(recognizer, audio, engine: str = 'google', language: str = 'en-GB') -> str | None:
+    """Speech to text with SpeechRecognition. None for unintelligible audio or an error."""
+    try:
+        if engine == 'vosk':
+            import json
+            return json.loads(recognizer.recognize_vosk(audio)).get('text') or None
+        return recognizer.recognize_google(audio, language=language) or None
+    except Exception as error:   # unintelligible audio / network error: just ignore the clip
+        if type(error).__name__ != 'UnknownValueError':
+            print(f'[Voice] Speech recognition error: {error}')
+        return None
+
+
 class VoiceCommandListener:
     """Background microphone listener feeding transcripts to a dispatcher."""
 
     def __init__(self, dispatcher: CommandDispatcher, *, engine: str = 'google',
                  device_index: int | None = None, voice=None, language: str = 'en-GB',
-                 recognizer_factory=None, microphone_factory=None):
+                 recognizer_factory=None, microphone_factory=None, ignore_when=None):
         self.dispatcher = dispatcher
+        self.ignore_when = ignore_when  # callable; True skips a clip (push-to-talk in use)
         self.engine = engine
         self.device_index = device_index
         self.voice = voice          # used to ignore the engineer's own voice
@@ -135,19 +167,13 @@ class VoiceCommandListener:
         self._stop = None
 
     def transcribe(self, audio) -> str | None:
-        try:
-            if self.engine == 'vosk':
-                import json
-                return json.loads(self._recognizer.recognize_vosk(audio)).get('text') or None
-            return self._recognizer.recognize_google(audio, language=self.language)
-        except Exception as error:   # unintelligible audio / network error: just ignore the clip
-            if type(error).__name__ != 'UnknownValueError':
-                print(f'[Voice] Speech recognition error: {error}')
-            return None
+        return transcribe(self._recognizer, audio, self.engine, self.language)
 
     def _on_audio(self, _recognizer, audio):
         if self.voice is not None and getattr(self.voice, 'is_busy', False):
             return  # do not transcribe the engineer talking
+        if self.ignore_when is not None and self.ignore_when():
+            return  # the push-to-talk button is handling this
         text = self.transcribe(audio)
         if text:
             print(f'[Voice] Heard: "{text}"')
