@@ -144,7 +144,7 @@ class Feature4RealisticF1RadioProtocolTests(unittest.TestCase):
         # Critical tyre wear (>75%) -> Priority.CRITICAL interrupt
         radio.update_damage_alert(78.5, 0)
         self.assertEqual(len(spoken), 3)
-        self.assertIn("78", spoken[-1][0])
+        self.assertIn("seventy-eight", spoken[-1][0])
         self.assertEqual(spoken[-1][1], Priority.CRITICAL)
 
 

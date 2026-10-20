@@ -148,6 +148,17 @@ def main():
     parser.add_argument('--history-dir', type=Path,
                         default=Path(__file__).resolve().parent.parent / 'telemetry-history',
                         help='Directory for track/session telemetry history')
+    tts = parser.add_argument_group('engineer voice')
+    tts.add_argument('--tts', choices=('system', 'kokoro'), default='system',
+                     help='Voice: system (pyttsx3) or kokoro (free offline neural voice, see neural_voice.py)')
+    tts.add_argument('--kokoro-dir', type=Path, default=None,
+                     help='Folder with kokoro-v1.0.onnx and voices-v1.0.bin (default: ./models/kokoro)')
+    tts.add_argument('--kokoro-voice', default='bm_george',
+                     help='Kokoro voice, e.g. bm_george, bm_lewis, bm_daniel (default: bm_george)')
+    tts.add_argument('--kokoro-speed', type=float, default=1.1,
+                     help='Kokoro speaking speed (default: 1.1, a touch brisk like real radio)')
+    tts.add_argument('--no-radio-fx', action='store_true',
+                     help='Kokoro only: clean studio voice instead of the team-radio effect')
     ai = parser.add_argument_group('AI engineer (DeepSeek via an OpenAI-compatible API)')
     ai.add_argument('--ai-base-url', default=None,
                     help='API base URL (default: $F1_AI_BASE_URL or Ollama http://localhost:11434/v1)')
@@ -168,7 +179,16 @@ def main():
     args = parser.parse_args()
 
     # ─── Initialize Voice Engine ───
+    driver_factory = None
+    if args.tts == 'kokoro' and not args.no_voice:
+        from neural_voice import DEFAULT_KOKORO_DIR, build_kokoro_driver_factory
+        driver_factory = build_kokoro_driver_factory(
+            args.kokoro_dir or DEFAULT_KOKORO_DIR, args.kokoro_voice, args.kokoro_speed,
+            radio_effect=not args.no_radio_fx)
+        if driver_factory:
+            print(f'[INFO] Engineer voice: Kokoro ({args.kokoro_voice})')
     voice = VoiceEngine(
+        driver_factory=driver_factory,
         rate=args.voice_rate,
         volume=0.9,
         cooldown_seconds=30.0,
@@ -179,7 +199,7 @@ def main():
     if not args.no_voice:
         voice.start()
         time.sleep(0.5)
-        voice.say('Engine online. Waiting for telemetry.', Priority.LOW, key='startup', ttl=10)
+        voice.say('Radio check. Engineer standing by, waiting for the car.', Priority.LOW, key='startup', ttl=10)
     else:
         print("[INFO] Voice output disabled (--no-voice)")
 
@@ -308,7 +328,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\n\n[INFO] Shutting down...")
-        voice.say_immediate("Engineer signing off. Good session.")
+        voice.say_immediate("That's it from us. Good work today, see you in the garage.")
         time.sleep(2)
     finally:
         sock.close()
