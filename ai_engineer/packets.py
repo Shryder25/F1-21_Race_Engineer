@@ -671,6 +671,229 @@ def parse_participants(data: bytes) -> list[ParticipantData]:
 
 
 # ──────────────────────────────────────────────
+# Packet ID 5: Car Setups (every car's setup; zeros for cars whose setup the game hides)
+# ──────────────────────────────────────────────
+# Per-car block: 49 bytes; 22 cars x 49 + header(24) = 1,102 bytes. Sent twice a second.
+CAR_SETUP_FORMAT = (
+    "<"
+    "B"       # frontWing
+    "B"       # rearWing
+    "B"       # onThrottle (differential, %)
+    "B"       # offThrottle (%)
+    "f"       # frontCamber
+    "f"       # rearCamber
+    "f"       # frontToe
+    "f"       # rearToe
+    "B"       # frontSuspension
+    "B"       # rearSuspension
+    "B"       # frontAntiRollBar
+    "B"       # rearAntiRollBar
+    "B"       # frontSuspensionHeight
+    "B"       # rearSuspensionHeight
+    "B"       # brakePressure (%)
+    "B"       # brakeBias (%)
+    "4f"      # tyre pressures (PSI): RL, RR, FL, FR
+    "B"       # ballast
+    "f"       # fuelLoad (kg)
+)
+CAR_SETUP_SIZE = struct.calcsize(CAR_SETUP_FORMAT)  # 49 bytes
+CAR_SETUPS_PACKET_SIZE = HEADER_SIZE + 22 * CAR_SETUP_SIZE  # 1,102 bytes
+
+
+@dataclass
+class CarSetupData:
+    front_wing: int
+    rear_wing: int
+    on_throttle: int
+    off_throttle: int
+    front_camber: float
+    rear_camber: float
+    front_toe: float
+    rear_toe: float
+    front_suspension: int
+    rear_suspension: int
+    front_anti_roll_bar: int
+    rear_anti_roll_bar: int
+    front_ride_height: int
+    rear_ride_height: int
+    brake_pressure: int
+    brake_bias: int
+    tyre_pressures: tuple      # (RL, RR, FL, FR) PSI
+    ballast: int
+    fuel_load: float
+
+    @property
+    def is_hidden(self) -> bool:
+        """True when the game sent an all-zero block (another human's setup in online play)."""
+        return self.front_wing == 0 and self.rear_wing == 0 and not any(self.tyre_pressures)
+
+    def as_dict(self) -> dict:
+        d = {k: getattr(self, k) for k in self.__dataclass_fields__}
+        d['tyre_pressures'] = list(self.tyre_pressures)
+        return d
+
+
+def _car_setup_from_values(v: tuple) -> CarSetupData:
+    return CarSetupData(*v[0:16], tyre_pressures=tuple(v[16:20]), ballast=v[20], fuel_load=v[21])
+
+
+def parse_car_setups(data: bytes) -> list[CarSetupData]:
+    """Every car's setup from one Car Setups packet, indexed like every other per-car array."""
+    return [_car_setup_from_values(struct.unpack_from(CAR_SETUP_FORMAT, data, HEADER_SIZE + i * CAR_SETUP_SIZE))
+            for i in range(22)]
+
+
+# ──────────────────────────────────────────────
+# Packet ID 8: Final Classification (sent at the end of the session)
+# ──────────────────────────────────────────────
+# header(24) + numCars(1) + 22 cars x 37 bytes = 839 bytes. F1 2021 lists each car's stint
+# compounds but not the laps they ended on (Session History has those).
+FINAL_CLASSIFICATION_FORMAT = (
+    "<"
+    "B"       # position
+    "B"       # numLaps
+    "B"       # gridPosition
+    "B"       # points
+    "B"       # numPitStops
+    "B"       # resultStatus (3 = finished, 4 = DSQ, 5 = not classified, 6 = retired)
+    "I"       # bestLapTimeInMS
+    "d"       # totalRaceTime (s, without penalties)
+    "B"       # penaltiesTime (s)
+    "B"       # numPenalties
+    "B"       # numTyreStints
+    "8B"      # tyreStintsActual
+    "8B"      # tyreStintsVisual
+)
+FINAL_CLASSIFICATION_SIZE = struct.calcsize(FINAL_CLASSIFICATION_FORMAT)  # 37 bytes
+FINAL_CLASSIFICATION_PACKET_SIZE = HEADER_SIZE + 1 + 22 * FINAL_CLASSIFICATION_SIZE  # 839 bytes
+
+
+@dataclass
+class FinalClassificationData:
+    car_index: int
+    position: int
+    num_laps: int
+    grid_position: int
+    points: int
+    num_pit_stops: int
+    result_status: int
+    best_lap_time_ms: int
+    total_race_time_s: float
+    penalties_time_s: int
+    num_penalties: int
+    tyre_stints_actual: tuple   # one compound id per stint, in order
+    tyre_stints_visual: tuple
+
+
+def parse_final_classification(data: bytes) -> list[FinalClassificationData]:
+    """The classified cars (numCars of them), each tagged with its car index."""
+    num_cars = min(struct.unpack_from("<B", data, HEADER_SIZE)[0], 22)
+    out = []
+    for i in range(num_cars):
+        v = struct.unpack_from(FINAL_CLASSIFICATION_FORMAT, data, HEADER_SIZE + 1 + i * FINAL_CLASSIFICATION_SIZE)
+        stints = min(v[10], 8)
+        out.append(FinalClassificationData(
+            car_index=i, position=v[0], num_laps=v[1], grid_position=v[2], points=v[3],
+            num_pit_stops=v[4], result_status=v[5], best_lap_time_ms=v[6], total_race_time_s=v[7],
+            penalties_time_s=v[8], num_penalties=v[9],
+            tyre_stints_actual=tuple(v[11:11 + stints]), tyre_stints_visual=tuple(v[19:19 + stints])))
+    return out
+
+
+# ──────────────────────────────────────────────
+# Packet ID 11: Session History (one car per packet, cycling through the field)
+# ──────────────────────────────────────────────
+# header(24) + 7 bytes + 100 laps x 11 bytes + 8 stints x 3 bytes = 1,155 bytes.
+SESSION_HISTORY_HEAD_FORMAT = "<7B"   # carIdx, numLaps, numTyreStints, bestLap/S1/S2/S3 lap numbers
+LAP_HISTORY_FORMAT = "<IHHHB"         # lapTimeInMS, sector 1/2/3 ms, lapValidBitFlags
+LAP_HISTORY_SIZE = struct.calcsize(LAP_HISTORY_FORMAT)        # 11 bytes
+TYRE_STINT_HISTORY_FORMAT = "<BBB"    # endLap (255 = current stint), actual, visual compound
+TYRE_STINT_HISTORY_SIZE = struct.calcsize(TYRE_STINT_HISTORY_FORMAT)
+SESSION_HISTORY_MAX_LAPS = 100
+SESSION_HISTORY_MAX_STINTS = 8
+SESSION_HISTORY_PACKET_SIZE = (HEADER_SIZE + 7 + SESSION_HISTORY_MAX_LAPS * LAP_HISTORY_SIZE
+                               + SESSION_HISTORY_MAX_STINTS * TYRE_STINT_HISTORY_SIZE)  # 1,155 bytes
+
+LAP_VALID = 0x01
+SECTOR_VALID = {1: 0x02, 2: 0x04, 3: 0x08}
+OPEN_STINT_END_LAP = 255
+
+
+@dataclass
+class LapHistory:
+    lap_num: int
+    lap_time_ms: int          # 0 while the lap is still being driven
+    sector_ms: tuple          # (s1, s2, s3); 0 for a sector not yet completed
+    valid_flags: int
+
+    @property
+    def valid(self) -> bool:
+        return bool(self.valid_flags & LAP_VALID)
+
+
+@dataclass
+class TyreStint:
+    stint_num: int            # 0 = the set the car started on
+    start_lap: int
+    end_lap: int              # last lap on this set; the current lap for the set still on the car
+    actual_compound: int
+    visual_compound: int
+    is_open: bool             # still on the car
+
+    @property
+    def laps(self) -> int:
+        return max(0, self.end_lap - self.start_lap + 1)
+
+    @property
+    def compound_name(self) -> str:
+        return VISUAL_COMPOUNDS.get(self.visual_compound, ACTUAL_COMPOUNDS.get(self.actual_compound, "Unknown"))
+
+
+@dataclass
+class SessionHistoryData:
+    car_index: int
+    num_laps: int             # includes the lap in progress
+    best_lap_num: int
+    best_sector_lap_nums: tuple
+    laps: list                # LapHistory, lap 1 first
+    stints: list              # TyreStint, first set first
+
+    def completed_laps(self) -> list:
+        return [lap for lap in self.laps if lap.lap_time_ms > 0]
+
+
+def parse_session_history(data: bytes) -> SessionHistoryData:
+    """One car's lap and tyre-stint history.
+
+    Stint start laps are derived: the first set starts on lap 1 and each later set on the lap
+    after the previous one's end lap. The set still on the car (end lap 255) runs to the
+    car's current lap.
+    """
+    car, num_laps, num_stints, best, b1, b2, b3 = struct.unpack_from(SESSION_HISTORY_HEAD_FORMAT, data, HEADER_SIZE)
+    num_laps = min(num_laps, SESSION_HISTORY_MAX_LAPS)
+    num_stints = min(num_stints, SESSION_HISTORY_MAX_STINTS)
+    laps = []
+    offset = HEADER_SIZE + 7
+    for n in range(num_laps):
+        t, s1, s2, s3, flags = struct.unpack_from(LAP_HISTORY_FORMAT, data, offset + n * LAP_HISTORY_SIZE)
+        laps.append(LapHistory(n + 1, t, (s1, s2, s3), flags))
+    offset += SESSION_HISTORY_MAX_LAPS * LAP_HISTORY_SIZE
+    stints = []
+    start = 1
+    for n in range(num_stints):
+        end, actual, visual = struct.unpack_from(TYRE_STINT_HISTORY_FORMAT, data, offset + n * TYRE_STINT_HISTORY_SIZE)
+        if actual == 0 and visual == 0:
+            continue                                  # unused slot
+        is_open = end == OPEN_STINT_END_LAP
+        end_lap = max(start, num_laps) if is_open else end
+        stints.append(TyreStint(len(stints), start, end_lap, actual, visual, is_open))
+        if is_open:
+            break
+        start = end + 1
+    return SessionHistoryData(car, num_laps, best, (b1, b2, b3), laps, stints)
+
+
+# ──────────────────────────────────────────────
 # Track ID → Name Mapping (F1 2021)
 # ──────────────────────────────────────────────
 TRACK_NAMES = {

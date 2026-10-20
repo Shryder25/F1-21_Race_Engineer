@@ -18,6 +18,17 @@ because Soft is a different compound at different tracks. The fitted parameters 
 own uncertainty (a posterior covariance), so a fit from two stints gives wider ranges than a
 fit from twenty.
 
+### Other cars' laps
+
+Recordings and history databases that contain the Session History packet (id 11) also give
+every other car's lap times and tyre stints (`ai_engineer/session_history.py`). The fitting
+tool adds those laps to the **fall-off** fit only: rivals send no fuel or tyre wear, so they
+add nothing to the wear and fuel fits. Their lap times are fuel-corrected with your fuel on
+the same lap (every car burns about the same per lap, and the slope only uses the change within
+a stint), and in-laps, out-laps, invalid laps, Safety Car laps and the standing start are left
+out. Tyre age is counted from the start of each stint. Pass `--player-only` to fit from your
+own laps only. The live engineer still uses only your own laps.
+
 ## Fallbacks when data is thin
 
 Each lookup takes the most specific model that has data:
