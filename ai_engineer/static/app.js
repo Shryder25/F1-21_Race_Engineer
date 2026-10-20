@@ -10,7 +10,7 @@
  */
 
 // Global state
-let currentTrackId = 7;
+let currentTrackId = null;   // set from the game's session packet (or the dropdown)
 let lastKnownCoords = [];
 let trackCanvas, trackCtx;
 let speedChart = null;
@@ -350,7 +350,10 @@ async function initSetupAdvisor() {
                 opt.textContent = `${t.name} (${t.country})`;
                 trackSelect.appendChild(opt);
             });
-            trackSelect.value = currentTrackId;
+            // Follow the game if it has already told us which circuit this is.
+            if (currentTrackId !== null && [...trackSelect.options].some(o => o.value === String(currentTrackId))) {
+                trackSelect.value = currentTrackId;
+            }
         }
     } catch (e) {
         console.warn('Could not load tracks list from API:', e);
@@ -387,7 +390,7 @@ async function initSetupAdvisor() {
     });
 
     // Initial load
-    loadTrackSetup(trackSelect.value || currentTrackId, weatherSelect ? weatherSelect.value : 'dry');
+    loadTrackSetup(trackSelect.value, weatherSelect ? weatherSelect.value : 'dry');
 }
 
 async function loadTrackSetup(trackId, weather) {
@@ -543,8 +546,10 @@ async function fetchTelemetry() {
             const lenEl = document.getElementById('trackLengthDisplay');
             if (lenEl) lenEl.textContent = `${data.track_length.toLocaleString()} m`;
         }
-        if (data.track_id !== undefined && data.track_id !== currentTrackId) {
-            currentTrackId = data.track_id;
+        // Short layouts (e.g. Silverstone Short) report their parent circuit's setup data.
+        const liveTrack = data.setup_track_id !== undefined ? data.setup_track_id : data.track_id;
+        if (liveTrack !== undefined && liveTrack >= 0 && liveTrack !== currentTrackId) {
+            currentTrackId = liveTrack;
             const sel = document.getElementById('trackSelect');
             // Only follow the game onto circuits that are in the database (the API would
             // otherwise answer with its Silverstone default under the wrong heading).
@@ -554,6 +559,19 @@ async function fetchTelemetry() {
                 loadTrackSetup(currentTrackId, weather ? weather.value : 'dry');
             }
         }
+
+        // 2b. Session type: Free Practice / Qualifying / Race / Time Trial
+        const mode = data.session_mode || 'unknown';
+        const badge = document.getElementById('sessionBadge');
+        if (badge) {
+            badge.textContent = (data.session_label || '--').toUpperCase();
+            badge.dataset.mode = mode;
+        }
+        document.body.dataset.sessionMode = mode;
+        document.querySelectorAll('[data-modes]').forEach(el => {
+            const visible = mode === 'unknown' || el.dataset.modes.split(' ').includes(mode);
+            el.style.display = visible ? '' : 'none';
+        });
 
         // 3. Safety Car Pill
         const scPill = document.getElementById('safetyCarPill');

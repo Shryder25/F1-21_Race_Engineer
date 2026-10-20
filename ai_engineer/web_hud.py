@@ -26,8 +26,11 @@ TELEMETRY_TIMEOUT = 2.0
 # Shared data store for web client
 dashboard_state: dict[str, Any] = {
     "connected": False,
-    "track_name": "Silverstone",
-    "track_id": 7,
+    "track_name": "Waiting for session",
+    "track_id": -1,
+    "session_type": "",
+    "session_mode": "unknown",
+    "session_label": "",
     "track_length": 5891,
     "speed": 0,
     "gear": 0,
@@ -236,7 +239,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="card">
                 <div class="card-title">
                     <span>Live Cockpit</span>
-                    <span id="trackBadge" style="color: var(--accent); font-weight:700;">SILVERSTONE</span>
+                    <span id="trackBadge" style="color: var(--accent); font-weight:700;">WAITING FOR SESSION</span>
                 </div>
                 <div class="hud-main">
                     <div class="speed-val" id="speed">0</div>
@@ -460,7 +463,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 }
 
                 // Cockpit
-                document.getElementById('trackBadge').innerText = (data.track_name || 'SILVERSTONE').toUpperCase();
+                document.getElementById('trackBadge').innerText = (data.track_name || 'WAITING FOR SESSION').toUpperCase();
                 document.getElementById('speed').innerText = data.speed;
                 document.getElementById('gear').innerText = data.gear === 0 ? 'N' : data.gear === -1 ? 'R' : data.gear;
                 const drsEl = document.getElementById('drs');

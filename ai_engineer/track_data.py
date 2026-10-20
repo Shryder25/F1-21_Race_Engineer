@@ -1219,6 +1219,41 @@ def get_setup_advice(track_id: int) -> Dict[str, Any]:
     }
 
 
+# Short/alternate layouts reuse their parent circuit's setup data (their lap distances differ,
+# so braking points and corner zones are deliberately not shared).
+SHORT_LAYOUT_PARENTS = {21: 3, 22: 7, 23: 15, 24: 13}
+
+
+def resolve_track_id(track_id: int) -> int:
+    """Database id for a game track id (short layouts map to their parent circuit)."""
+    return SHORT_LAYOUT_PARENTS.get(track_id, track_id)
+
+
+def corner_zones(track_id: int, track_length: int = 0) -> List[Dict[str, Any]]:
+    """Corner analysis windows for any circuit, built from its braking points.
+
+    Each zone spans from just before the braking point to just after the corner, trimmed so
+    neighbouring zones never overlap. ``ref_apex`` is None because the database holds no apex
+    speeds; the first completed lap becomes the reference and later laps are compared to it.
+    """
+    points = sorted(get_braking_points(track_id), key=lambda p: p[0])
+    zones: List[Dict[str, Any]] = []
+    for index, (distance, name, _message) in enumerate(points):
+        start = max(0.0, distance - 110.0)
+        end = distance + 170.0
+        if index + 1 < len(points):
+            end = min(end, points[index + 1][0] - 111.0)      # stop before the next zone starts
+        if track_length:
+            end = min(end, float(track_length) - 1.0)
+        if index > 0:
+            start = max(start, zones[-1]["end"] + 1.0) if zones else start
+        if end - start < 80.0:
+            continue
+        zones.append({"name": name, "start": round(start), "end": round(end),
+                      "ref_apex": None, "ref_brake": round(distance)})
+    return zones
+
+
 def get_track_info(track_id: int) -> Optional[Dict[str, Any]]:
     """Get the full metadata dictionary for a track."""
     return TRACK_DATABASE.get(track_id)
@@ -1244,7 +1279,7 @@ def get_all_tracks() -> List[Dict[str, Any]]:
 
 def get_track_setup(track_id: int, weather: str = "dry") -> Dict[str, Any]:
     """Retrieve full 6-category setup with adjustments for weather."""
-    circuit = TRACK_DATABASE.get(track_id, TRACK_DATABASE[7])  # default to Silverstone
+    circuit = TRACK_DATABASE.get(resolve_track_id(track_id), TRACK_DATABASE[7])  # default to Silverstone
     setup = circuit["setup"]
     is_wet = "wet" in weather.lower() or "rain" in weather.lower()
     return {

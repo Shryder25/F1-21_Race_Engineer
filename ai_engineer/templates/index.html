@@ -24,8 +24,8 @@
         <div class="header-center">
             <div class="circuit-pill" id="circuitPill">
                 <span class="flag-icon" id="circuitFlag">🏁</span>
-                <span class="circuit-name" id="trackNameDisplay">SILVERSTONE CIRCUIT</span>
-                <span class="circuit-meta" id="trackLengthDisplay">5,891 m</span>
+                <span class="circuit-name" id="trackNameDisplay">WAITING FOR SESSION</span>
+                <span class="circuit-meta" id="trackLengthDisplay"></span>
             </div>
 
             <div class="safety-car-pill sc-none" id="safetyCarPill">
@@ -70,7 +70,7 @@
                 <div class="panel-header">
                     <span class="header-bar red"></span>
                     <h2>TIMING TOWER</h2>
-                    <span class="session-badge" id="sessionBadge">RACE</span>
+                    <span class="session-badge" id="sessionBadge">--</span>
                 </div>
 
                 <div class="timing-tower-content">
@@ -123,14 +123,14 @@
                             <span class="row-label">PERSONAL BEST</span>
                             <span class="row-value" id="bestLapTimeDisplay">0:00.000</span>
                         </div>
-                        <div class="time-row">
+                        <div class="time-row" data-modes="race">
                             <span class="row-label">RACE PACE (AVG 3)</span>
                             <span class="row-value" id="racePaceDisplay">--:--.---</span>
                         </div>
                     </div>
 
                     <!-- Rival Gaps -->
-                    <div class="gaps-card">
+                    <div class="gaps-card" data-modes="race">
                         <div class="gap-item">
                             <span class="gap-label">CAR AHEAD</span>
                             <span class="gap-val" id="gapAheadDisplay">INTERVAL --</span>
@@ -142,7 +142,7 @@
                     </div>
 
                     <!-- Strategy / Pit Window Box -->
-                    <div class="pit-window-box">
+                    <div class="pit-window-box" data-modes="race practice">
                         <span class="pit-title">PIT STOP WINDOW</span>
                         <span class="pit-val" id="pitWindowDisplay">Calculating ideal window...</span>
                     </div>
@@ -315,7 +315,7 @@
                 <div class="control-group">
                     <label for="trackSelect">SELECT CIRCUIT (24 F1 2021 TRACKS):</label>
                     <select id="trackSelect" class="f1-select">
-                        <option value="7">Silverstone Circuit (Great Britain)</option>
+                        <option value="">Loading circuits…</option>
                     </select>
                 </div>
 
@@ -344,7 +344,7 @@
 
             <!-- Track Metadata Header -->
             <div class="track-info-banner" id="trackInfoBanner">
-                <div class="t-title" id="setupTrackTitle">Silverstone Circuit — Great Britain</div>
+                <div class="t-title" id="setupTrackTitle">Select a circuit</div>
                 <div class="t-pills">
                     <span class="t-pill" id="setupLength">5,891 m</span>
                     <span class="t-pill" id="setupTurns">18 Turns</span>

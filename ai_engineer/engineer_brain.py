@@ -14,6 +14,7 @@ import re
 from typing import Callable
 
 from ai_client import AIClient, AIUnavailable
+import session_modes
 
 COMMAND_QUESTIONS = {
     'weather': 'Give me a weather report.',
@@ -30,6 +31,7 @@ Rules:
 - Plain spoken English only: no markdown, lists, emojis or labels. Say numbers naturally (for example "two point four").
 - Use ONLY the data provided. Never invent values. If a value is missing or null, say you do not have it yet.
 - Be direct and calm. Lead with the answer, then one useful instruction if it adds value.
+- The data states the session mode. Time trial: no rivals, no pit stops. Qualifying: no pit stops and rival gaps are not tracked. Free practice: gaps are not tracked. If asked about something the mode does not have, say so in a few words instead of inventing numbers.
 - Tyre temperatures are surface temperatures in Celsius; wear is a percentage. Gaps are in seconds.
 Example: "Gap ahead is two point four, tyres are good, keep pushing."
 """
@@ -52,6 +54,7 @@ def format_context(ctx: dict) -> str:
 
     add('Track', ctx.get('track'))
     add('Session', ctx.get('session_type'))
+    add('Session mode', ctx.get('session_mode') if ctx.get('session_mode') != 'unknown' else None)
     add('Lap', f"{ctx['lap']} of {ctx['total_laps']}" if ctx.get('lap') and ctx.get('total_laps')
         else ctx.get('lap'))
     add('Position', ctx.get('position'))
@@ -130,7 +133,24 @@ def _say_seconds(value: float) -> str:
     return f'{value:.1f}'
 
 
+def _mode_blocks(command: str, ctx: dict) -> str | None:
+    """A short reply when the current session has no such thing as the request, else None."""
+    mode = ctx.get('session_mode')
+    if not mode or mode == session_modes.UNKNOWN:
+        return None
+    label = session_modes.MODE_LABELS[mode]
+    if command in ('gap_ahead', 'gap_behind') and not session_modes.reports_gaps(mode):
+        return 'No other cars in time trial.' if mode == session_modes.TIME_TRIAL \
+            else f'Gaps are only tracked in the race, not in {label.lower()}.'
+    if command == 'pit_window' and not session_modes.has_pit_strategy(mode):
+        return f'No pit stops in {label.lower()}.'
+    return None
+
+
 def rule_based_answer(command: str, ctx: dict) -> str:
+    blocked = _mode_blocks(command, ctx)
+    if blocked:
+        return blocked
     if command == 'weather':
         if not ctx.get('weather'):
             return 'No weather data yet.'
@@ -184,6 +204,10 @@ class EngineerBrain:
 
     def answer(self, command: str) -> str:
         ctx = self.context_provider()
+        blocked = _mode_blocks(command, ctx)
+        if blocked:                       # e.g. "gap ahead" in time trial: answer instantly, no AI needed
+            self.last_source = 'rules'
+            return blocked
         if self.client is not None:
             try:
                 system, user = build_prompt(command, ctx)

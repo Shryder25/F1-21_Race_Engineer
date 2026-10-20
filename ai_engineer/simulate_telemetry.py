@@ -51,7 +51,8 @@ def build_header(packet_id: int, session_time: float, frame_id: int, player_idx:
         255          # secondary_player_car_index
     )
 
-def build_session_packet(session_time: float, frame_id: int, track_id: int = 11) -> bytes:
+def build_session_packet(session_time: float, frame_id: int, track_id: int = 11,
+                         session_type: int = 10, track_length: int = 5793, total_laps: int = 53) -> bytes:
     # Monza is track_id = 11
     header = build_header(1, session_time, frame_id)
     # SESSION_PARTIAL_FORMAT: <BbBBHbbB -> weather, trackTemp, airTemp, totalLaps, trackLength, sessionType, trackId, formula
@@ -60,9 +61,9 @@ def build_session_packet(session_time: float, frame_id: int, track_id: int = 11)
         0,   # weather (clear)
         35,  # trackTemp (35°C)
         24,  # airTemp (24°C)
-        53,  # totalLaps
-        5793, # trackLength (Monza 5793m)
-        10,  # sessionType (Race)
+        total_laps,  # totalLaps
+        track_length, # trackLength (Monza 5793m by default)
+        session_type,  # sessionType (10 = Race, 13 = Time Trial, ...)
         track_id, # Monza
         0    # formula F1
     )

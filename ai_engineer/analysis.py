@@ -17,7 +17,8 @@ from typing import Optional
 
 from packets import (CarTelemetryData, LapData, SessionData, CarStatusData, CarDamageData,
                      CarMotionData, TRACK_NAMES, SESSION_TYPES)
-from track_data import get_braking_points, get_setup_advice
+from track_data import get_braking_points, get_setup_advice, corner_zones, resolve_track_id
+import session_modes
 from voice_engine import VoiceEngine, Priority
 from history import TelemetryHistory
 from race_radio import RaceRadio
@@ -107,6 +108,8 @@ class AnalysisEngine:
         self.lap_start_fuel: float | None = None
         self.session_lap_stats: list[dict] = []
         self._ml_cache: tuple | None = None
+        self.session_mode = session_modes.UNKNOWN
+        self._corner_key: tuple | None = None
         self.radio = RaceRadio(self.speak)
         self.history = history
         self.capture_id: str | None = None
@@ -213,26 +216,29 @@ class AnalysisEngine:
         self.radio.session = session
         self.track_id = session.track_id
         self.track_name = TRACK_NAMES.get(session.track_id, f"Track {session.track_id}")
-        session_type = SESSION_TYPES.get(session.session_type, "Session")
+        self.session_mode = session_modes.session_mode(session.session_type)
 
-        # Load braking points
+        # Load braking points and corner zones for whichever circuit the game reports
         self.braking_points = get_braking_points(session.track_id)
         update_web_state({'track_name': self.track_name, 'track_id': self.track_id,
                           'track_length': session.track_length, 'session_uid': session_uid,
-                          'capture_id': self.capture_id})
-        if session.track_id == 7:
-            self.corners = SILVERSTONE_CORNERS
-        else:
-            self.corners = []
+                          'capture_id': self.capture_id,
+                          'session_type': SESSION_TYPES.get(session.session_type, 'Session'),
+                          'session_mode': self.session_mode,
+                          'session_label': session_modes.MODE_LABELS[self.session_mode],
+                          'setup_track_id': resolve_track_id(session.track_id)})
+        corner_key = (session.track_id, session.track_length)
+        if corner_key != self._corner_key:
+            self._corner_key = corner_key
+            if session.track_id == 7:
+                self.corners = SILVERSTONE_CORNERS      # hand-measured apex speeds
+            else:
+                self.corners = corner_zones(session.track_id, session.track_length)
 
         if not self.session_started:
             self.session_started = True
-            msg = (
-                f"Engineer online. Welcome to {self.track_name}. {session_type}. "
-                f"Track temperature {session.track_temperature} degrees. "
-                f"Braking points and live delta tracker online. Let's go."
-            )
-            self.speak(msg, Priority.LOW, key='session', ttl=10, cooldown=0)
+            self.speak(session_modes.welcome_line(self.session_mode, self.track_name),
+                       Priority.LOW, key='session', ttl=10, cooldown=0)
 
     def speak(self, message: str, priority: Priority = Priority.NORMAL, **options):
         """Queue speech; priority interrupts in PROACTIVE_KEYS break on-demand silence."""
@@ -400,7 +406,7 @@ class AnalysisEngine:
         end_t = current_data.get("end_time_ms", 0)
         curr_dur = (end_t - start_t) / 1000.0
 
-        ref_apex = ref_def["ref_apex"]
+        ref_apex = ref_def.get("ref_apex")      # None for corners without a measured apex speed
         ref_brake = ref_def["ref_brake"]
 
         curr_apex = current_data.get("min_speed", 0)
@@ -424,14 +430,17 @@ class AnalysisEngine:
         if curr_brake is not None and ref_brake is not None and curr_brake < (ref_brake - 20):
             diff = ref_brake - curr_brake
             advice.append(f"Braked {diff}m before the {reference_source} braking point.")
-        if curr_apex < (best_apex - 8):
+        if best_apex is None:
+            pass        # no reference apex yet: this lap becomes the reference
+        elif curr_apex < (best_apex - 8):
             diff = best_apex - curr_apex
             advice.append(f"Apex speed {diff} km/h below the {reference_source}.")
         elif curr_apex >= best_apex:
             advice.append("Good apex speed maintained!")
 
         if not advice:
-            advice_text = "Good execution through corner."
+            advice_text = ("Reference lap not set yet; this lap will be your benchmark."
+                           if best_apex is None else "Good execution through corner.")
         else:
             advice_text = " ".join(advice)
 
@@ -685,6 +694,8 @@ class AnalysisEngine:
         status, lap, session = self.latest_status, self.latest_lap, self.session
         if status is None or lap is None or session is None:
             return None
+        if not session_modes.has_pit_strategy(self.session_mode):
+            return None     # no stops in qualifying or time trial
         key = (lap.current_lap_num, status.actual_tyre_compound, len(self.session_lap_stats))
         if self._ml_cache and self._ml_cache[0] == key:
             return self._ml_cache[1]
@@ -735,6 +746,7 @@ class AnalysisEngine:
                               self.latest_status, self.latest_damage)
         ctx: dict = {'track': self.track_name,
                      'session_type': SESSION_TYPES.get(s.session_type, 'Session') if s else None,
+                     'session_mode': self.session_mode,
                      'weather': WEATHER_NAMES.get(s.weather) if s else None,
                      'track_temp_c': s.track_temperature if s else None,
                      'air_temp_c': s.air_temperature if s else None,
