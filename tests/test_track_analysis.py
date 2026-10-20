@@ -11,7 +11,7 @@ import track_analysis
 from ai_client import AIUnavailable
 from race_calibration import fuel_mass, stint_degradation, summarize_races, theil_sen_slope
 from track_analysis import (SETUP_RANGES, TrackAnalyst, clamp_setup, merge_ai_analysis,
-                            model_analysis, wet_setup)
+                            model_analysis, normalize_session, wet_setup)
 from track_data import TRACK_DATABASE, get_track_setup
 from track_profiles import BASELINE_PROFILES, get_profile
 
@@ -93,6 +93,127 @@ class SetupTests(unittest.TestCase):
         clamped = clamp_setup({'aerodynamics': {'front_wing': 40}, 'brakes': {'brake_bias': 10}})
         self.assertEqual(clamped['aerodynamics']['front_wing'], 11)
         self.assertEqual(clamped['brakes']['brake_bias'], 50)
+
+
+class QualifyingSetupTests(unittest.TestCase):
+    @staticmethod
+    def _values(setup):
+        return {k: setup[k] for k in SETUP_RANGES}
+
+    def test_session_names_normalise(self):
+        for name in ('qualifying', 'Qualifying', 'Q1', 'q3', 'Short Qualifying', 'One-Shot Qualifying'):
+            self.assertEqual(normalize_session(name), 'qualifying', name)
+        for name in ('race', 'Race 2', '', None, 'practice'):
+            self.assertEqual(normalize_session(name), 'race', name)
+
+    def test_qualifying_setup_differs_from_race_on_every_track_and_condition(self):
+        for tid in TRACK_DATABASE:
+            for weather in ('dry', 'wet'):
+                race = model_analysis(tid, weather)
+                quali = model_analysis(tid, weather, session='qualifying')
+                self.assertEqual(quali['session'], 'qualifying')
+                self.assertEqual(race['session'], 'race')
+                self.assertNotEqual(self._values(race['setup']), self._values(quali['setup']), (tid, weather))
+                self.assertEqual(quali['race_setup'], self._values(race['setup']))
+                self.assertEqual(quali['setup'], clamp_setup(quali['setup']) | {'notes': quali['setup']['notes']})
+
+    def test_dry_qualifying_is_a_one_lap_car(self):
+        for tid in TRACK_DATABASE:
+            race = model_analysis(tid, 'dry')['setup']
+            quali = model_analysis(tid, 'dry', session='qualifying')['setup']
+            self.assertGreaterEqual(race['transmission']['diff_on_throttle'], 50)
+            self.assertGreater(quali['transmission']['diff_on_throttle'], race['transmission']['diff_on_throttle'])
+            self.assertLessEqual(quali['suspension_geometry']['front_camber'], race['suspension_geometry']['front_camber'])
+            self.assertLessEqual(quali['suspension']['front_ride_height'], race['suspension']['front_ride_height'])
+            self.assertEqual(quali['brakes']['brake_pressure'], 100)
+            for key in race['tyres']:
+                self.assertLessEqual(quali['tyres'][key], race['tyres'][key])
+
+    def test_qualifying_changes_depend_on_the_track(self):
+        def change(tid):
+            race = model_analysis(tid, 'dry')['setup']
+            quali = model_analysis(tid, 'dry', session='qualifying')['setup']
+            return {f'{c}.{k}': round(quali[c][k] - race[c][k], 2)
+                    for c in SETUP_RANGES for k in race[c]}
+        changes = {tid: change(tid) for tid in TRACK_DATABASE}
+        self.assertGreaterEqual(len({tuple(sorted(c.items())) for c in changes.values()}), 4)
+        # Monza-style power tracks trim rear wing; Monaco keeps it.
+        self.assertLess(changes[11]['aerodynamics.rear_wing'], 0)       # Monza
+        self.assertEqual(changes[5]['aerodynamics.rear_wing'], 0)       # Monaco
+        # Hot tracks drop pressures less than cool ones (tyres would overheat).
+        self.assertGreater(changes[3]['tyres.front_left_pressure'], changes[7]['tyres.front_left_pressure'] - 1e-9)
+
+    def test_wet_qualifying_keeps_a_wet_car(self):
+        wet_race = model_analysis(7, 'wet')['setup']
+        wet_quali = model_analysis(7, 'wet', session='qualifying')['setup']
+        dry_quali = model_analysis(7, 'dry', session='qualifying')['setup']
+        self.assertEqual(wet_quali['transmission'], wet_race['transmission'])
+        self.assertEqual(wet_quali['suspension'], wet_race['suspension'])
+        self.assertGreater(wet_quali['suspension']['front_ride_height'], dry_quali['suspension']['front_ride_height'])
+
+    def test_qualifying_plan_is_track_specific(self):
+        plans = {tid: model_analysis(tid, 'dry', session='qualifying')['qualifying'] for tid in TRACK_DATABASE}
+        self.assertTrue(all(p['tyre'] == 'SOFT' for p in plans.values()))
+        self.assertGreater(len({p['out_lap'] for p in plans.values()}), 1)
+        self.assertGreater(len({p['push_laps_per_set'] for p in plans.values()}), 1)
+        self.assertIn('late', plans[5]['session_timing'])                # Monaco rubbers in a lot
+        wet = model_analysis(7, 'wet', session='qualifying')['qualifying']
+        self.assertEqual(wet['tyre'], 'INTERMEDIATE')
+        self.assertIsNone(model_analysis(7, 'dry')['qualifying'])
+        self.assertIn('QUALIFYING', model_analysis(7, 'dry', session='qualifying')['engineer_advice'])
+
+    def test_handling_preference_still_applies_in_qualifying(self):
+        base = model_analysis(7, session='qualifying')['setup']
+        loose = model_analysis(7, handling='oversteer_fix', session='qualifying')['setup']
+        self.assertGreater(loose['aerodynamics']['rear_wing'], base['aerodynamics']['rear_wing'])
+
+    def test_legacy_get_track_setup_supports_qualifying(self):
+        race = get_track_setup(7, 'dry')
+        quali = get_track_setup(7, 'dry', 'qualifying')
+        self.assertEqual(quali['session'], 'qualifying')
+        self.assertNotEqual(race['setup']['transmission'], quali['setup']['transmission'])
+
+    def test_qualifying_prompt_and_merge(self):
+        model = model_analysis(10, 'dry', session='qualifying')
+        system, user = track_analysis.build_analysis_prompt(model)
+        self.assertIn('QUALIFYING', system)
+        self.assertIn('single lap', system)
+        self.assertIn('Spa', user)
+        self.assertIn('Qualifying baseline setup', user)
+        self.assertNotIn('Pit-lane loss', user)
+        merged = merge_ai_analysis(model, {
+            'qualifying_plan': {'tyre': 'Soft', 'push_laps_per_set': 9, 'reasoning': 'Go late.'},
+            'setup': {'brakes': {'brake_bias': 58}},
+            'briefing': 'Send it through Pouhon.',
+        })
+        self.assertEqual(merged['qualifying']['ai'], {'tyre': 'Soft', 'reasoning': 'Go late.',
+                                                      'push_laps_per_set': 5})
+        self.assertEqual(merged['setup']['brakes']['brake_bias'], 58)
+        self.assertEqual(merged['setup']['brakes']['brake_pressure'], 100)
+        self.assertEqual(merged['engineer_advice'], 'Send it through Pouhon.')
+        # A race analysis ignores a stray qualifying plan.
+        self.assertIsNone(merge_ai_analysis(model_analysis(10), {'qualifying_plan': {'tyre': 'Soft'}})['qualifying'])
+
+    def test_analyst_caches_race_and_qualifying_separately(self):
+        prompts = []
+
+        class Client:
+            timeout = 15.0
+
+            def chat_json(self, system, user, **kw):
+                prompts.append(system)
+                return {'briefing': 'ok'}
+
+        analyst = TrackAnalyst(Client())
+        race = analyst.analyze(7, 'dry')
+        quali = analyst.analyze(7, 'dry', session='qualifying')
+        self.assertIsNot(race, quali)
+        self.assertEqual(len(prompts), 2)
+        self.assertIn('QUALIFYING', prompts[1])
+        self.assertIs(analyst.cached(7, 'dry', session='qualifying'), quali)
+        # Race distance is irrelevant to qualifying, so it shares one cached answer.
+        self.assertIs(analyst.analyze(7, 'dry', race_fraction=0.25, session='qualifying'), quali)
+        self.assertEqual(len(prompts), 2)
 
 
 class DeepSeekAnalysisTests(unittest.TestCase):
@@ -293,6 +414,17 @@ class HudEndpointTests(unittest.TestCase):
         cached = self.get('/api/setup?track_id=13&weather=wet')
         self.assertEqual(cached['analysis_source'], 'deepseek')
         self.assertTrue(cached['ai_available'])
+
+    def test_setup_endpoint_serves_qualifying(self):
+        self.web_hud.set_setup_ai_client(None)
+        race = self.get('/api/setup?track_id=11&weather=dry')
+        quali = self.get('/api/setup?track_id=11&weather=dry&session=qualifying')
+        self.assertEqual(quali['session'], 'qualifying')
+        self.assertEqual(quali['qualifying']['tyre'], 'SOFT')
+        self.assertNotEqual(race['setup']['aerodynamics'], quali['setup']['aerodynamics'])
+        posted = self.post('/api/track/analyze', {'track_id': 11, 'weather': 'dry', 'session': 'qualifying'})
+        self.assertEqual(posted['session'], 'qualifying')
+        self.assertIn('not configured', posted['ai_error'])
 
 
 if __name__ == '__main__':

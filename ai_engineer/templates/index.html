@@ -347,6 +347,14 @@
                 </div>
 
                 <div class="control-group">
+                    <label for="sessionSelect">SESSION:</label>
+                    <select id="sessionSelect" class="f1-select">
+                        <option value="race">Race (stint setup)</option>
+                        <option value="qualifying">Qualifying (one-lap pace)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
                     <label for="weatherSelect">TRACK CONDITIONS:</label>
                     <select id="weatherSelect" class="f1-select">
                         <option value="dry">Dry Conditions</option>
@@ -412,8 +420,14 @@
                 <div class="setup-card">
                     <div class="card-head">
                         <span class="cat-num">B</span>
-                        <h3>RACE STRATEGY</h3>
+                        <h3 id="strategyTitle">RACE STRATEGY</h3>
                         <span class="deg-badge" id="strategyLaps">—</span>
+                    </div>
+                    <div class="quali-plan" id="qualiPlan" style="display:none">
+                        <div class="param-row"><span class="p-name">Tyre:</span><span class="p-value" id="qualiTyre">—</span></div>
+                        <div class="param-row"><span class="p-name">Push laps per set:</span><span class="p-value" id="qualiPushLaps">—</span></div>
+                        <div class="setup-tip" id="qualiOutLap"></div>
+                        <div class="setup-tip" id="qualiTiming"></div>
                     </div>
                     <div class="strategy-row">
                         <span class="p-name">Fastest:</span>
