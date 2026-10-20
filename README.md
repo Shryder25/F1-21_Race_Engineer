@@ -57,6 +57,10 @@ python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --info     # wh
 
 `1` replays in real time with the recorded gaps between datagrams, `10` ten times faster, `max` without waiting. `main.py --replay` never drops datagrams; UDP replay at `max` can, if the receiver falls behind. In code, `udp_recording.replay_into(stream, path)` feeds a `TelemetryStream` directly using the recorded clock.
 
+### Golden-session regression tests
+
+`tests/golden/sessions/` holds recorded sessions (race, qualifying, wet, Safety Car) with the radio calls, voice-command answers and key numbers the engineer produced on them. The test suite replays them and fails if behaviour changes. Four sessions come from a deterministic full-field simulator; four more slots wait for real recordings from the game. See [`tests/golden/README.md`](tests/golden/README.md) for how to record one and how to accept an intended change (`python tools/golden_sessions.py bless NAME`).
+
 ---
 
 ## 🚀 Core Features
