@@ -46,19 +46,21 @@ python main.py [--port 20777] [--no-voice] [--debug] [--voice-rate 175] [--voice
 | `--kokoro-speed` | Kokoro speaking speed (default: 1.1) |
 | `--no-radio-fx` | Kokoro only: clean voice without the team-radio effect |
 
-### Natural engineer voice (optional, free, offline)
-The default voice is your operating system's. For a realistic British race-engineer
-voice, use [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) (Apache 2.0, runs on CPU):
-```
-pip install kokoro-onnx sounddevice
-# download kokoro-v1.0.onnx and voices-v1.0.bin from
-# https://github.com/thewh1teagle/kokoro-onnx/releases (model-files-v1.0)
-# into F1-21_Race_Engineer/models/kokoro/
-python main.py --tts kokoro
-```
-Calls are run through a team-radio filter (narrow band, light distortion, static and
-open/close beeps). If Kokoro or its files are missing, the engineer falls back to the
-system voice automatically.
+### Engineer voice (Kokoro, free, offline)
+The engineer speaks with [Kokoro](https://github.com/thewh1teagle/kokoro-onnx), a natural
+British voice (Apache 2.0, runs on CPU). `pip install -r requirements.txt` installs it; on
+the first start the engineer downloads its two model files (~350 MB) into `models/kokoro/`.
+Calls go through a team-radio filter (narrow band, light distortion, static, open/close
+beeps). If Kokoro can't load, the console says why and the system voice is used instead.
+`--tts system` forces the system voice.
+
+### DeepSeek AI (free, offline, starts automatically)
+Install [Ollama](https://ollama.com/download) once. Each time the engineer starts it will
+start Ollama if it isn't running, download `deepseek-r1:8b` on the first run (~5 GB), load
+it, and keep it loaded so answers come quickly. Until it is ready, questions are answered
+from built-in rules, and the engineer says "Pit wall is connected" when DeepSeek is live.
+On a weaker PC use `--ai-model deepseek-r1:1.5b` (~1 GB). `--no-ai-autostart` turns this off;
+`--no-ai` uses rules only. Ask any question with the push-to-talk button or the HUD text box.
 
 Completed lap recordings are saved locally in `telemetry-history/telemetry.sqlite3`.
 Each recording belongs to its own track and session capture. Invalid or incomplete

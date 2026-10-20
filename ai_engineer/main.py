@@ -22,6 +22,7 @@ import socket
 import sys
 import time
 import argparse
+import atexit
 import os
 from pathlib import Path
 
@@ -47,6 +48,7 @@ from track_maps import TrackMapStore
 from telemetry_stream import TelemetryStream
 from web_hud import (start_web_hud_server, add_voice_log, set_command_handler,
                      set_setup_ai_client, set_reset_map_handler)
+from ai_launcher import LocalAILauncher
 from ai_client import AIClient
 from engineer_brain import EngineerBrain
 from voice_commands import CommandDispatcher, VoiceCommandListener
@@ -164,8 +166,9 @@ def main():
     parser.add_argument('--sim-runs', type=int, default=300, metavar='N',
                         help='Races the Monte Carlo simulator runs per update (default 300)')
     tts = parser.add_argument_group('engineer voice')
-    tts.add_argument('--tts', choices=('system', 'kokoro'), default='system',
-                     help='Voice: system (pyttsx3) or kokoro (free offline neural voice, see neural_voice.py)')
+    tts.add_argument('--tts', choices=('kokoro', 'system'), default='kokoro',
+                     help='Voice: kokoro (default; free offline neural voice, falls back to the system '
+                          'voice if not installed) or system (pyttsx3)')
     tts.add_argument('--kokoro-dir', type=Path, default=None,
                      help='Folder with kokoro-v1.0.onnx and voices-v1.0.bin (default: ./models/kokoro)')
     tts.add_argument('--kokoro-voice', default='bm_george',
@@ -181,8 +184,11 @@ def main():
                     help='Model name (default: $F1_AI_MODEL or deepseek-r1:8b)')
     ai.add_argument('--ai-api-key', default=None,
                     help='API key for cloud providers such as Groq (default: $F1_AI_API_KEY)')
-    ai.add_argument('--ai-timeout', type=float, default=15.0,
-                    help='Seconds to wait for the model before answering from rules (default: 15)')
+    ai.add_argument('--ai-timeout', type=float, default=30.0,
+                    help='Seconds to wait for the model before answering from rules (default: 30; '
+                         'DeepSeek R1 thinks before it answers)')
+    ai.add_argument('--no-ai-autostart', action='store_true',
+                    help="Don't start Ollama / download / preload the local DeepSeek model automatically")
     ai.add_argument('--no-ai', action='store_true', help='Answer commands from rules only')
     cmd = parser.add_argument_group('voice commands')
     cmd.add_argument('--no-mic', action='store_true', help='Disable microphone voice commands')
@@ -287,6 +293,14 @@ def main():
     if client:
         print(f"[AI] Engineer brain: {client.model} @ {client.base_url} "
               f"(falls back to rules if unreachable)")
+        if not args.no_ai_autostart:
+            # Local Ollama: start it, fetch the model on first run, preload it, keep it warm.
+            launcher = LocalAILauncher(
+                client.base_url, client.model,
+                on_ready=lambda: voice.say('Pit wall is connected. Ask me anything.',
+                                           Priority.LOW, key='ai_ready', ttl=15))
+            if launcher.start():
+                atexit.register(launcher.shutdown)
 
     # ─── Set up UDP Socket (or a recording standing in for it) ───
     recorder = None

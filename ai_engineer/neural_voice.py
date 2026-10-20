@@ -6,16 +6,16 @@ just gets a better-sounding voice. Speech is synthesized and played on a helper
 thread so the radio queue never blocks; ``stop()`` cuts playback mid-sentence when a
 more urgent call arrives.
 
-Kokoro setup (free, offline, Apache 2.0):
-    pip install kokoro-onnx sounddevice
-    download kokoro-v1.0.onnx and voices-v1.0.bin from
-    https://github.com/thewh1teagle/kokoro-onnx/releases into ./models/kokoro
-    python main.py --tts kokoro
+Kokoro setup (free, offline, Apache 2.0): ``pip install kokoro-onnx sounddevice``.
+That's all: on the first start the engineer downloads the two model files (~350 MB) into
+./models/kokoro and uses Kokoro from then on. Without the packages it uses the system voice.
 """
 
 from __future__ import annotations
 
 import threading
+import urllib.error
+import urllib.request
 from collections import OrderedDict
 from pathlib import Path
 
@@ -27,6 +27,54 @@ DEFAULT_KOKORO_DIR = Path(__file__).resolve().parent.parent / 'models' / 'kokoro
 DEFAULT_KOKORO_VOICE = 'bm_george'      # British male; bm_lewis / bm_daniel / bm_fable also work
 KOKORO_MODEL_FILE = 'kokoro-v1.0.onnx'
 KOKORO_VOICES_FILE = 'voices-v1.0.bin'
+KOKORO_DOWNLOAD_URL = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'
+SETUP_HINT = ('For the natural engineer voice run: pip install kokoro-onnx sounddevice '
+              '(model files download automatically on the next start).')
+
+
+def missing_packages() -> list[str]:
+    """pip packages Kokoro needs that aren't installed."""
+    missing = []
+    for module, package in (('kokoro_onnx', 'kokoro-onnx'), ('sounddevice', 'sounddevice')):
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+        except Exception as error:     # installed but can't load, e.g. no PortAudio audio library
+            missing.append(f'{package} (installed but failed to load: {error})')
+    return missing
+
+
+def download_model_files(model_dir: Path = DEFAULT_KOKORO_DIR, on_status=print,
+                         base_url: str = KOKORO_DOWNLOAD_URL, opener=urllib.request.urlopen) -> bool:
+    """Fetch any missing Kokoro model file. Partial downloads never count as present."""
+    model_dir = Path(model_dir)
+    model_dir.mkdir(parents=True, exist_ok=True)
+    for name in (KOKORO_MODEL_FILE, KOKORO_VOICES_FILE):
+        target = model_dir / name
+        if target.exists():
+            continue
+        partial = target.with_suffix(target.suffix + '.part')
+        on_status(f'[Voice] Downloading {name} for the Kokoro voice (first run only)...')
+        try:
+            with opener(base_url + name, timeout=60) as response, open(partial, 'wb') as out:
+                total = int(response.headers.get('Content-Length') or 0)
+                done, shown = 0, -25
+                while True:
+                    chunk = response.read(1 << 20)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    done += len(chunk)
+                    if total and done * 100 // total >= shown + 25:
+                        shown = done * 100 // total
+                        on_status(f'[Voice] {name}: {shown}%')
+            partial.replace(target)
+        except (urllib.error.URLError, OSError) as error:
+            on_status(f'[Voice] Could not download {name}: {error}')
+            partial.unlink(missing_ok=True)
+            return False
+    return True
 
 # Fixed calls worth having ready before they're needed: neural synthesis takes about a
 # second on CPU, and these are the ones where a delay matters most.
@@ -175,8 +223,19 @@ class NeuralSpeechDriver:
 
 
 def build_kokoro_driver_factory(model_dir=DEFAULT_KOKORO_DIR, voice=DEFAULT_KOKORO_VOICE,
-                                speed=1.1, radio_effect=True):
-    """Check Kokoro can load now, and return a factory for VoiceEngine; None if it can't."""
+                                speed=1.1, radio_effect=True, download=True):
+    """Check Kokoro can load now, and return a factory for VoiceEngine; None if it can't.
+
+    With ``download`` the model files are fetched on first use when the packages are there.
+    """
+    missing = missing_packages()
+    if missing:
+        print(f'[NeuralVoice] Kokoro voice not installed (missing: {", ".join(missing)}). '
+              f'Using the system voice. {SETUP_HINT}')
+        return None
+    if download and not download_model_files(model_dir):
+        print(f'[NeuralVoice] Using the system voice until the Kokoro files are in {model_dir}.')
+        return None
     try:
         synthesize = kokoro_synthesizer(model_dir, voice, speed)
         player = SoundDevicePlayer()
