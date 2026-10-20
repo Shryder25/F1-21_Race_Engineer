@@ -34,7 +34,7 @@ HEADER_FORMAT = "<HBBBBQfIBB"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)  # 24 bytes
 
 # Packet ID 3 (Event) sub-type payloads start right after the header with a 4-byte
-# ASCII event code, then a sub-type-specific body. We only need Speed Trap ('SPTP') —
+# ASCII event code, then a sub-type-specific body. Speed Trap ('SPTP') —
 # vehicleIdx(B), speed_kph(f), isOverallFastestInSession(B), isDriverFastestInSession(B),
 # fastestVehicleIdx(B), fastestSpeedInSession_kph(f) — 12 bytes, at offset HEADER_SIZE+4.
 SPEED_TRAP_FORMAT = "<BfBBBf"
@@ -57,6 +57,107 @@ def parse_speed_trap_event(data: bytes) -> SpeedTrapEvent | None:
         return None
     values = struct.unpack_from(SPEED_TRAP_FORMAT, data, HEADER_SIZE + 4)
     return SpeedTrapEvent(values[0], values[1], bool(values[2]), bool(values[3]), values[4], values[5])
+
+
+# Every other Event ('EVNT') sub-type the race engineer reacts to. Body layouts follow the
+# F1 2021 spec's EventDataDetails union; all fields are uint8 except FTLP's float lap time.
+RACE_EVENT_BODY_FORMATS = {
+    b'SSTA': '',          # session started
+    b'SEND': '',          # session ended
+    b'FTLP': '<Bf',       # fastest lap: vehicleIdx, lapTime (s)
+    b'RTMT': '<B',        # retirement: vehicleIdx
+    b'DRSE': '',          # DRS enabled
+    b'DRSD': '',          # DRS disabled
+    b'TMPT': '<B',        # team mate in pits: vehicleIdx
+    b'CHQF': '',          # chequered flag
+    b'RCWN': '<B',        # race winner: vehicleIdx
+    b'PENA': '<7B',       # penalty: type, infringement, vehicleIdx, otherVehicleIdx, time, lapNum, placesGained
+    b'STLG': '<B',        # start lights: numLights
+    b'LGOT': '',          # lights out
+    b'DTSV': '<B',        # drive through served: vehicleIdx
+    b'SGSV': '<B',        # stop go served: vehicleIdx
+}
+
+PENALTY_TYPES = {
+    0: 'Drive through', 1: 'Stop Go', 2: 'Grid penalty', 3: 'Penalty reminder',
+    4: 'Time penalty', 5: 'Warning', 6: 'Disqualified', 7: 'Removed from formation lap',
+    8: 'Parked too long timer', 9: 'Tyre regulations', 10: 'This lap invalidated',
+    11: 'This and next lap invalidated', 12: 'This lap invalidated without reason',
+    13: 'This and next lap invalidated without reason', 14: 'This and previous lap invalidated',
+    15: 'This and previous lap invalidated without reason', 16: 'Retired', 17: 'Black flag timer',
+}
+
+INFRINGEMENT_TYPES = {
+    0: 'blocking by slow driving', 1: 'blocking by wrong way driving',
+    2: 'reversing off the start line', 3: 'causing a big collision', 4: 'causing a small collision',
+    5: 'failing to hand back a position', 6: 'failing to hand back multiple positions',
+    7: 'corner cutting', 8: 'gaining a place by corner cutting',
+    9: 'gaining multiple places by corner cutting', 10: 'crossing the pit exit line',
+    11: 'ignoring blue flags', 12: 'ignoring yellow flags', 13: 'ignoring a drive through',
+    14: 'too many drive throughs', 15: 'drive through reminder', 16: 'drive through reminder',
+    17: 'pit lane speeding', 18: 'parking for too long', 19: 'ignoring tyre regulations',
+    20: 'too many penalties', 21: 'multiple warnings', 22: 'approaching disqualification',
+    23: 'tyre regulations', 24: 'tyre regulations', 25: 'corner cutting', 26: 'running wide',
+    27: 'gaining time by running wide', 28: 'gaining time by running wide',
+    29: 'gaining time by running wide', 30: 'wall riding', 31: 'using a flashback',
+    32: 'being reset to track', 33: 'blocking the pit lane', 34: 'a jump start',
+    35: 'a collision with the safety car', 36: 'an illegal overtake under the safety car',
+    37: 'exceeding the safety car pace', 38: 'exceeding the VSC pace',
+    39: 'formation lap below allowed speed', 40: 'a mechanical failure', 41: 'terminal damage',
+    42: 'falling too far behind the safety car', 43: 'black flag timer',
+    44: 'an unserved stop go', 45: 'an unserved drive through', 46: 'an engine component change',
+    47: 'a gearbox change', 48: 'a league grid penalty', 49: 'a retry penalty',
+    50: 'an illegal time gain', 51: 'a mandatory pit stop',
+}
+
+
+@dataclass
+class RaceEvent:
+    code: str                          # four-letter event code, e.g. 'PENA'
+    vehicle_index: int | None = None
+    other_vehicle_index: int | None = None
+    lap_time_s: float | None = None    # FTLP
+    penalty_type: int | None = None    # PENA
+    infringement_type: int | None = None
+    time_s: int | None = None          # PENA: time gained or penalty seconds
+    lap_num: int | None = None
+    places_gained: int | None = None
+    num_lights: int | None = None      # STLG
+
+    @property
+    def penalty_name(self) -> str:
+        return PENALTY_TYPES.get(self.penalty_type, 'Penalty')
+
+    @property
+    def infringement_name(self) -> str:
+        return INFRINGEMENT_TYPES.get(self.infringement_type, 'an infringement')
+
+
+def race_event_body_size(code: bytes) -> int | None:
+    fmt = RACE_EVENT_BODY_FORMATS.get(code)
+    return None if fmt is None else struct.calcsize(fmt) if fmt else 0
+
+
+def parse_race_event(data: bytes) -> RaceEvent | None:
+    """Parse any race event sub-type in RACE_EVENT_BODY_FORMATS, or None for other codes."""
+    code = bytes(data[HEADER_SIZE:HEADER_SIZE + 4])
+    fmt = RACE_EVENT_BODY_FORMATS.get(code)
+    if fmt is None:
+        return None
+    event = RaceEvent(code.decode('ascii'))
+    if not fmt:
+        return event
+    v = struct.unpack_from(fmt, data, HEADER_SIZE + 4)
+    if code == b'FTLP':
+        event.vehicle_index, event.lap_time_s = v
+    elif code == b'PENA':
+        (event.penalty_type, event.infringement_type, event.vehicle_index, event.other_vehicle_index,
+         event.time_s, event.lap_num, event.places_gained) = v
+    elif code == b'STLG':
+        event.num_lights = v[0]
+    else:
+        event.vehicle_index = v[0]
+    return event
 
 
 @dataclass
@@ -552,3 +653,41 @@ SESSION_TYPES = {
     12: "Race 3",
     13: "Time Trial",
 }
+
+
+# ──────────────────────────────────────────────
+# Packet ID 4: Participants (driver names)
+# ──────────────────────────────────────────────
+# numActiveCars(B) then 22 x 56-byte blocks: aiControlled, driverId, networkId, teamId, myTeam,
+# raceNumber, nationality, name[48] (UTF-8, null terminated), yourTelemetry.
+# 24 + 1 + 22 x 56 = 1,257 bytes.
+PARTICIPANT_FORMAT = "<BBBBBBB48sB"
+PARTICIPANT_SIZE = struct.calcsize(PARTICIPANT_FORMAT)  # 56 bytes
+
+
+@dataclass
+class ParticipantData:
+    ai_controlled: int
+    driver_id: int
+    team_id: int
+    race_number: int
+    name: str
+
+    @property
+    def short_name(self) -> str:
+        """Surname as an engineer would say it: 'Lewis HAMILTON' or 'HAMILTON' -> 'Hamilton'."""
+        words = self.name.split()
+        if not words or self.name.strip().lower() == 'player':
+            return ''
+        return words[-1].capitalize() if words[-1].isupper() else words[-1]
+
+
+def parse_participants(data: bytes) -> tuple[int, list[ParticipantData]]:
+    """(numActiveCars, all 22 participant blocks) from a Participants packet."""
+    num_active = data[HEADER_SIZE]
+    participants = []
+    for index in range(22):
+        v = struct.unpack_from(PARTICIPANT_FORMAT, data, HEADER_SIZE + 1 + index * PARTICIPANT_SIZE)
+        name = v[7].split(b'\0', 1)[0].decode('utf-8', errors='replace').strip()
+        participants.append(ParticipantData(v[0], v[1], v[3], v[5], name))
+    return num_active, participants

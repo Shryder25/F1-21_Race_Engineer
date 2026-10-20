@@ -5,14 +5,18 @@ import struct
 import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
-                     parse_player_telemetry, parse_player_car_status, parse_player_car_damage,
-                     parse_player_motion, parse_speed_trap_event)
+                     parse_player_telemetry, parse_player_car_damage,
+                     parse_player_motion, parse_speed_trap_event, parse_all_car_status,
+                     parse_race_event, race_event_body_size, parse_participants)
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
 
-PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 6: 1347, 7: 1058, 10: 882}
+PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 4: 1257, 6: 1347, 7: 1058, 10: 882}
 # Packet ID 3 (Event) is a fixed header plus a variable-size, event-code-specific body, so
 # unlike every other packet type it does not have one single valid length.
 EVENT_PACKET_SIZES = {b'FLBK': 36, b'SPTP': 40}
+# Race events (penalties, retirements, fastest lap...) arrive padded to the size of the event
+# union, which is 36 or 40 bytes depending on the game patch; both carry every body we read.
+RACE_EVENT_PACKET_SIZES = (36, 40)
 
 
 def newer_frame(frame: int, previous: int) -> bool:
@@ -60,10 +64,14 @@ class TelemetryStream:
             packet_id = header.packet_id
             if packet_id != 3 and packet_id not in PACKET_SIZES:
                 return False
+            race_event = None
             if packet_id == 3:
-                expected_size = EVENT_PACKET_SIZES.get(bytes(data[24:28]))
+                code = bytes(data[24:28])
+                expected_size = EVENT_PACKET_SIZES.get(code)
                 if expected_size is None:
-                    return False  # an event sub-type we don't need (and don't know the size of)
+                    if race_event_body_size(code) is None:
+                        return False  # an event sub-type we don't need (and don't know the size of)
+                    expected_size = len(data) if len(data) in RACE_EVENT_PACKET_SIZES else -1
             else:
                 expected_size = PACKET_SIZES[packet_id]
             if (header.packet_format != 2021 or header.packet_version != 1
@@ -97,12 +105,20 @@ class TelemetryStream:
                     self.analysis.update_speed_trap(speed_trap.speed_kph)
                     return False
                 if data[24:28] != b'FLBK':
+                    race_event = payload = parse_race_event(data)
+                    if race_event is None:
+                        return False
+                else:
+                    payload = struct.unpack_from('<If', data, 28)
+                if race_event is None and not math.isfinite(payload[1]):
                     return False
-                payload = struct.unpack_from('<If', data, 28)
-                if not math.isfinite(payload[1]):
-                    return False
+            elif packet_id == 4:
+                payload = parse_participants(data)
+                if not 0 <= payload[0] <= 22:
+                    raise ValueError('Invalid participant count')
             elif packet_id == 7:
-                payload = parse_player_car_status(data, header.player_car_index)
+                all_status = parse_all_car_status(data)
+                payload = all_status[header.player_car_index]
                 if not all(math.isfinite(x) and x >= 0 for x in
                            (payload.fuel_in_tank, payload.fuel_capacity, payload.fuel_remaining_laps)):
                     raise ValueError('Invalid car status')
@@ -134,7 +150,7 @@ class TelemetryStream:
             self.rewind_anchor = None
             self.last_session_time = None
 
-        if packet_id == 3:
+        if packet_id == 3 and race_event is None:
             signature = (header.session_uid, header.frame_identifier, payload)
             if signature != self.last_flashback:
                 self.last_flashback = signature
@@ -148,6 +164,7 @@ class TelemetryStream:
                 self.analysis.delta.recorded_from_start = False
                 self.analysis.previous_corner_sample = None
                 self.analysis.radio.reset(self.latest_session)
+                self.analysis.race_control.reset_tracking()
                 if hasattr(self.analysis.voice, 'clear'):
                     self.analysis.voice.clear()
                 update_web_state({'connected': False, 'gap_ahead_s': None, 'gap_behind_s': None})
@@ -165,6 +182,11 @@ class TelemetryStream:
 
         if packet_id != 1 and (header.player_car_index != self.player_index
                 or self.latest_session.game_paused or self.latest_session.is_spectating):
+            return False
+        if race_event is not None:
+            # Several events can share one frame (two penalties at once), so no frame filter.
+            if header.session_time >= self.context_start_time:
+                self.analysis.race_control.handle_event(race_event, self.player_index, header.session_time)
             return False
         previous = self.last_frames.get(packet_id)
         if previous is not None and not newer_frame(header.frame_identifier, previous):
@@ -190,6 +212,10 @@ class TelemetryStream:
                 update_web_state({'connected': False})
             return False
 
+        if packet_id == 4:
+            self.analysis.race_control.update_participants(payload[1])
+            return False
+
         if packet_id in (0, 7, 10):
             # Motion and strategy inputs arrive on their own cadence; they need no frame pairing.
             if header.session_time >= self.context_start_time:
@@ -197,6 +223,7 @@ class TelemetryStream:
                     self.analysis.update_motion(payload)
                 elif packet_id == 7:
                     self.analysis.update_car_status(payload)
+                    self.analysis.race_control.update_status(all_status, self.player_index)
                 else:
                     self.analysis.update_car_damage(payload)
             return False
@@ -225,6 +252,7 @@ class TelemetryStream:
         if self.rewind_anchor is not None and lap_time >= self.rewind_anchor[3]:
             self.rewind_anchor = None
         self.analysis.radio.update_field(laps, self.player_index, lap_time, now=now)
+        self.analysis.race_control.update_field(laps, self.player_index, lap_time)
         self.analysis.update_telemetry(telemetry, lap)
         update_web_state({'last_update_monotonic': now})
         return True
