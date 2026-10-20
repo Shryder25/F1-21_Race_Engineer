@@ -19,7 +19,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from track_data import get_all_tracks, get_track_setup, generate_ai_setup_recommendation
+from track_data import get_all_tracks
+from track_analysis import TrackAnalyst, model_analysis
 
 TELEMETRY_TIMEOUT = 2.0
 
@@ -119,13 +120,33 @@ def set_reset_map_handler(handler):
     _reset_map_handler = handler
 
 
-# DeepSeek client for the Setup tab's "consult" button (None = engineered baseline only).
+# DeepSeek track analyst for the Track Database tab (no client = data model only).
 _setup_ai_client = None
+track_analyst = TrackAnalyst()
 
 
 def set_setup_ai_client(client):
     global _setup_ai_client
     _setup_ai_client = client
+    track_analyst.set_client(client)
+
+
+def _analysis_params(source: dict) -> tuple:
+    """(track_id, weather, handling, race_fraction) from a query string or JSON body."""
+    def first(key, default):
+        value = source.get(key, default)
+        return value[0] if isinstance(value, list) else value
+    try:
+        track_id = int(first("track_id", 7))
+    except (ValueError, TypeError):
+        track_id = 7
+    weather = str(first("weather", "dry"))
+    handling = str(first("handling_issue", first("handling", "balanced")))
+    try:
+        race_fraction = min(1.0, max(0.05, float(first("race_fraction", 1.0))))
+    except (ValueError, TypeError):
+        race_fraction = 1.0
+    return track_id, weather, handling, race_fraction
 
 
 def add_voice_log(message: str, status='spoken'):
@@ -668,13 +689,10 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(get_all_tracks()).encode("utf-8"))
 
         elif path == "/api/setup":
-            qs = urllib.parse.parse_qs(parsed.query)
-            try:
-                track_id = int(qs.get("track_id", ["7"])[0])
-            except (ValueError, TypeError):
-                track_id = 7
-            weather = qs.get("weather", ["dry"])[0]
-            setup_data = get_track_setup(track_id, weather)
+            # Instant data-model analysis, or DeepSeek's if it already analysed these settings.
+            params = _analysis_params(urllib.parse.parse_qs(parsed.query))
+            setup_data = track_analyst.cached(*params) or model_analysis(*params)
+            setup_data = dict(setup_data, ai_available=track_analyst.ai_client is not None)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -720,18 +738,21 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
 
-        elif path == "/api/setup/consult":
+        elif path in ("/api/setup/consult", "/api/track/analyze"):
+            # DeepSeek analysis of the circuit for these conditions (model fallback if offline).
+            # "consult" (the button) always asks afresh; "analyze" reuses a cached answer.
             try:
                 length = min(int(self.headers.get("Content-Length", 0)), 4096)
                 body = json.loads(self.rfile.read(length) or b"{}")
-                track_id = int(body.get("track_id", 7))
-                weather = str(body.get("weather", "dry"))
-                handling_issue = str(body.get("handling_issue", "balanced"))
+                if not isinstance(body, dict):
+                    raise ValueError("body must be an object")
             except (ValueError, TypeError):
                 self.send_response(400)
                 self.end_headers()
                 return
-            result = generate_ai_setup_recommendation(track_id, weather, handling_issue, _setup_ai_client)
+            force = path == "/api/setup/consult" or bool(body.get("force"))
+            result = track_analyst.analyze(*_analysis_params(body), force=force)
+            result = dict(result, ai_available=track_analyst.ai_client is not None)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")

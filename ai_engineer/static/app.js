@@ -338,6 +338,7 @@ async function initSetupAdvisor() {
     const trackSelect = document.getElementById('trackSelect');
     const weatherSelect = document.getElementById('weatherSelect');
     const balanceSelect = document.getElementById('balanceSelect');
+    const distanceSelect = document.getElementById('distanceSelect');
     const btnConsult = document.getElementById('btnConsultAI');
 
     if (!trackSelect) return;
@@ -363,96 +364,259 @@ async function initSetupAdvisor() {
         console.warn('Could not load tracks list from API:', e);
     }
 
-    trackSelect.addEventListener('change', () => loadTrackSetup(trackSelect.value, weatherSelect.value));
-    weatherSelect.addEventListener('change', () => loadTrackSetup(trackSelect.value, weatherSelect.value));
+    const reload = () => loadTrackSetup(trackSelect.value, weatherSelect.value);
+    [trackSelect, weatherSelect, balanceSelect, distanceSelect].forEach(el => el?.addEventListener('change', reload));
 
     btnConsult?.addEventListener('click', async () => {
         btnConsult.disabled = true;
-        btnConsult.innerHTML = '<span>⏳</span> CONSULTING DEEPSEEK...';
+        btnConsult.innerHTML = '<span>⏳</span> DEEPSEEK ANALYSING...';
         showLatencyCue(true);
         try {
-            const res = await fetch('/api/setup/consult', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    track_id: parseInt(trackSelect.value, 10),
-                    weather: weatherSelect.value,
-                    handling_issue: balanceSelect.value
-                })
-            });
-            if (res.ok) {
-                const data = await res.json();
-                renderSetupData(data);
-            }
-        } catch (err) {
-            console.error('Setup consult error:', err);
+            await requestTrackAnalysis(true);
         } finally {
             btnConsult.disabled = false;
-            btnConsult.innerHTML = '<span class="btn-icon">🧠</span> CONSULT DEEPSEEK SETUP ADVISOR';
+            btnConsult.innerHTML = '<span class="btn-icon">🧠</span> RE-ANALYSE WITH DEEPSEEK';
             showLatencyCue(false);
         }
     });
 
     // Initial load
-    loadTrackSetup(trackSelect.value, weatherSelect ? weatherSelect.value : 'dry');
+    reload();
+}
+
+// Current Track Database selection; responses for an older selection are ignored.
+function analysisParams(trackId, weather) {
+    const val = (id, fallback) => document.getElementById(id)?.value || fallback;
+    return {
+        track_id: parseInt(trackId ?? val('trackSelect', '7'), 10),
+        weather: weather ?? val('weatherSelect', 'dry'),
+        handling_issue: val('balanceSelect', 'balanced'),
+        race_fraction: parseFloat(val('distanceSelect', '1')),
+    };
+}
+
+function sameParams(a, b) {
+    return a.track_id === b.track_id && a.weather === b.weather &&
+        a.handling_issue === b.handling_issue && a.race_fraction === b.race_fraction;
 }
 
 async function loadTrackSetup(trackId, weather) {
+    const params = analysisParams(trackId, weather);
     try {
-        const res = await fetch(`/api/setup?track_id=${trackId}&weather=${weather}`);
-        if (res.ok) {
-            const data = await res.json();
-            renderSetupData(data);
+        const qs = new URLSearchParams(params).toString();
+        const res = await fetch(`/api/setup?${qs}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!sameParams(params, analysisParams())) return;
+        renderSetupData(data);
+        // Instant data-model numbers are on screen; now let DeepSeek analyse the track.
+        if (data.analysis_source !== 'deepseek' && data.ai_available) {
+            requestTrackAnalysis(false);
         }
     } catch (e) {
         console.error('Error fetching track setup:', e);
     }
 }
 
+async function requestTrackAnalysis(force) {
+    const params = analysisParams();
+    setAnalysisSource('busy', 'DeepSeek analysing…');
+    try {
+        const res = await fetch(force ? '/api/setup/consult' : '/api/track/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (sameParams(params, analysisParams())) renderSetupData(data);
+    } catch (err) {
+        console.error('Track analysis error:', err);
+        setAnalysisSource('model', 'Data model (DeepSeek unreachable)');
+    }
+}
+
+function setAnalysisSource(kind, text, title) {
+    const pill = document.getElementById('analysisSource');
+    if (!pill) return;
+    pill.className = `t-pill source-pill ${kind}`;
+    pill.textContent = text;
+    pill.title = title || '';
+}
+
+function setText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text ?? '';
+}
+
+function stintBar(container, plan) {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!plan || !plan.stints) {
+        container.textContent = '—';
+        return;
+    }
+    const total = plan.stints.reduce((sum, s) => sum + s.laps, 0) || 1;
+    plan.stints.forEach(s => {
+        const seg = document.createElement('div');
+        seg.className = `stint c-${s.compound}`;
+        seg.style.flex = String(s.laps / total);
+        seg.textContent = `${s.compound[0]} ${s.laps}`;
+        seg.title = `${s.compound} — ${s.laps} laps`;
+        container.appendChild(seg);
+    });
+    container.title = `${plan.stops}-stop, ~${plan.time_loss_s}s lost to tyres and stops`;
+}
+
+const DEMAND_LABELS = {
+    abrasion: 'Abrasion', traction: 'Traction', braking: 'Braking',
+    lateral: 'Lateral load', tyre_stress: 'Tyre stress', downforce: 'Downforce',
+};
+
 function renderSetupData(data) {
     const s = data.setup;
     if (!s) return;
+    const wet = data.weather === 'wet';
 
     // Header banner
-    const title = document.getElementById('setupTrackTitle');
-    if (title) title.textContent = `${data.track_name} — ${data.country}`;
-    const desc = document.getElementById('setupCharacteristics');
-    if (desc) desc.textContent = data.characteristics || '';
-    const df = document.getElementById('setupDownforce');
-    if (df) df.textContent = `Downforce: ${data.downforce_level}`;
+    setText('setupTrackTitle', `${data.track_name} — ${data.country}`);
+    setText('setupCharacteristics', data.characteristics || '');
+    setText('setupDownforce', `Downforce: ${data.downforce_level}`);
+    if (data.length_m) setText('setupLength', `${Number(data.length_m).toLocaleString()} m`);
+    if (data.turns) setText('setupTurns', `${data.turns} Turns`);
+    setText('setupTyreWear', `Tyre Degradation: ${data.tyre_degradation || '—'}`);
+    setText('setupConditions', wet ? 'WET' : 'DRY');
+    if (data.analysis_source === 'deepseek') {
+        setAnalysisSource('ai', 'DeepSeek analysis');
+    } else if (data.ai_error) {
+        setAnalysisSource('model', 'Data model (DeepSeek offline)', data.ai_error);
+    } else {
+        setAnalysisSource('model', 'Data model');
+    }
 
-    // Aerodynamics
-    document.getElementById('valFrontWing').textContent = s.aerodynamics?.front_wing ?? '7';
-    document.getElementById('valRearWing').textContent = s.aerodynamics?.rear_wing ?? '8';
+    // A. Tyre degradation
+    const level = data.tyre_degradation || '—';
+    const badge = document.getElementById('degBadge');
+    if (badge) {
+        badge.textContent = level.toUpperCase();
+        badge.className = `deg-badge deg-${level.toLowerCase().replace(/\s+/g, '-')}`;
+    }
+    const deg = data.degradation || {};
+    const body = document.getElementById('degTableBody');
+    if (body) {
+        body.innerHTML = '';
+        Object.entries(deg.rates_s_per_lap || {}).forEach(([compound, rate]) => {
+            const tr = document.createElement('tr');
+            const name = document.createElement('td');
+            const dot = document.createElement('span');
+            dot.className = `tyre-dot c-${compound}`;
+            name.appendChild(dot);
+            name.appendChild(document.createTextNode(compound.charAt(0) + compound.slice(1).toLowerCase()));
+            const r = document.createElement('td');
+            r.textContent = `+${Number(rate).toFixed(3)} s`;
+            const life = document.createElement('td');
+            life.textContent = `${(deg.life_laps || {})[compound] ?? '—'} laps`;
+            tr.append(name, r, life);
+            body.appendChild(tr);
+        });
+    }
+    const limiting = deg.limiting_tyre || (deg.limiting_axle ? `${deg.limiting_axle} axle` : '');
+    setText('degReasoning', `${deg.reasoning || ''}${limiting ? ` Limiting: ${limiting}.` : ''}`);
 
-    // Transmission
-    document.getElementById('valDiffOn').textContent = (s.transmission?.diff_on_throttle ?? 65) + '%';
-    document.getElementById('valDiffOff').textContent = (s.transmission?.diff_off_throttle ?? 54) + '%';
+    // B. Strategy
+    const strat = data.strategy || {};
+    setText('strategyLaps', strat.race_laps ? `${strat.race_laps} LAPS` : '—');
+    stintBar(document.getElementById('strategyBest'), strat.best);
+    stintBar(document.getElementById('strategyAlt'), strat.alternative);
+    const ai = strat.ai || {};
+    setText('strategyAi', ai.plan ? `DeepSeek: ${ai.plan}${ai.reasoning ? ' — ' + ai.reasoning : ''}` : '');
+    const notes = document.getElementById('strategyNotes');
+    if (notes) {
+        notes.innerHTML = '';
+        (strat.notes || []).forEach(n => {
+            const li = document.createElement('li');
+            li.textContent = n;
+            notes.appendChild(li);
+        });
+    }
 
-    // Suspension Geometry
-    document.getElementById('valFrontCamber').textContent = (s.suspension_geometry?.front_camber ?? -3.00) + '°';
-    document.getElementById('valRearCamber').textContent = (s.suspension_geometry?.rear_camber ?? -1.50) + '°';
-    document.getElementById('valFrontToe').textContent = (s.suspension_geometry?.front_toe ?? 0.08) + '°';
-    document.getElementById('valRearToe').textContent = (s.suspension_geometry?.rear_toe ?? 0.22) + '°';
+    // C. Track demands and real-race facts
+    const bars = document.getElementById('demandBars');
+    if (bars) {
+        bars.innerHTML = '';
+        Object.entries(DEMAND_LABELS).forEach(([key, label]) => {
+            const value = (data.demands || {})[key];
+            if (value === undefined) return;
+            const row = document.createElement('div');
+            row.className = 'demand-row';
+            row.innerHTML = '<span class="p-name"></span><div class="demand-track"><div class="demand-fill"></div></div><span class="demand-val"></span>';
+            row.children[0].textContent = label;
+            row.querySelector('.demand-fill').style.width = `${value * 20}%`;
+            row.children[2].textContent = `${value}/5`;
+            bars.appendChild(row);
+        });
+    }
+    const facts = data.race_facts || {};
+    const factsEl = document.getElementById('raceFacts');
+    if (factsEl) {
+        factsEl.innerHTML = '';
+        [
+            ['Pit loss', `${facts.pit_loss_s ?? '—'} s`],
+            ['Safety Car', `${Math.round((facts.sc_probability ?? 0) * 100)}% of races`],
+            ['Rain', `${Math.round((facts.rain_probability ?? 0) * 100)}% of races`],
+            ['Overtaking', `${facts.overtaking ?? '—'}/5 hard`],
+        ].forEach(([k, v]) => {
+            const span = document.createElement('span');
+            span.textContent = `${k}: `;
+            const b = document.createElement('b');
+            b.textContent = v;
+            span.appendChild(b);
+            factsEl.appendChild(span);
+        });
+    }
+    setText('dataSource', data.calibration && data.calibration.length
+        ? `Calibrated from ${data.calibration.length} real races (FastF1): ${data.calibration.slice(-3).join(', ')}…`
+        : 'Built from Pirelli circuit ratings and real race history. Run tools/build_real_race_calibration.py to calibrate from real race timing.');
 
-    // Suspension
-    document.getElementById('valSuspension').textContent = `${s.suspension?.front_suspension ?? 5} / ${s.suspension?.rear_suspension ?? 4}`;
-    document.getElementById('valArb').textContent = `${s.suspension?.front_anti_roll ?? 7} / ${s.suspension?.rear_anti_roll ?? 5}`;
-    document.getElementById('valRideHeight').textContent = `${s.suspension?.front_ride_height ?? 3} / ${s.suspension?.rear_ride_height ?? 5}`;
+    // Setup values
+    setText('valFrontWing', s.aerodynamics?.front_wing ?? '—');
+    setText('valRearWing', s.aerodynamics?.rear_wing ?? '—');
+    setText('valDiffOn', (s.transmission?.diff_on_throttle ?? '—') + '%');
+    setText('valDiffOff', (s.transmission?.diff_off_throttle ?? '—') + '%');
+    const deg2 = v => (v === undefined ? '—' : Number(v).toFixed(2) + '°');
+    setText('valFrontCamber', deg2(s.suspension_geometry?.front_camber));
+    setText('valRearCamber', deg2(s.suspension_geometry?.rear_camber));
+    setText('valFrontToe', deg2(s.suspension_geometry?.front_toe));
+    setText('valRearToe', deg2(s.suspension_geometry?.rear_toe));
+    setText('valSuspension', `${s.suspension?.front_suspension ?? '—'} / ${s.suspension?.rear_suspension ?? '—'}`);
+    setText('valArb', `${s.suspension?.front_anti_roll ?? '—'} / ${s.suspension?.rear_anti_roll ?? '—'}`);
+    setText('valRideHeight', `${s.suspension?.front_ride_height ?? '—'} / ${s.suspension?.rear_ride_height ?? '—'}`);
+    setText('valBrakePressure', (s.brakes?.brake_pressure ?? '—') + '%');
+    setText('valBrakeBias', (s.brakes?.brake_bias ?? '—') + '%');
+    const psi = v => (v === undefined ? '—' : Number(v).toFixed(1) + ' PSI');
+    setText('valFrontRightPsi', psi(s.tyres?.front_right_pressure));
+    setText('valFrontLeftPsi', psi(s.tyres?.front_left_pressure));
+    setText('valRearPsi', psi(s.tyres?.rear_left_pressure));
 
-    // Brakes
-    document.getElementById('valBrakePressure').textContent = (s.brakes?.brake_pressure ?? 98) + '%';
-    document.getElementById('valBrakeBias').textContent = (s.brakes?.brake_bias ?? 56) + '%';
+    // Per-category reasoning (DeepSeek), with conditions-aware defaults
+    const tips = data.setup_notes || {};
+    setText('tipAero', tips.aerodynamics || (wet ? 'Wet: extra wing for grip on a low-grip surface.' : `Aero matched to ${String(data.downforce_level || '').toLowerCase()} downforce demand.`));
+    setText('tipTransmission', tips.transmission || (wet ? 'Wet: more open on-throttle diff to stop wheelspin.' : 'Higher off-throttle helps trail-braking stability.'));
+    setText('tipGeometry', tips.suspension_geometry || '');
+    setText('tipSuspension', tips.suspension || (wet ? 'Wet: softer springs and bars, higher ride over standing water.' : ''));
+    setText('tipBrakes', tips.brakes || (wet ? 'Wet: lower pressure and bias rearward to avoid front lock-ups.' : 'Slight forward bias prevents rear lockups into heavy chicanes.'));
+    setText('tipTyres', tips.tyres || '');
 
-    // Tyres
-    document.getElementById('valFrontRightPsi').textContent = (s.tyres?.front_right_pressure ?? 23.5) + ' PSI';
-    document.getElementById('valFrontLeftPsi').textContent = (s.tyres?.front_left_pressure ?? 23.5) + ' PSI';
-    document.getElementById('valRearPsi').textContent = (s.tyres?.rear_left_pressure ?? 22.0) + ' PSI';
-
-    // Briefing text
-    const brief = document.getElementById('setupBriefingText');
-    if (brief) {
-        brief.textContent = data.ai_consultation || data.engineer_advice || s.notes || 'Setup loaded.';
+    // Briefing and key corners
+    setText('setupBriefingText', data.engineer_advice || data.ai_consultation || s.notes || 'Setup loaded.');
+    const corners = document.getElementById('keyCorners');
+    if (corners) {
+        corners.innerHTML = '';
+        (data.key_corners || []).forEach(c => {
+            const li = document.createElement('li');
+            li.textContent = c;
+            corners.appendChild(li);
+        });
     }
 }
 
