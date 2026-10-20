@@ -49,7 +49,7 @@ function initTabs() {
             // Trigger canvas redraw or chart update on tab switch
             if (btn.dataset.tab === 'tab-live') {
                 resizeCanvas();
-                drawTrackMap(lastKnownCoords, lastCarX, lastCarZ, lastBrakingZones, lastErsZones);
+                redrawTrackMap();
             } else if (btn.dataset.tab === 'tab-corners' && speedChart) {
                 speedChart.resize();
             }
@@ -96,9 +96,22 @@ function updateRevLeds(rpm, maxRpm = 13500) {
 // ──────────────────────────────────────────────
 // 3. Live Track Map Canvas (Feature 3)
 // ──────────────────────────────────────────────
+// The circuit outline is stored per track on the server (track_maps.py), so the whole
+// track is drawn from the first frame and only the car moves. Until a track has been
+// mapped, the live trail of the current lap is drawn instead (the whole lap, nothing
+// is erased). A flashback cuts the trail back to where the game rewound to.
 let lastCarX = 0, lastCarZ = 0;
 let lastBrakingZones = [];
 let lastErsZones = [];
+const mapState = {
+    outline: [],          // whole circuit [[x, z], ...]
+    pitLane: [],          // pit lane path [[x, z], ...]
+    trail: [],            // this lap's driven points
+    source: 'recording',  // 'stored' once the outline is known
+    inPit: false,
+    flashbackCount: null,
+    flashbackUntil: 0,
+};
 
 function initCanvas() {
     trackCanvas = document.getElementById('trackCanvas');
@@ -108,17 +121,20 @@ function initCanvas() {
     window.addEventListener('resize', resizeCanvas);
 
     document.getElementById('btnFitMap')?.addEventListener('click', () => {
-        drawTrackMap(lastKnownCoords, lastCarX, lastCarZ, lastBrakingZones, lastErsZones, true);
+        redrawTrackMap(true);
     });
 
     document.getElementById('btnClearTrace')?.addEventListener('click', () => {
-        // Clear the local trail immediately so the button feels instant...
+        // Clear locally so the button feels instant, then tell the server: it also forgets
+        // the stored outline for this track so the next clean lap maps it again.
         lastKnownCoords = [];
         lastBrakingZones = [];
         lastErsZones = [];
-        drawTrackMap([], 0, 0, [], []);
-        // ...then tell the server to drop its recorded points too, otherwise the very
-        // next telemetry poll repopulates the map from the old (un-cleared) trail.
+        mapState.outline = [];
+        mapState.pitLane = [];
+        mapState.trail = [];
+        mapState.source = 'recording';
+        redrawTrackMap();
         fetch('/api/reset_map', { method: 'POST' }).catch(() => {});
     });
 }
@@ -132,10 +148,53 @@ function resizeCanvas() {
     }
 }
 
+// Take the track-map keys of one telemetry snapshot into mapState.
+function updateMapState(data, nowMs = Date.now()) {
+    if (Array.isArray(data.track_outline)) mapState.outline = data.track_outline;
+    if (Array.isArray(data.pit_lane)) mapState.pitLane = data.pit_lane;
+    if (Array.isArray(data.current_lap_trail)) mapState.trail = data.current_lap_trail;
+    if (Array.isArray(data.track_map)) lastKnownCoords = data.track_map;
+    if (data.track_map_source) mapState.source = data.track_map_source;
+    mapState.inPit = Boolean(data.pit_status);
+    if (data.flashback_count !== undefined) {
+        if (mapState.flashbackCount !== null && data.flashback_count > mapState.flashbackCount) {
+            mapState.flashbackUntil = nowMs + 2500;
+        }
+        mapState.flashbackCount = data.flashback_count;
+    }
+    if (data.car_x !== undefined) lastCarX = data.car_x;
+    if (data.car_z !== undefined) lastCarZ = data.car_z;
+    if (data.braking_zones) lastBrakingZones = data.braking_zones;
+    if (data.ers_zones) lastErsZones = data.ers_zones;
+}
+
+// What the map draws: the stored outline (closed loop) if known, else the live trail.
+function mapBase() {
+    if (mapState.outline.length >= 2) return { line: mapState.outline, closed: true };
+    const trail = lastKnownCoords.length >= 2 ? lastKnownCoords : mapState.trail;
+    return { line: trail, closed: false };
+}
+
+function redrawTrackMap(forceFit = false) {
+    drawTrackMap(mapBase().line, lastCarX, lastCarZ, lastBrakingZones, lastErsZones, forceFit);
+}
+
+function tracePath(points, toCanvas, closed) {
+    trackCtx.beginPath();
+    const [sx, sz] = toCanvas(points[0][0], points[0][1]);
+    trackCtx.moveTo(sx, sz);
+    for (let i = 1; i < points.length; i++) {
+        const [cx, cz] = toCanvas(points[i][0], points[i][1]);
+        trackCtx.lineTo(cx, cz);
+    }
+    if (closed) trackCtx.closePath();
+}
+
 function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forceFit = false) {
     if (!trackCtx || !trackCanvas) return;
     const width = trackCanvas.width;
     const height = trackCanvas.height;
+    const closed = points === mapState.outline && points.length >= 2;
 
     // Clear background
     trackCtx.fillStyle = '#07090e';
@@ -159,17 +218,17 @@ function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forc
     }
 
     if (!points || points.length < 2) {
-        // Draw waiting prompt
         trackCtx.fillStyle = '#64748b';
         trackCtx.font = "bold 13px 'Barlow Condensed', sans-serif";
         trackCtx.textAlign = 'center';
-        trackCtx.fillText('RECORDING TRACK COORDINATES... DRIVE A LAP TO MAP CIRCUIT', width / 2, height / 2);
+        trackCtx.fillText('MAPPING CIRCUIT... DRIVE ONE CLEAN LAP AND IT IS SAVED FOR NEXT TIME', width / 2, height / 2);
         return;
     }
 
-    // Determine bounding box
+    // Bounding box over the circuit and pit lane, so the map does not jump around.
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const p of points) {
+    const pitLane = mapState.pitLane || [];
+    for (const p of closed ? points.concat(pitLane) : points) {
         if (p[0] < minX) minX = p[0];
         if (p[0] > maxX) maxX = p[0];
         if (p[1] < minZ) minZ = p[1];
@@ -192,36 +251,42 @@ function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forc
         height - (offsetZ + (z - minZ) * scale) // Flip Z for correct orientation
     ];
 
-    // 1. Draw glowing outer track glow
-    trackCtx.strokeStyle = 'rgba(0, 210, 190, 0.15)';
-    trackCtx.lineWidth = 10;
     trackCtx.lineCap = 'round';
     trackCtx.lineJoin = 'round';
-    trackCtx.beginPath();
-    const [startX, startZ] = toCanvas(points[0][0], points[0][1]);
-    trackCtx.moveTo(startX, startZ);
-    for (let i = 1; i < points.length; i++) {
-        const [cx, cz] = toCanvas(points[i][0], points[i][1]);
-        trackCtx.lineTo(cx, cz);
+
+    // 1. Pit lane (dashed amber), under the circuit
+    if (closed && pitLane.length >= 2) {
+        trackCtx.strokeStyle = 'rgba(255, 176, 0, 0.85)';
+        trackCtx.lineWidth = 3;
+        if (trackCtx.setLineDash) trackCtx.setLineDash([6, 5]);
+        tracePath(pitLane, toCanvas, false);
+        trackCtx.stroke();
+        if (trackCtx.setLineDash) trackCtx.setLineDash([]);
     }
+
+    // 2. Circuit: glow, then tarmac, then centre line
+    trackCtx.strokeStyle = 'rgba(0, 210, 190, 0.15)';
+    trackCtx.lineWidth = 10;
+    tracePath(points, toCanvas, closed);
     trackCtx.stroke();
 
-    // 2. Draw sharp track racing line
     trackCtx.strokeStyle = '#273142';
     trackCtx.lineWidth = 4;
-    trackCtx.beginPath();
-    trackCtx.moveTo(startX, startZ);
-    for (let i = 1; i < points.length; i++) {
-        const [cx, cz] = toCanvas(points[i][0], points[i][1]);
-        trackCtx.lineTo(cx, cz);
-    }
     trackCtx.stroke();
 
     trackCtx.strokeStyle = '#94a3b8';
     trackCtx.lineWidth = 2;
     trackCtx.stroke();
 
-    // 3. Draw ERS Deployment Zones (Cyan / Teal)
+    // 3. This lap's driven trail on top of the stored circuit (rewinds cut it back)
+    if (closed && mapState.trail.length >= 2) {
+        trackCtx.strokeStyle = 'rgba(0, 210, 190, 0.7)';
+        trackCtx.lineWidth = 2;
+        tracePath(mapState.trail, toCanvas, false);
+        trackCtx.stroke();
+    }
+
+    // 4. ERS Deployment Zones (Cyan / Teal)
     if (ersZones && ersZones.length > 0) {
         trackCtx.fillStyle = '#00d2be';
         trackCtx.shadowColor = '#00d2be';
@@ -235,7 +300,7 @@ function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forc
         trackCtx.shadowBlur = 0;
     }
 
-    // 4. Draw Optimal Braking Zones (Red / Coral)
+    // 5. Braking Zones (Red / Coral)
     if (brakingZones && brakingZones.length > 0) {
         trackCtx.fillStyle = '#e10600';
         trackCtx.shadowColor = '#e10600';
@@ -250,7 +315,7 @@ function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forc
         trackCtx.shadowBlur = 0;
     }
 
-    // 5. Draw Start / Finish Line
+    // 6. Start / Finish Line
     const [sfx, sfz] = toCanvas(points[0][0], points[0][1]);
     trackCtx.fillStyle = '#fff';
     trackCtx.strokeStyle = '#000';
@@ -260,25 +325,35 @@ function drawTrackMap(points, carX, carZ, brakingZones = [], ersZones = [], forc
     trackCtx.fill();
     trackCtx.stroke();
 
-    // 6. Draw Live Car Position Beacon
+    // 7. Live Car Position Beacon (amber while in the pit lane)
     if (carX !== undefined && carZ !== undefined && (carX !== 0 || carZ !== 0)) {
         const [px, pz] = toCanvas(carX, carZ);
+        const carColour = mapState.inPit ? '#ffb000' : '#ffffff';
 
-        // Radar ping
         trackCtx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
         trackCtx.lineWidth = 2;
         trackCtx.beginPath();
         trackCtx.arc(px, pz, 14, 0, Math.PI * 2);
         trackCtx.stroke();
 
-        // Pulsing Car Center Dot
-        trackCtx.fillStyle = '#ffffff';
-        trackCtx.shadowColor = '#ffffff';
+        trackCtx.fillStyle = carColour;
+        trackCtx.shadowColor = carColour;
         trackCtx.shadowBlur = 10;
         trackCtx.beginPath();
         trackCtx.arc(px, pz, 5, 0, Math.PI * 2);
         trackCtx.fill();
         trackCtx.shadowBlur = 0;
+    }
+
+    // 8. Status: stored map or still mapping, and a flashback badge
+    trackCtx.font = "bold 12px 'Barlow Condensed', sans-serif";
+    trackCtx.textAlign = 'left';
+    trackCtx.fillStyle = closed ? '#00d2be' : '#64748b';
+    trackCtx.fillText(closed ? 'TRACK MAP' : 'MAPPING CIRCUIT...', 12, 20);
+    if (Date.now() < mapState.flashbackUntil) {
+        trackCtx.textAlign = 'right';
+        trackCtx.fillStyle = '#ffb000';
+        trackCtx.fillText('⟲ FLASHBACK', width - 12, 20);
     }
 }
 
@@ -1151,16 +1226,9 @@ async function fetchTelemetry() {
         const lonG = document.getElementById('lonGDisplay');
         if (lonG) lonG.textContent = `${(data.g_force_lon || 0).toFixed(2)} G`;
 
-        // 7. Live Track Map Drawing (Feature 3)
-        if (data.track_map && data.track_map.length > 0) {
-            lastKnownCoords = data.track_map;
-        }
-        if (data.car_x !== undefined) lastCarX = data.car_x;
-        if (data.car_z !== undefined) lastCarZ = data.car_z;
-        if (data.braking_zones) lastBrakingZones = data.braking_zones;
-        if (data.ers_zones) lastErsZones = data.ers_zones;
-
-        drawTrackMap(lastKnownCoords, lastCarX, lastCarZ, lastBrakingZones, lastErsZones);
+        // 7. Live Track Map: stored circuit + pit lane, car moving on it
+        updateMapState(data);
+        redrawTrackMap();
 
         // 8. Radio Transcript Log
         const voiceList = document.getElementById('voiceList');

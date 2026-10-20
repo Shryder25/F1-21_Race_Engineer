@@ -610,6 +610,7 @@ body.f1-theme {
 .dot-car { background-color: #fff; box-shadow: 0 0 8px #fff; }
 .dot-brake { background-color: var(--f1-red); box-shadow: 0 0 6px var(--f1-red); }
 .dot-ers { background-color: var(--f1-teal); box-shadow: 0 0 6px var(--f1-teal); }
+.dot-pit { background-color: #ffb000; box-shadow: 0 0 6px #ffb000; }
 
 .track-map-wrapper {
     position: relative;

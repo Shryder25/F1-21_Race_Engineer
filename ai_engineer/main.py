@@ -43,6 +43,7 @@ from voice_engine import VoiceEngine, Priority
 from analysis import AnalysisEngine
 from history import TelemetryHistory
 from fitted_models import ModelStore
+from track_maps import TrackMapStore
 from telemetry_stream import TelemetryStream
 from web_hud import (start_web_hud_server, add_voice_log, set_command_handler,
                      set_setup_ai_client, set_reset_map_handler)
@@ -259,7 +260,8 @@ def main():
               'Fit them with: python tools/fit_models.py recordings/*.f1rec.gz')
     analysis = AnalysisEngine(voice, history=history, on_demand=not args.chatty, fitted=fitted,
                               race_simulation='off' if args.no_race_sim else 'async',
-                              sim_runs=args.sim_runs)
+                              sim_runs=args.sim_runs,
+                              track_store=TrackMapStore(args.history_dir / 'track_maps.json'))
     stream = TelemetryStream(analysis)
     voice.set_silence_filter(analysis.is_driver_busy)
 

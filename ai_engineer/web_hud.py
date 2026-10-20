@@ -83,7 +83,13 @@ dashboard_state: dict[str, Any] = {
     "car_yaw": 0.0,
     "g_force_lat": 0.0,
     "g_force_lon": 0.0,
-    "track_map": [],
+    "track_map": [],            # live trail, only while the circuit has no stored outline
+    "current_lap_trail": [],
+    "track_outline": [],        # the whole circuit (track_maps.TrackMapStore)
+    "pit_lane": [],
+    "track_map_source": "recording",
+    "pit_status": 0,
+    "flashback_count": 0,
     "braking_zones": [],
     "ers_zones": []
 }

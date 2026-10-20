@@ -184,6 +184,8 @@ class TelemetryStream:
                 self.analysis.previous_corner_sample = None
                 self.analysis.radio.reset(self.latest_session)
                 self.analysis.race_control.reset_tracking()
+                if hasattr(self.analysis, 'on_flashback'):
+                    self.analysis.on_flashback()
                 if hasattr(self.analysis.voice, 'clear'):
                     self.analysis.voice.clear()
                 update_web_state({'connected': False, 'gap_ahead_s': None, 'gap_behind_s': None})
