@@ -43,6 +43,22 @@ python tools/build_real_race_calibration.py --years 2021 2022 2023
 
 ---
 
+## 🎞️ Recording & Replay (for backtesting)
+
+Every UDP datagram the game sends can be saved with its arrival time and played back later, so a session can be re-run through the engineer without the game (format spec: [`docs/udp-recording-format.md`](docs/udp-recording-format.md)).
+
+```bash
+python main.py --record recordings/silverstone.f1rec.gz        # drive as usual, also record
+python ai_engineer/record_udp.py                               # record only (no engineer running)
+python main.py --replay recordings/silverstone.f1rec.gz --replay-speed 10   # 1, 10 or max
+python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --speed 1  # send over UDP to a running engineer
+python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --info     # what is in the file
+```
+
+`1` replays in real time with the recorded gaps between datagrams, `10` ten times faster, `max` without waiting. `main.py --replay` never drops datagrams; UDP replay at `max` can, if the receiver falls behind. In code, `udp_recording.replay_into(stream, path)` feeds a `TelemetryStream` directly using the recorded clock.
+
+---
+
 ## 🚀 Core Features
 
 * **DeepSeek AI Integration:** Uses local or cloud-based DeepSeek LLMs to process complex telemetry statistics and translate them into natural, strategic pit-wall advice.
