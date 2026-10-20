@@ -23,6 +23,7 @@ import session_modes
 from voice_engine import VoiceEngine, Priority
 from history import TelemetryHistory
 from race_radio import RaceRadio
+from race_events import RaceControl
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
 
@@ -53,7 +54,8 @@ WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
                  4: "heavy rain", 5: "storm"}
 
 # In on-demand mode the engineer stays silent unless the driver asks, except for critical events.
-PROACTIVE_KEYS = frozenset({'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear', 'wing_damage'})
+PROACTIVE_KEYS = frozenset({'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear', 'wing_damage',
+                            'penalty', 'flag_yellow', 'flag_red'})
 
 # Corner definitions for Silverstone (Track ID 7)
 SILVERSTONE_CORNERS = [
@@ -126,6 +128,7 @@ class AnalysisEngine:
         self.session_mode = session_modes.UNKNOWN
         self._corner_key: tuple | None = None
         self.radio = RaceRadio(self.speak)
+        self.race_control = RaceControl(self.speak)
         self.history = history
         self.capture_id: str | None = None
         self.session_uid: int | None = None
@@ -231,8 +234,11 @@ class AnalysisEngine:
                 'personal_sectors_ms': self.best_sector_times,
             })
             self.radio.reset(session)
+            self.race_control.reset(session)
+            update_web_state({'race_control': []})
         self.session = session
         self.radio.session = session
+        self.race_control.session = session
         self.track_id = session.track_id
         self.track_name = TRACK_NAMES.get(session.track_id, f"Track {session.track_id}")
         self.session_mode = session_modes.session_mode(session.session_type)
@@ -703,6 +709,7 @@ class AnalysisEngine:
         """Driver names from the Participants packet, so radio calls can say who is where."""
         self.radio.set_driver_names({index: p.radio_name for index, p in enumerate(participants)
                                      if p.radio_name})
+        self.race_control.update_participants(participants)
 
     def update_speed_trap(self, speed_kph: float):
         """Record the fastest Speed Trap event ('SPTP') seen so far on the current lap."""
@@ -887,6 +894,7 @@ class AnalysisEngine:
              'laps_to_catch': t['laps_to_catch'], 'factors': t['factors'],
              'driver_name': t['driver_name']}
             for t in threats] or None
+        ctx['recent_race_events'] = [event['text'] for event in self.race_control.recent(5)] or None
         if self.session_lap_stats:
             last = self.session_lap_stats[-1]
             ctx['last_lap_sectors_ms'] = last['sectors'] or None
@@ -968,6 +976,7 @@ class AnalysisEngine:
             "race_pace_ms": self.radio.race_pace_ms,
             "pit_window": self.radio.pit_window,
             "opponent_threats": self.opponent_threats(),
+            "race_control": self.race_control.recent(),
             "race_report": self.race_report(),
             "tire_health": (lambda t: None if t is None else {
                 'grip_factor': t.grip_factor, 'health_score': t.health_score,

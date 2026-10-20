@@ -673,6 +673,25 @@ async function fetchTelemetry() {
             }).join('');
         }
 
+        // Race Control feed (newest first)
+        const raceControlCard = document.getElementById('raceControlCard');
+        const raceControlList = document.getElementById('raceControlList');
+        if (raceControlCard && raceControlList) {
+            const events = data.race_control || [];
+            raceControlCard.style.display = events.length ? '' : 'none';
+            const escapeHtml = text => String(text).replace(/[&<>"']/g,
+                ch => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
+            raceControlList.innerHTML = events.slice(0, 6).map(e => {
+                const cls = e.kind === 'penalty' || e.kind === 'flag' ? 'threat-high'
+                          : e.kind === 'overtake' || e.kind === 'pit' ? 'threat-medium' : 'threat-low';
+                const lap = e.lap ? `LAP ${e.lap}` : '';
+                return `<div class="gap-item ${cls}">
+                    <span class="gap-label">${lap}</span>
+                    <span class="gap-val">${escapeHtml(e.text)}</span>
+                </div>`;
+            }).join('');
+        }
+
         // Sector Splits (Purple/Green/Yellow)
         const currentSectors = data.current_sectors_ms || {};
         const personalSectors = data.personal_sectors_ms || {};
