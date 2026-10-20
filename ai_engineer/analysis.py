@@ -28,6 +28,7 @@ import radio_phrases as say
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
 import race_strategy
+import rival_strategy
 import fitted_models
 import race_sim
 from session_history import SessionLog, lap_rows, stint_rows
@@ -62,9 +63,19 @@ WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
 # Strategy calls that cannot wait for the driver to ask: covering an undercut or taking one is
 # a this-lap decision, so they break on-demand silence like a real pit wall would.
 PROACTIVE_KEYS = frozenset({'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear',
-                            'wing_damage', 'penalty', 'flag_yellow', 'flag_red', 'rival_pit', 'undercut'})
+                            'wing_damage', 'penalty', 'flag_yellow', 'flag_red', 'rival_pit', 'undercut',
+                            'rival_preempt'})
 # Only react to a rival's stop when they were this close; further away it changes nothing.
 RIVAL_REACT_GAP_S = 6.0
+# Rival stop forecasts: say who is about to box when their predicted stop is this close
+# (laps), and pre-empt an undercut from the car behind when it is due this lap or next.
+RIVAL_FORECAST_LAPS = 2
+RIVAL_PREEMPT_LAPS = 1
+# A pre-emptive stop needs the rival's own tyre wear behind the prediction and at least this
+# chance that they box by the end of next lap. No rival calls on lap one or behind the Safety Car.
+RIVAL_PREEMPT_PROB = 0.5
+# Cars this many places either side of the player go into the strategy summary.
+RIVAL_SUMMARY_POSITIONS = 3
 
 # Corner definitions for Silverstone (Track ID 7)
 SILVERSTONE_CORNERS = [
@@ -145,6 +156,10 @@ class AnalysisEngine:
         self._strategy_cache: tuple | None = None
         self.last_strategy_call: dict | None = None
         self.undercut_calls: set[tuple] = set()
+        # Every car's stints, wear and stops, and the next-stop/compound model built on them.
+        self.rivals = rival_strategy.RivalTracker()
+        self.rival_calls: set[tuple] = set()
+        self.player_start_compound: str | None = None
         self.lap_start_fuel: float | None = None
         self.current_lap_speed_trap_kph: float | None = None
         self.last_speed_trap_kph: float | None = None
@@ -236,6 +251,9 @@ class AnalysisEngine:
             self.field_laps = None
             self.sim_runner.reset()
             self.undercut_calls.clear()
+            self.rivals.reset()
+            self.rival_calls.clear()
+            self.player_start_compound = None
             self.lap_start_fuel = None
             self.current_lap_speed_trap_kph = None
             self.last_speed_trap_kph = None
@@ -789,22 +807,29 @@ class AnalysisEngine:
         self.latest_status = status
         if all_status is not None:
             self.all_status = all_status
+            self.rivals.update_status(all_status)
         compound = race_strategy.normalise_compound(status.compound_name)
         if compound:
             self.compounds_used.add(compound)
+            if self.player_start_compound is None:
+                self.player_start_compound = compound
         if self.lap_start_fuel is None:
             self.lap_start_fuel = status.fuel_in_tank
 
     def update_field(self, laps, player_index: int, session_time: float):
-        """Every car's Lap Data: line-crossing times and clean-lap pace for the race simulator."""
+        """Every car's Lap Data: rival stints for the stop model, and line-crossing times and
+        clean-lap pace for the race simulator."""
+        self.rivals.update_laps(laps, player_index)
         self.field_laps, self.player_index = laps, player_index
         if self.session is None or self.session_mode != session_modes.RACE:
             return
         self.field_tracker.update(laps, session_time, self.all_status,
                                   neutralised=self.session.safety_car_status in (1, 2))
 
-    def update_car_damage(self, damage: CarDamageData):
+    def update_car_damage(self, damage: CarDamageData, all_damage: list[CarDamageData] | None = None):
         self.latest_damage = damage
+        if all_damage is not None:
+            self.rivals.update_damage(all_damage)
 
     def update_participants(self, participants):
         """Driver names from the Participants packet, so radio calls can say who is where."""
@@ -1179,6 +1204,115 @@ class AnalysisEngine:
             return None
         return self.all_status[index]
 
+    # ── Rival stop / compound predictions ──
+
+    def _race_context(self) -> rival_strategy.RaceContext | None:
+        session, lap = self.session, self.latest_lap
+        if session is None or self.session_mode != session_modes.RACE or session.total_laps <= 0:
+            return None
+        window = self.radio.pit_window
+        return rival_strategy.RaceContext(
+            track_id=session.track_id, total_laps=session.total_laps, track_length=session.track_length,
+            pit_loss_s=race_strategy.pit_loss_s(session.track_id),
+            game_window=tuple(window) if window else None,
+            player_start_compound=self.player_start_compound,
+            player_stops=getattr(lap, 'num_pit_stops', 0) if lap else 0, weather=session.weather)
+
+    def rival_prediction(self, index) -> rival_strategy.RivalPrediction | None:
+        """Next stop lap and compound for one rival (None outside a race or without data)."""
+        ctx = self._race_context()
+        if ctx is None or index is None or index == self.rivals.player_index:
+            return None
+        return self.rivals.predict(index, ctx, self.fitted, self.radio.driver_name(index))
+
+    def rival_predictions(self) -> list[rival_strategy.RivalPrediction]:
+        """Every rival's predicted next stop and compound, in race order."""
+        ctx = self._race_context()
+        if ctx is None:
+            return []
+        return self.rivals.predict_all(ctx, self.fitted, self.radio.driver_names,
+                                       exclude=self.rivals.player_index)
+
+    def _rival_stop_in_laps(self, prediction, lap_num: int) -> int | None:
+        """Laps a rival is expected to stay out after we box this lap (soonest end of the range)."""
+        if prediction is None:
+            return None
+        if not prediction.will_stop:
+            return race_strategy.MAX_COVER_LAPS
+        soonest = prediction.stop_lap_range[0]
+        return None if soonest is None else soonest - lap_num
+
+    def update_rival_forecasts(self, lap: LapData, plan, deg_scale: float, life_scale: float):
+        """Proactive calls from the rival stop model, for the cars directly ahead and behind.
+
+        * Car behind due to box this lap or next with an undercut that would work: pre-empt it
+          (box now) when our own stop is close, otherwise warn to be ready to cover.
+        * Otherwise, when the car ahead or behind is due within a couple of laps, a heads-up:
+          "Hamilton likely to box lap 22, onto hards."
+        Each car gets at most one call per stint.
+        """
+        status = self.latest_status
+        if lap.current_lap_num < 2 or (self.session and self.session.safety_car_status):
+            return
+        wet = race_strategy.normalise_compound(status.compound_name) in race_strategy.WET_COMPOUNDS
+        preempt_token = ('pre_empt', lap.num_pit_stops)
+        for side, index, gap in (('behind', self.radio.car_behind_index, self.radio.gap_behind_s),
+                                 ('ahead', self.radio.car_ahead_index, self.radio.gap_ahead_s)):
+            prediction = self.rival_prediction(index)
+            if prediction is None or not prediction.will_stop or gap is None or gap > RIVAL_REACT_GAP_S:
+                continue
+            due_in = prediction.laps_to_stop(lap.current_lap_num)
+            token = (index, prediction.stops_done)
+            if token in self.rival_calls or due_in is None:
+                continue
+            who = f'{prediction.name} {side}' if prediction.name else f'Car {side}'
+            onto = f' for {prediction.next_compound.lower()}s' if prediction.next_compound else ''
+            if (side == 'behind' and not wet and prediction.basis == 'wear'
+                    and prediction.prob_stop_by(lap.current_lap_num + RIVAL_PREEMPT_LAPS) >= RIVAL_PREEMPT_PROB
+                    and preempt_token not in self.rival_calls
+                    and plan.best.stops > 0 and plan.laps_remaining > 3):
+                threat = race_strategy.undercut_gain(status.compound_name, status.tyres_age_laps,
+                                                     prediction.next_compound, 1, deg_scale, life_scale)
+                if threat >= gap - race_strategy.CALL_MARGIN_S:
+                    self.rival_calls.update((token, preempt_token))
+                    my_stop_in = plan.best.pit_laps[0] - lap.current_lap_num
+                    if my_stop_in <= race_strategy.UNDERCUT_WINDOW_LAPS:
+                        call = race_strategy.StrategyCall(
+                            'pre_empt', f'Expect {who} to box this lap or next{onto}. Undercut threat, '
+                                        f'box this lap to stay ahead, box box.', threat, gap, index)
+                        self._make_strategy_call(call, 'rival_preempt')
+                    else:
+                        call = race_strategy.StrategyCall(
+                            'cover_ready', f'{who} likely to box lap {prediction.stop_lap}{onto}. '
+                                           'Undercut would work, be ready to cover.', threat, gap, index)
+                        self._make_strategy_call(call, 'rival_forecast')
+                    continue
+            if due_in <= RIVAL_FORECAST_LAPS:
+                self.rival_calls.add(token)
+                call = race_strategy.StrategyCall(
+                    'rival_forecast', f'{who} likely to box lap {prediction.stop_lap}{onto}.', None, gap, index)
+                self.last_strategy_call = {**call.as_dict(), 'lap': lap.current_lap_num}
+                self.speak(call.message, Priority.RACE, key='rival_forecast', ttl=8, cooldown=20)
+
+    def rival_strategy_summary(self) -> dict | None:
+        """Nearby rivals' predicted stops for the HUD and the AI prompt."""
+        lap = self.latest_lap
+        predictions = self.rival_predictions()
+        if lap is None or not predictions:
+            return None
+        nearby = [p for p in predictions if p.position and abs(p.position - lap.car_position) <= RIVAL_SUMMARY_POSITIONS]
+        out = {'field': self.rivals.field.as_dict(), 'nearby': [], 'ahead': None, 'behind': None}
+        for p in nearby:
+            row = {k: getattr(p, k) for k in (
+                'car_index', 'name', 'position', 'compound', 'tyre_age', 'wear_pct', 'will_stop',
+                'stop_lap', 'stop_lap_range', 'next_compound', 'next_compound_probs', 'basis', 'summary')}
+            out['nearby'].append(row)
+            if p.car_index == self.radio.car_ahead_index:
+                out['ahead'] = row
+            elif p.car_index == self.radio.car_behind_index:
+                out['behind'] = row
+        return out
+
     def update_strategy_calls(self, lap: LapData):
         """React to nearby rivals pitting and call an undercut when one is on."""
         events = self.radio.pop_rival_pit_events()
@@ -1193,13 +1327,17 @@ class AnalysisEngine:
             if abs(event['gap_s']) > RIVAL_REACT_GAP_S:
                 continue
             rival = self._rival_status(event['car_index'])
+            # The stop model's last prediction for this car (made before it turned in).
+            last = self.rivals.last_prediction(event['car_index'])
+            expected = last.next_compound if last is not None else None
             call = race_strategy.react_to_rival_stop(
                 'ahead' if event['gap_s'] > 0 else 'behind', event['gap_s'], status.compound_name,
                 status.tyres_age_laps, rival.compound_name if rival else None, None,
                 plan.laps_remaining, plan.best.stops, deg_scale, life_scale, event['car_index'],
-                rival_name=self.radio.driver_name(event['car_index']))
+                rival_name=self.radio.driver_name(event['car_index']), assumed_new_compound=expected)
             self._make_strategy_call(call, 'rival_pit')
 
+        self.update_rival_forecasts(lap, plan, deg_scale, life_scale)
         if plan.best.stops == 0 or race_strategy.normalise_compound(status.compound_name) in race_strategy.WET_COMPOUNDS:
             return          # no undercut maths on a wet track: the crossover decides stops there
         token = (lap.num_pit_stops, lap.current_lap_num)
@@ -1211,7 +1349,9 @@ class AnalysisEngine:
         call = race_strategy.undercut_opportunity(
             self.radio.gap_ahead_s, status.compound_name, status.tyres_age_laps, rival.compound_name,
             rival.tyres_age_laps, plan.best.pit_laps[0] - lap.current_lap_num, plan.laps_remaining,
-            deg_scale, life_scale, self.radio.car_ahead_index)
+            deg_scale, life_scale, self.radio.car_ahead_index,
+            rival_stop_in_laps=self._rival_stop_in_laps(
+                self.rival_prediction(self.radio.car_ahead_index), lap.current_lap_num))
         if call is not None:
             self.undercut_calls.add(token)
             self._make_strategy_call(call, 'undercut')
@@ -1303,15 +1443,24 @@ class AnalysisEngine:
         wet = race_strategy.normalise_compound(status.compound_name if status else None) in race_strategy.WET_COMPOUNDS
         if self.radio.gap_ahead_s is not None and rival is not None and status is not None and not wet:
             deg_scale, life_scale = self.strategy_scales()
+            lap = self.latest_lap
+            cover = race_strategy.cover_laps(self._rival_stop_in_laps(
+                self.rival_prediction(self.radio.car_ahead_index), lap.current_lap_num), plan.laps_remaining)
             gain = race_strategy.undercut_gain(rival.compound_name, rival.tyres_age_laps,
                                                race_strategy.next_compound(status.compound_name),
-                                               1, deg_scale, life_scale)
+                                               cover, deg_scale, life_scale)
             summary['undercut_on_car_ahead'] = {
                 'gap_s': round(self.radio.gap_ahead_s, 2), 'gain_s': gain,
                 'works': gain - self.radio.gap_ahead_s >= race_strategy.CALL_MARGIN_S,
-                'rival_compound': rival.compound_name, 'rival_tyre_age': rival.tyres_age_laps}
+                'rival_compound': rival.compound_name, 'rival_tyre_age': rival.tyres_age_laps,
+                'rival_stays_out_laps': cover}
         else:
             summary['undercut_on_car_ahead'] = None
+        rivals = self.rival_strategy_summary()
+        summary['rivals'] = rivals
+        lines = [f"{side.capitalize()}: {rivals[side]['summary']}"
+                 for side in ('ahead', 'behind') if rivals and rivals.get(side)]
+        summary['rival_radio'] = ' '.join(lines) or None
         if self.session and self.session.pit_stop_rejoin_position:
             summary['game_rejoin_position'] = self.session.pit_stop_rejoin_position
         return summary
@@ -1385,6 +1534,8 @@ class AnalysisEngine:
              'driver_name': t['driver_name']}
             for t in threats] or None
         ctx['strategy'] = self.strategy_summary()
+        rivals = (ctx['strategy'] or {}).get('rivals')
+        ctx['rival_predictions'] = [r['summary'] for r in rivals['nearby']] if rivals and rivals['nearby'] else None
         ctx['recent_race_events'] = [event['text'] for event in self.race_control.recent(5)] or None
         if self.session_lap_stats:
             last = self.session_lap_stats[-1]

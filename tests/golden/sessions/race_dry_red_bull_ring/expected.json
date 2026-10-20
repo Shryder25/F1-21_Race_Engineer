@@ -20,6 +20,7 @@
   {"t": 76.6, "key": "lap_time", "priority": "TIMING", "proactive": false, "text": "Good lap! One eleven four, that's a personal best."},
   {"t": 76.6, "key": "live_delta", "priority": "LOW", "proactive": false, "text": "Three point seven seconds up on your best. Keep it going."},
   {"t": 76.6, "key": "pit_window", "priority": "STRATEGY", "proactive": false, "text": "Pit window opens next lap. Plan is to box lap three."},
+  {"t": 76.6, "key": "rival_forecast", "priority": "RACE", "proactive": false, "text": "Leclerc behind likely to box lap 3 for hards."},
   {"t": 77.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Uphill 90-degree right, brake at 70m board, 220 metres."},
   {"t": 87.4, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Kink, flat out, 220 metres."},
   {"t": 90.6, "key": "live_delta", "priority": "LOW", "proactive": false, "text": "You're six point five seconds up, good lap so far."},
@@ -180,7 +181,8 @@
     "gap_behind": "Gap to Leclerc behind is 1.1.",
     "pace": "Last lap 1:11.450. 3.7 faster than your best.",
     "threats": "Medium threat from Norris ahead, 0.7, gap 0.7s (DRS range).",
-    "strategy": "Plan is one stop. Box lap 2 for soft. 2 stops is 19.9 slower. Undercut on the car ahead will not work yet."
+    "strategy": "Plan is one stop. Box lap 2 for soft. 2 stops is 19.9 slower. Undercut on the car ahead will not work yet.",
+    "rivals": "Norris likely to box lap 3, onto hards. Window lap 2 to 5. Leclerc likely to box lap 3, onto hards. Window lap 1 to 5."
    }
   },
   {
@@ -229,7 +231,8 @@
     "gap_behind": "Gap to Leclerc behind is 1.4.",
     "pace": "Last lap 1:04.950. 6.5 faster than your best.",
     "threats": "Medium threat from Norris ahead, 0.8, gap 0.8s (DRS range).",
-    "strategy": "Plan is one stop. Box lap 3 for soft. 2 stops is 20.0 slower. Undercut on the car ahead will not work yet."
+    "strategy": "Plan is one stop. Box lap 3 for soft. 2 stops is 20.0 slower. Undercut on the car ahead will not work yet.",
+    "rivals": "Norris likely to box lap 4, onto hards. Window lap 3 to 6. Leclerc likely to box lap 3, onto hards. Window lap 2 to 5."
    }
   },
   {
@@ -281,7 +284,8 @@
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:04.900.",
     "threats": "Medium threat from Norris ahead, 0.8, gap 0.8s (DRS range).",
-    "strategy": "Plan is one stop. Box lap 4 for soft. 2 stops is 20.0 slower. Undercut on the car ahead will not work yet."
+    "strategy": "Plan is one stop. Box lap 4 for soft. 2 stops is 20.0 slower. Undercut on the car ahead will not work yet.",
+    "rivals": "Norris likely to box lap 6, onto hards. Window lap 4 to 7."
    }
   },
   {
@@ -324,7 +328,8 @@
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:15.600.",
     "threats": "No immediate threats.",
-    "strategy": "No more stops. Bring the hards home."
+    "strategy": "No more stops. Bring the hards home.",
+    "rivals": "Bottas likely to box lap 6, onto hards. Norris likely to box lap 6, onto hards."
    }
   },
   {
@@ -373,7 +378,8 @@
     "gap_behind": "Gap to Perez behind is 0.8.",
     "pace": "Last lap 1:14.950.",
     "threats": "Medium threat from Perez behind, 0.8, gap 0.8s (DRS range).",
-    "strategy": "No more stops. Bring the hards home."
+    "strategy": "No more stops. Bring the hards home.",
+    "rivals": "Perez looks to be going to the end on mediums."
    }
   },
   {
@@ -422,7 +428,8 @@
     "gap_behind": "Gap to Perez behind is 1.0.",
     "pace": "Last lap 1:05.000.",
     "threats": "Low threat from Perez behind, 1.0.",
-    "strategy": "No more stops. Bring the hards home. Undercut on the car ahead will not work yet."
+    "strategy": "No more stops. Bring the hards home. Undercut on the car ahead will not work yet.",
+    "rivals": "Norris looks to be going to the end on hards. Perez looks to be going to the end on mediums."
    }
   },
   {
@@ -466,7 +473,8 @@
     "gap_behind": "No gap behind reading right now.",
     "pace": "Last lap 1:05.050.",
     "threats": "No immediate threats.",
-    "strategy": "No strategy data yet."
+    "strategy": "No strategy data yet.",
+    "rivals": "No read on the other cars yet."
    }
   }
  ],
@@ -518,6 +526,7 @@
   "gap_behind": "No gap behind reading right now.",
   "pace": "Last lap 1:05.050.",
   "threats": "No immediate threats.",
-  "strategy": "No strategy data yet."
+  "strategy": "No strategy data yet.",
+  "rivals": "No read on the other cars yet."
  }
 }

@@ -5,7 +5,7 @@ import struct
 import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
-                     parse_player_telemetry, parse_player_car_damage,
+                     parse_player_telemetry, parse_all_car_damage,
                      parse_player_motion, parse_speed_trap_event, parse_all_car_status,
                      parse_race_event, race_event_body_size, parse_participants,
                      parse_car_setups, parse_final_classification, parse_session_history)
@@ -141,7 +141,8 @@ class TelemetryStream:
                            (payload.fuel_in_tank, payload.fuel_capacity, payload.fuel_remaining_laps)):
                     raise ValueError('Invalid car status')
             elif packet_id == 10:
-                payload = parse_player_car_damage(data, header.player_car_index)
+                all_damage = parse_all_car_damage(data)
+                payload = all_damage[header.player_car_index]
                 if not all(math.isfinite(w) and 0 <= w <= 100 for w in payload.tyres_wear):
                     raise ValueError('Invalid car damage')
             else:
@@ -250,7 +251,7 @@ class TelemetryStream:
                     self.analysis.update_car_status(payload, all_status)
                     self.analysis.race_control.update_status(all_status, self.player_index)
                 else:
-                    self.analysis.update_car_damage(payload)
+                    self.analysis.update_car_damage(payload, all_damage)
             return False
 
         if header.session_time < self.context_start_time:

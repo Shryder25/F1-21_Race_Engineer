@@ -21,7 +21,15 @@ from voice_engine import Priority
 
 ACK_TEXT = 'We are checking.'
 
-COMMANDS = ('weather', 'tyre_temps', 'pit_window', 'gap_ahead', 'gap_behind', 'pace', 'threats', 'strategy')
+COMMANDS = ('weather', 'tyre_temps', 'pit_window', 'gap_ahead', 'gap_behind', 'pace', 'threats', 'strategy',
+            'rivals')
+
+# "When will Hamilton box?", "what are the others doing?", "rival strategy": questions about
+# other cars' stops. The driver's own stop ("when do we box") stays a pit-window question.
+_RIVAL_WORDS = re.compile(r'\b(rivals?|others|other cars|everyone|the field|opponents?|car ahead|car behind|they|they\'re)\b')
+_STOP_WORDS = re.compile(r'\b(pit|pitting|box|boxing|stop|stopping|strategy|strategies|tyres?|doing)\b')
+_NAMED_STOP = re.compile(r'\b(?:when (?:is|will|does)|is|will) (?!(?:i|we|me|my|us|it|the|there|this|that)\b)[a-z]+ '
+                         r'(?:going to )?(?:pit|box|stop)')
 
 _WAKE_WORDS = re.compile(r'^(?:hey |ok |okay )?(?:engineer|race engineer|box box)[, ]+', re.IGNORECASE)
 
@@ -38,6 +46,8 @@ def match_command(text: str) -> str | None:
     t = normalise(t)
     if not t:
         return None
+    if (_RIVAL_WORDS.search(t) and _STOP_WORDS.search(t)) or _NAMED_STOP.search(t):
+        return 'rivals'
     if re.search(r'\b(threat|threats|attacking|pressure|catching|closing)\b', t):
         return 'threats'
     if re.search(r'\b(undercut|overcut|strategy|plan|how many stops|one stop|two stop|which tyres?|what tyres?|compound|what are (?:our|the|my) chances|chances of (?:winning|a podium)|odds|win probability)\b', t):
