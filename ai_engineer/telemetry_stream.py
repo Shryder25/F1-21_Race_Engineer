@@ -6,10 +6,10 @@ import time
 
 from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
                      parse_player_telemetry, parse_player_car_status, parse_player_car_damage,
-                     parse_player_motion, parse_speed_trap_event)
+                     parse_player_motion, parse_speed_trap_event, parse_participants)
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
 
-PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 6: 1347, 7: 1058, 10: 882}
+PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 4: 1257, 6: 1347, 7: 1058, 10: 882}
 # Packet ID 3 (Event) is a fixed header plus a variable-size, event-code-specific body, so
 # unlike every other packet type it does not have one single valid length.
 EVENT_PACKET_SIZES = {b'FLBK': 36, b'SPTP': 40}
@@ -101,6 +101,10 @@ class TelemetryStream:
                 payload = struct.unpack_from('<If', data, 28)
                 if not math.isfinite(payload[1]):
                     return False
+            elif packet_id == 4:
+                if data[24] > 22:
+                    raise ValueError('Invalid participant count')
+                payload = parse_participants(data)
             elif packet_id == 7:
                 payload = parse_player_car_status(data, header.player_car_index)
                 if not all(math.isfinite(x) and x >= 0 for x in
@@ -190,11 +194,14 @@ class TelemetryStream:
                 update_web_state({'connected': False})
             return False
 
-        if packet_id in (0, 7, 10):
-            # Motion and strategy inputs arrive on their own cadence; they need no frame pairing.
+        if packet_id in (0, 4, 7, 10):
+            # Motion, participants and strategy inputs arrive on their own cadence; they need
+            # no frame pairing.
             if header.session_time >= self.context_start_time:
                 if packet_id == 0:
                     self.analysis.update_motion(payload)
+                elif packet_id == 4:
+                    self.analysis.update_participants(payload)
                 elif packet_id == 7:
                     self.analysis.update_car_status(payload)
                 else:
