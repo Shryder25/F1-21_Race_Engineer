@@ -31,6 +31,7 @@ import race_strategy
 import rival_strategy
 import fitted_models
 import race_sim
+import track_maps
 from session_history import SessionLog, lap_rows, stint_rows
 
 
@@ -134,8 +135,11 @@ class AnalysisEngine:
 
     def __init__(self, voice: VoiceEngine, history: TelemetryHistory | None = None,
                  on_demand: bool = False, fitted: fitted_models.ModelStore | None = None,
-                 race_simulation: str = 'off', sim_runs: int = race_sim.DEFAULT_RUNS):
+                 race_simulation: str = 'off', sim_runs: int = race_sim.DEFAULT_RUNS,
+                 track_store: track_maps.TrackMapStore | None = None):
         self.voice = voice
+        # Saved outline + pit lane per circuit (memory-only unless main.py gives it a file).
+        self.track_store = track_store if track_store is not None else track_maps.TrackMapStore()
         # Monte Carlo race simulator (race_sim.py): 'async' live, 'sync' in tests, 'off'.
         self.sim_runner = race_sim.SimRunner(race_simulation, sim_runs)
         self.field_tracker = race_sim.FieldTracker()
@@ -211,6 +215,18 @@ class AnalysisEngine:
         self.braking_zones_best: list[list[float]] = []
         self.ers_zones_best: list[list[float]] = []
         self.last_map_dist: float = -999.0
+        # Lap distance of each trail point, so a flashback can cut the trail back.
+        self.current_lap_map_dists: list[float] = []
+        self.current_lap_braking_dists: list[float] = []
+        self.current_lap_ers_dists: list[float] = []
+        self.track_outline: list[list[float]] = []      # whole circuit, stored or first clean lap
+        self.pit_lane_points: list[list[float]] = []
+        self.current_pit_points: list[list[float]] = []
+        self.map_lap_has_pit = False
+        self.map_rewind_pending = False
+        self.flashback_count = 0
+        self._map_revision = 0
+        self._sent_map_revision = -1
 
     # ──────────────────────────────────────────
     # Session Handling
@@ -269,6 +285,11 @@ class AnalysisEngine:
             self.braking_zones_best.clear()
             self.ers_zones_best.clear()
             self.last_map_dist = -999.0
+            self._clear_trail_distances()
+            self.current_pit_points.clear()
+            self.map_lap_has_pit = False
+            self.map_rewind_pending = False
+            self._load_track_map(session)
             self.radio.set_driver_names({})
             if hasattr(self.voice, 'clear'):
                 self.voice.clear()
@@ -374,15 +395,97 @@ class AnalysisEngine:
         self.latest_motion = motion
         x = round(motion.world_position_x, 2)
         z = round(motion.world_position_z, 2)
-        if self.latest_lap and self.latest_telemetry:
-            dist = self.latest_lap.lap_distance
+        if self.latest_lap and self.latest_telemetry and not self.map_rewind_pending:
+            lap = self.latest_lap
+            if lap.pit_status:
+                # Pit lane is its own path, never part of the circuit outline.
+                self.map_lap_has_pit = True
+                track_maps.append_pit_point(self.current_pit_points, x, z)
+                return
+            if self.current_pit_points:
+                self._finish_pit_lane()
+            if self.delta.current_lap_num and lap.current_lap_num != self.delta.current_lap_num:
+                return                        # lap change not processed yet: keep last lap intact
+            dist = lap.lap_distance
+            if dist < self.last_map_dist - 30.0:
+                self._trim_trail(dist)        # car went backwards along the lap: a rewind
             if abs(dist - self.last_map_dist) >= 6.0:
                 self.last_map_dist = dist
                 self.current_lap_map_points.append([x, z])
+                self.current_lap_map_dists.append(dist)
+                self._map_revision += 1
                 if self.latest_telemetry.brake > 0.08:
                     self.current_lap_braking_zones.append([x, z, round(self.latest_telemetry.brake, 2)])
+                    self.current_lap_braking_dists.append(dist)
                 if self.latest_status and (self.latest_status.ers_deploy_mode > 0 or self.latest_status.ers_deployed_this_lap > 0):
                     self.current_lap_ers_zones.append([x, z])
+                    self.current_lap_ers_dists.append(dist)
+
+    # ──────────────────────────────────────────
+    # Track map: stored outline, pit lane, flashbacks
+    # ──────────────────────────────────────────
+
+    def _load_track_map(self, session: SessionData):
+        stored = self.track_store.get(session.track_id, session.track_length)
+        self.track_outline = stored['outline']
+        self.pit_lane_points = stored['pit_lane']
+        self._map_revision += 1
+        self._push_track_map()
+
+    def _push_track_map(self):
+        update_web_state({'track_outline': self.track_outline,
+                          'pit_lane': self.pit_lane_points,
+                          'track_map_source': 'stored' if self.track_outline else 'recording'})
+
+    def _clear_trail_distances(self):
+        self.current_lap_map_dists.clear()
+        self.current_lap_braking_dists.clear()
+        self.current_lap_ers_dists.clear()
+
+    def _trim_trail(self, dist: float):
+        """Drop every trail point recorded beyond `dist` on this lap (the rewound future)."""
+        for points, dists in ((self.current_lap_map_points, self.current_lap_map_dists),
+                              (self.current_lap_braking_zones, self.current_lap_braking_dists),
+                              (self.current_lap_ers_zones, self.current_lap_ers_dists)):
+            keep = next((i for i, d in enumerate(dists) if d > dist), len(dists))
+            del points[keep:], dists[keep:]
+        self.last_map_dist = self.current_lap_map_dists[-1] if self.current_lap_map_dists else -999.0
+        self._map_revision += 1
+
+    def _finish_pit_lane(self):
+        """Car left the pit lane: keep the path as the pit lane if this track has none yet."""
+        points, self.current_pit_points = self.current_pit_points, []
+        if self.pit_lane_points or len(points) < track_maps.MIN_PIT_POINTS or not self.session:
+            return
+        self.pit_lane_points = points
+        self.track_store.save(self.track_id, self.session.track_length, pit_lane=points)
+        self._push_track_map()
+
+    def _capture_outline(self, lap_num: int, new_lap_num: int):
+        """After a full lap, store it as the circuit outline if this track has none yet."""
+        if (self.track_outline or self.map_lap_has_pit or not self.session
+                or new_lap_num != lap_num + 1):
+            return
+        outline = track_maps.build_outline(self.current_lap_map_dists, self.current_lap_map_points,
+                                           self.session.track_length)
+        if outline:
+            self.track_outline = outline
+            self.track_store.save(self.track_id, self.session.track_length, outline=outline)
+            self._push_track_map()
+
+    def on_flashback(self):
+        """The game rewound (F1 2021 flashback). Stop recording until a lap packet from the
+        restored timeline says where the car is, then cut the trail back to there."""
+        self.map_rewind_pending = True
+        self.current_pit_points.clear()
+        self.flashback_count += 1
+        update_web_state({'flashback_count': self.flashback_count})
+
+    def _resolve_map_rewind(self, lap: LapData):
+        self.map_rewind_pending = False
+        if lap.current_lap_num == self.delta.current_lap_num:
+            self._trim_trail(lap.lap_distance)
+        # A rewind into an earlier lap is handled by the lap change in update_delta.
 
     def is_driver_busy(self) -> bool:
         """Check if driver is under heavy braking or in a high-G corner (silence filter)."""
@@ -694,6 +797,8 @@ class AnalysisEngine:
     def _on_new_lap(self, lap: LapData):
         """Handle lap completion and save best baseline."""
         prev_lap_num = self.delta.current_lap_num
+        if prev_lap_num > 0:
+            self._capture_outline(prev_lap_num, lap.current_lap_num)
         self.delta.current_lap_num = lap.current_lap_num
         self.announced_braking.clear()
 
@@ -781,7 +886,10 @@ class AnalysisEngine:
         self.current_lap_map_points.clear()
         self.current_lap_braking_zones.clear()
         self.current_lap_ers_zones.clear()
+        self._clear_trail_distances()
+        self.map_lap_has_pit = bool(lap.pit_status)
         self.last_map_dist = -999.0
+        self._map_revision += 1
 
     # ──────────────────────────────────────────
     # Learning Engine: tyre wear, fuel and ML predictions
@@ -800,8 +908,17 @@ class AnalysisEngine:
         self.current_lap_ers_zones.clear()
         self.braking_zones_best.clear()
         self.ers_zones_best.clear()
+        self._clear_trail_distances()
+        self.current_pit_points.clear()
         self.last_map_dist = -999.0
+        # Also forget the stored outline/pit lane, so a bad one can be mapped again.
+        self.track_outline, self.pit_lane_points = [], []
+        if self.session:
+            self.track_store.forget(self.track_id)
+        self._map_revision += 1
+        self._sent_map_revision = self._map_revision
         update_web_state({'track_map': [], 'braking_zones': [], 'ers_zones': []})
+        self._push_track_map()
 
     def update_car_status(self, status: CarStatusData, all_status: list[CarStatusData] | None = None):
         self.latest_status = status
@@ -1550,6 +1667,8 @@ class AnalysisEngine:
     def update_telemetry(self, telemetry: CarTelemetryData, lap: LapData):
         """Main update called on each telemetry packet."""
         self.latest_telemetry, self.latest_lap = telemetry, lap
+        if self.map_rewind_pending:
+            self._resolve_map_rewind(lap)
         self.update_delta(lap, telemetry)
         self.analyze_tyres(telemetry, lap)
         self.check_braking_points(lap, telemetry)
@@ -1575,9 +1694,18 @@ class AnalysisEngine:
         g_lat = round(self.latest_motion.g_force_lateral, 2) if self.latest_motion else 0.0
         g_lon = round(self.latest_motion.g_force_longitudinal, 2) if self.latest_motion else 0.0
 
-        active_map = self.track_map_points if self.track_map_points else self.current_lap_map_points
-        active_braking = self.braking_zones_best if self.braking_zones_best else self.current_lap_braking_zones
-        active_ers = self.ers_zones_best if self.ers_zones_best else self.current_lap_ers_zones
+        # The live trail is only needed until the circuit outline is known, and only sent
+        # when it changed: the whole lap (not a 400-point tail) so nothing gets erased.
+        map_update = {}
+        if self._map_revision != self._sent_map_revision:
+            self._sent_map_revision = self._map_revision
+            trail = [] if self.track_outline else (self.track_map_points or self.current_lap_map_points)
+            map_update = {
+                'track_map': trail,
+                'current_lap_trail': self.current_lap_map_points,
+                'braking_zones': self.braking_zones_best or self.current_lap_braking_zones,
+                'ers_zones': self.ers_zones_best or self.current_lap_ers_zones,
+            }
 
         # Stream snapshot to Web HUD
         update_web_state({
@@ -1640,7 +1768,6 @@ class AnalysisEngine:
             "car_yaw": car_yaw,
             "g_force_lat": g_lat,
             "g_force_lon": g_lon,
-            "track_map": active_map[-400:],
-            "braking_zones": active_braking[-100:],
-            "ers_zones": active_ers[-100:]
+            "pit_status": lap.pit_status,
+            **map_update,
         })
