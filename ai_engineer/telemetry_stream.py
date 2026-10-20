@@ -221,7 +221,7 @@ class TelemetryStream:
                 elif packet_id == 4:
                     self.analysis.update_participants(payload)
                 elif packet_id == 7:
-                    self.analysis.update_car_status(payload)
+                    self.analysis.update_car_status(payload, all_status)
                     self.analysis.race_control.update_status(all_status, self.player_index)
                 else:
                     self.analysis.update_car_damage(payload)

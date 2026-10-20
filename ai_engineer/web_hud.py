@@ -69,6 +69,7 @@ dashboard_state: dict[str, Any] = {
     "race_pace_ms": None,
     "pit_window": None,
     "opponent_threats": [],
+    "race_strategy": None,
     "race_control": [],
     "tire_health": None,
     "race_report": [],

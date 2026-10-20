@@ -26,6 +26,7 @@ from race_radio import RaceRadio
 import radio_phrases as say
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
+import race_strategy
 
 
 # ──────────────────────────────────────────────
@@ -54,8 +55,12 @@ WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
                  4: "heavy rain", 5: "storm"}
 
 # In on-demand mode the engineer stays silent unless the driver asks, except for critical events.
-PROACTIVE_KEYS = frozenset({'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear', 'wing_damage',
-                            'penalty', 'flag_yellow', 'flag_red'})
+# Strategy calls that cannot wait for the driver to ask: covering an undercut or taking one is
+# a this-lap decision, so they break on-demand silence like a real pit wall would.
+PROACTIVE_KEYS = frozenset({'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear',
+                            'wing_damage', 'penalty', 'flag_yellow', 'flag_red', 'rival_pit', 'undercut'})
+# Only react to a rival's stop when they were this close; further away it changes nothing.
+RIVAL_REACT_GAP_S = 6.0
 
 # Corner definitions for Silverstone (Track ID 7)
 SILVERSTONE_CORNERS = [
@@ -120,6 +125,11 @@ class AnalysisEngine:
         self.latest_lap: LapData | None = None
         self.latest_status: CarStatusData | None = None
         self.latest_damage: CarDamageData | None = None
+        self.all_status: list[CarStatusData] | None = None    # every car, for rival tyre age/compound
+        self.compounds_used: set[str] = set()
+        self._strategy_cache: tuple | None = None
+        self.last_strategy_call: dict | None = None
+        self.undercut_calls: set[tuple] = set()
         self.lap_start_fuel: float | None = None
         self.current_lap_speed_trap_kph: float | None = None
         self.last_speed_trap_kph: float | None = None
@@ -189,6 +199,11 @@ class AnalysisEngine:
             self.session_lap_stats.clear()
             self._ml_cache = None
             self.latest_status = self.latest_damage = None
+            self.all_status = None
+            self.compounds_used.clear()
+            self._strategy_cache = None
+            self.last_strategy_call = None
+            self.undercut_calls.clear()
             self.lap_start_fuel = None
             self.current_lap_speed_trap_kph = None
             self.last_speed_trap_kph = None
@@ -226,7 +241,7 @@ class AnalysisEngine:
                 'best_lap_time_ms': self.delta.best_lap_time_ms, 'delta_ms': None,
                 'gap_ahead_s': None, 'gap_behind_s': None, 'race_pace_ms': None,
                 'car_ahead_name': None, 'car_behind_name': None,
-                'pit_window': None, 'last_update_monotonic': None,
+                'pit_window': None, 'race_strategy': None, 'last_update_monotonic': None,
                 'speed': 0, 'gear': 0, 'rpm': 0, 'drs': False, 'throttle': 0, 'brake': 0,
                 'lap_num': 0, 'lap_time_ms': 0, 'last_lap_time_ms': 0, 'position': 0,
                 'tyre_surface_temps': [0] * 4, 'tyre_inner_temps': [0] * 4,
@@ -709,8 +724,13 @@ class AnalysisEngine:
         self.last_map_dist = -999.0
         update_web_state({'track_map': [], 'braking_zones': [], 'ers_zones': []})
 
-    def update_car_status(self, status: CarStatusData):
+    def update_car_status(self, status: CarStatusData, all_status: list[CarStatusData] | None = None):
         self.latest_status = status
+        if all_status is not None:
+            self.all_status = all_status
+        compound = race_strategy.normalise_compound(status.compound_name)
+        if compound:
+            self.compounds_used.add(compound)
         if self.lap_start_fuel is None:
             self.lap_start_fuel = status.fuel_in_tank
 
@@ -839,6 +859,107 @@ class AnalysisEngine:
             self.latest_damage.tyres_wear if self.latest_damage else None,
             self.latest_telemetry.tyres_surface_temperature if self.latest_telemetry else None)
 
+    # ──────────────────────────────────────────
+    # Race strategy (stops, compounds, undercut / overcut)
+    # ──────────────────────────────────────────
+
+    def _strategy_calibration(self) -> tuple[float, float]:
+        status = self.latest_status
+        prediction = self.pit_prediction()
+        return race_strategy.calibration(
+            status.compound_name, status.tyres_age_laps, self.pace_trend(),
+            prediction.laps_to_latest if prediction else None)
+
+    def strategy_plan(self):
+        """Best stop count and compound sequence for the rest of the race, or None outside a race."""
+        status, lap, session = self.latest_status, self.latest_lap, self.session
+        if status is None or lap is None or session is None or self.session_mode != session_modes.RACE:
+            return None
+        laps_remaining = session.total_laps - lap.current_lap_num + 1
+        key = (lap.current_lap_num, status.compound_name, status.tyres_age_laps,
+               frozenset(self.compounds_used), session.track_id, laps_remaining, len(self.session_lap_stats))
+        if self._strategy_cache and self._strategy_cache[0] == key:
+            return self._strategy_cache[1]
+        scales = self._strategy_calibration()
+        plan = race_strategy.plan_race(
+            laps_remaining, status.compound_name, status.tyres_age_laps, lap.current_lap_num,
+            race_strategy.pit_loss_s(session.track_id), self.compounds_used, *scales)
+        self._strategy_cache = (key, plan, scales)
+        return plan
+
+    def strategy_scales(self) -> tuple[float, float]:
+        """(deg_scale, life_scale) the current plan was built with."""
+        return self._strategy_cache[2] if self._strategy_cache else (1.0, 1.0)
+
+    def _rival_status(self, index):
+        if self.all_status is None or index is None or not 0 <= index < len(self.all_status):
+            return None
+        return self.all_status[index]
+
+    def update_strategy_calls(self, lap: LapData):
+        """React to nearby rivals pitting and call an undercut when one is on."""
+        events = self.radio.pop_rival_pit_events()
+        status = self.latest_status
+        if self.session_mode != session_modes.RACE or status is None or lap.pit_status:
+            return
+        plan = self.strategy_plan()
+        if plan is None:
+            return
+        deg_scale, life_scale = self.strategy_scales()
+        for event in events:
+            if abs(event['gap_s']) > RIVAL_REACT_GAP_S:
+                continue
+            rival = self._rival_status(event['car_index'])
+            call = race_strategy.react_to_rival_stop(
+                'ahead' if event['gap_s'] > 0 else 'behind', event['gap_s'], status.compound_name,
+                status.tyres_age_laps, rival.compound_name if rival else None, None,
+                plan.laps_remaining, plan.best.stops, deg_scale, life_scale, event['car_index'])
+            self._make_strategy_call(call, 'rival_pit')
+
+        if plan.best.stops == 0:
+            return
+        token = (lap.num_pit_stops, lap.current_lap_num)
+        if token in self.undercut_calls:
+            return
+        rival = self._rival_status(self.radio.car_ahead_index)
+        if rival is None:
+            return
+        call = race_strategy.undercut_opportunity(
+            self.radio.gap_ahead_s, status.compound_name, status.tyres_age_laps, rival.compound_name,
+            rival.tyres_age_laps, plan.best.pit_laps[0] - lap.current_lap_num, plan.laps_remaining,
+            deg_scale, life_scale, self.radio.car_ahead_index)
+        if call is not None:
+            self.undercut_calls.add(token)
+            self._make_strategy_call(call, 'undercut')
+
+    def _make_strategy_call(self, call, key: str):
+        self.last_strategy_call = {**call.as_dict(), 'lap': self.latest_lap.current_lap_num if self.latest_lap else None}
+        self.speak(call.message, Priority.STRATEGY, key=key, ttl=10, cooldown=0)
+
+    def strategy_summary(self) -> dict | None:
+        """Plan plus the latest undercut/overcut call, for the HUD and the AI prompt."""
+        plan = self.strategy_plan()
+        if plan is None:
+            return None
+        summary = plan.as_dict()
+        summary['radio'] = race_strategy.describe_plan(plan)
+        summary['last_call'] = self.last_strategy_call
+        status, rival = self.latest_status, self._rival_status(self.radio.car_ahead_index)
+        if self.radio.gap_ahead_s is not None and rival is not None and status is not None:
+            deg_scale, life_scale = self.strategy_scales()
+            gain = race_strategy.undercut_gain(rival.compound_name, rival.tyres_age_laps,
+                                               race_strategy.next_compound(status.compound_name),
+                                               1, deg_scale, life_scale)
+            summary['undercut_on_car_ahead'] = {
+                'gap_s': round(self.radio.gap_ahead_s, 2), 'gain_s': gain,
+                'works': gain - self.radio.gap_ahead_s >= race_strategy.CALL_MARGIN_S,
+                'rival_compound': rival.compound_name, 'rival_tyre_age': rival.tyres_age_laps}
+        else:
+            summary['undercut_on_car_ahead'] = None
+        if self.session and self.session.pit_stop_rejoin_position:
+            summary['game_rejoin_position'] = self.session.pit_stop_rejoin_position
+        return summary
+
     def opponent_threats(self) -> list[dict]:
         """Nearby cars ranked by how much pressure they put on the player right now."""
         return [t.__dict__ for t in self.radio.opponent_threats]
@@ -906,6 +1027,7 @@ class AnalysisEngine:
              'laps_to_catch': t['laps_to_catch'], 'factors': t['factors'],
              'driver_name': t['driver_name']}
             for t in threats] or None
+        ctx['strategy'] = self.strategy_summary()
         ctx['recent_race_events'] = [event['text'] for event in self.race_control.recent(5)] or None
         if self.session_lap_stats:
             last = self.session_lap_stats[-1]
@@ -925,6 +1047,7 @@ class AnalysisEngine:
         self.check_braking_points(lap, telemetry)
         self.update_corners(telemetry, lap)
         self.radio.update_strategy(lap)
+        self.update_strategy_calls(lap)
 
         # Priority Interrupts
         if self.session:
@@ -988,6 +1111,7 @@ class AnalysisEngine:
             "race_pace_ms": self.radio.race_pace_ms,
             "pit_window": self.radio.pit_window,
             "opponent_threats": self.opponent_threats(),
+            "race_strategy": self.strategy_summary(),
             "race_control": self.race_control.recent(),
             "race_report": self.race_report(),
             "tire_health": (lambda t: None if t is None else {

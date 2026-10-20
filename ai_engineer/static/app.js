@@ -837,6 +837,41 @@ async function fetchTelemetry() {
             }).join('');
         }
 
+        // Race strategy (stop count, compounds, undercut on the car ahead, last call)
+        const strategyCard = document.getElementById('strategyCard');
+        const strategyList = document.getElementById('strategyList');
+        if (strategyCard && strategyList) {
+            const strat = data.race_strategy;
+            strategyCard.style.display = strat ? '' : 'none';
+            if (strat) {
+                const best = strat.best;
+                const sets = best.compounds.map((c, i) => `${c[0]}${best.stint_laps[i]}`).join(' → ');
+                const box = best.pit_laps.length ? `BOX L${best.pit_laps.join(', L')}` : 'NO STOP';
+                const rows = [`<div class="gap-item">
+                    <span class="gap-label">${best.stops}-STOP ${sets}</span>
+                    <span class="gap-val">${box}</span>
+                </div>`];
+                (strat.alternatives || []).forEach(o => rows.push(`<div class="gap-item threat-low">
+                    <span class="gap-label">${o.stops}-STOP</span>
+                    <span class="gap-val">+${o.slower_by_s.toFixed(1)}s</span>
+                </div>`));
+                const uc = strat.undercut_on_car_ahead;
+                if (uc) {
+                    rows.push(`<div class="gap-item ${uc.works ? 'threat-high' : 'threat-low'}">
+                        <span class="gap-label">UNDERCUT ${uc.gain_s.toFixed(1)}s vs GAP ${uc.gap_s.toFixed(1)}s</span>
+                        <span class="gap-val">${uc.works ? 'ON' : 'OFF'}</span>
+                    </div>`);
+                }
+                if (strat.last_call) {
+                    rows.push(`<div class="gap-item threat-medium">
+                        <span class="gap-label">L${strat.last_call.lap ?? '-'} ${strat.last_call.kind.toUpperCase()}</span>
+                        <span class="gap-val">${strat.last_call.message}</span>
+                    </div>`);
+                }
+                strategyList.innerHTML = rows.join('');
+            }
+        }
+
         // Race Control feed (newest first)
         const raceControlCard = document.getElementById('raceControlCard');
         const raceControlList = document.getElementById('raceControlList');
