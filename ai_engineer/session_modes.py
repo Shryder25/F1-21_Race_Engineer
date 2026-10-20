@@ -48,8 +48,8 @@ def has_race_pace(mode: str) -> bool:
 def welcome_line(mode: str, track: str) -> str:
     """Opening radio call tailored to what the driver is about to do."""
     return {
-        RACE: f'Engineer online. {track}, race. Gaps, pit window and race pace are live. Let\'s go.',
-        QUALIFYING: f'Engineer online. {track}, qualifying. Deltas and sector splits are live. Build the lap.',
-        PRACTICE: f'Engineer online. {track}, free practice. Tyre wear and lap deltas are live. Let\'s learn the car.',
-        TIME_TRIAL: f'Engineer online. {track}, time trial. Chase your personal best, delta is live.',
-    }.get(mode, f'Engineer online. Welcome to {track}. Braking points and live delta tracker online. Let\'s go.')
+        RACE: f"Radio check. {track}, race day. I'll keep you posted on gaps, pace and the pit window. Let's have a good one.",
+        QUALIFYING: f'Radio check. {track}, qualifying. Deltas and sectors are live. Build up to it, one good lap.',
+        PRACTICE: f'Radio check. {track}, free practice. Tyre wear and lap deltas are live. Let\'s learn the car.',
+        TIME_TRIAL: f'Radio check. {track}, time trial. Delta to your best is live. Chase it down.',
+    }.get(mode, f'Radio check. Welcome to {track}. Braking points and live delta are on. Let\'s go.')

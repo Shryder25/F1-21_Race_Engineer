@@ -147,7 +147,7 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
         # simulating sensor noise rather than genuine sustained overheating.
         self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 5), self.lap)
         self.engine.analyze_tyres(self.make_telemetry(95), self.lap)
-        critical_alerts = [m for m, p, kw in self.engine.voice.messages if 'Critical' in m]
+        critical_alerts = [m for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature')]
         # A single-sample spike without a sustained rise should not be enough on its own
         # given how little real time elapses between calls in a direct unit-test call
         # pattern (dt is effectively 0 between back-to-back calls => huge, instant
@@ -165,14 +165,14 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             for temp in (100, 105, 110, 115, TYRE_TEMP_CRITICAL + 3):
                 self.engine.analyze_tyres(self.make_telemetry(temp), self.lap)
                 clock['t'] += 1.0
-            first_count = sum(1 for m, p, kw in self.engine.voice.messages if 'Critical' in m)
+            first_count = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
             self.assertGreaterEqual(first_count, 1, 'a genuinely rising critical temperature should alert')
 
             # Immediately after, still critical and still rising slightly -- within the
             # cooldown window, so it must not alert again.
             self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 4), self.lap)
             clock['t'] += 1.0
-            second_count = sum(1 for m, p, kw in self.engine.voice.messages if 'Critical' in m)
+            second_count = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
             self.assertEqual(second_count, first_count, 'critical alert must respect its cooldown')
 
             # After the cooldown has elapsed, cool off, then have the tyre spike fast and
@@ -182,7 +182,7 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             self.engine.analyze_tyres(self.make_telemetry(90), self.lap)
             clock['t'] += 1.0  # total 40s since the first critical alert: cooldown elapsed
             self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 10), self.lap)
-            third_count = sum(1 for m, p, kw in self.engine.voice.messages if 'Critical' in m)
+            third_count = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
             self.assertGreater(third_count, second_count, 'a new critical event after cooldown should alert again')
         finally:
             time_module.time = real_time
@@ -196,7 +196,7 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             for temp in (100, 108, 116, TYRE_TEMP_CRITICAL + 2):
                 self.engine.analyze_tyres(self.make_telemetry(temp), self.lap)
                 clock['t'] += 1.0
-            alerts_after_climb = sum(1 for m, p, kw in self.engine.voice.messages if 'Critical' in m)
+            alerts_after_climb = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
             self.assertGreaterEqual(alerts_after_climb, 1)
 
             # Temperature falls slowly back toward normal: rate of change goes negative,
@@ -205,7 +205,7 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             for temp in (TYRE_TEMP_CRITICAL + 1, TYRE_TEMP_CRITICAL - 1, 108, 100):
                 self.engine.analyze_tyres(self.make_telemetry(temp), self.lap)
                 clock['t'] += 1.0
-            alerts_after_cooldown = sum(1 for m, p, kw in self.engine.voice.messages if 'Critical' in m)
+            alerts_after_cooldown = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
             self.assertEqual(alerts_after_cooldown, alerts_after_climb)
         finally:
             time_module.time = real_time

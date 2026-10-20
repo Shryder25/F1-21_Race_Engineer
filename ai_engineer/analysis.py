@@ -23,7 +23,7 @@ import session_modes
 from voice_engine import VoiceEngine, Priority
 from history import TelemetryHistory
 from race_radio import RaceRadio
-from race_events import RaceControl
+import radio_phrases as say
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
 
@@ -128,7 +128,7 @@ class AnalysisEngine:
         self.session_mode = session_modes.UNKNOWN
         self._corner_key: tuple | None = None
         self.radio = RaceRadio(self.speak)
-        self.race_control = RaceControl(self.speak)
+        self.phrases = self.radio.phrases
         self.history = history
         self.capture_id: str | None = None
         self.session_uid: int | None = None
@@ -350,9 +350,11 @@ class AnalysisEngine:
                 self.tyre_state.cold_since[i] = 0.0
 
         if critical_wheels and now - self.tyre_state.last_critical_alert_time >= TYRE_TEMP_ALERT_COOLDOWN_SECS:
-            names = " and ".join(w[0] for w in critical_wheels)
+            names = " and ".join(w[0].lower() for w in critical_wheels)
+            verb = "is" if len(critical_wheels) == 1 else "are"
             self.speak(
-                f"Critical! {names} overheating at {critical_wheels[0][1]} degrees! Manage your tyres!",
+                f"Careful, {names} {verb} overheating, {say.number_words(int(critical_wheels[0][1]))} degrees. "
+                f"Cool it down, lift and coast into the next braking zone.",
                 Priority.CRITICAL, key='tyre_temperature', ttl=5, cooldown=25
             )
             self.tyre_state.last_critical_alert_time = now
@@ -366,13 +368,16 @@ class AnalysisEngine:
             fronts = [w for w in hot_wheels if "Front" in w[0]]
             rears = [w for w in hot_wheels if "Rear" in w[0]]
             if fronts and rears:
-                self.speak(f"All tyres running hot above {TYRE_TEMP_HIGH} degrees. Manage entry speeds.", Priority.NORMAL)
+                self.speak("Tyres are running hot all round. Back off for a couple of corners "
+                           "and let them recover.", Priority.NORMAL)
             elif fronts:
                 avg = sum(w[1] for w in fronts) // len(fronts)
-                self.speak(f"Front tyres overheating at {avg} degrees. Ease off entry steering angle.", Priority.NORMAL)
+                self.speak(f"Fronts are getting hot, {say.number_words(int(avg))}. Be gentle on turn-in.",
+                           Priority.NORMAL)
             elif rears:
                 avg = sum(w[1] for w in rears) // len(rears)
-                self.speak(f"Rear tyres overheating at {avg} degrees. Smooth throttle on corner exit.", Priority.NORMAL)
+                self.speak(f"Rears are getting hot, {say.number_words(int(avg))}. Smooth on the throttle "
+                           f"out of the slow corners.", Priority.NORMAL)
             self.tyre_state.last_alert_time = now
 
     # ──────────────────────────────────────────
@@ -573,12 +578,14 @@ class AnalysisEngine:
                 # Voice delta callout periodically
                 if now - self.delta.last_delta_report_time >= DELTA_REPORT_INTERVAL:
                     self.delta.last_delta_report_time = now
-                    delta_s = abs(delta_ms) / 1000.0
+                    amount = say.time_amount(delta_ms / 1000.0)
                     if delta_ms < -100:
-                        self.speak(f"Minus {delta_s:.1f} seconds to your best. Strong pace.", Priority.LOW,
-                                   key='live_delta', ttl=6, cooldown=14)
+                        self.speak(self.phrases.pick('delta_up', (
+                            f"{amount.capitalize()} up on your best. Keep it going.",
+                            f"You're {amount} up, good lap so far.",
+                        )), Priority.LOW, key='live_delta', ttl=6, cooldown=14)
                     elif delta_ms > 150:
-                        self.speak(f"Plus {delta_s:.1f} seconds to your best.", Priority.LOW,
+                        self.speak(f"{amount.capitalize()} down on your best.", Priority.LOW,
                                    key='live_delta', ttl=6, cooldown=14)
 
     def _on_sector_change(self, lap: LapData):
@@ -631,9 +638,7 @@ class AnalysisEngine:
             self.radio.completed_lap(last_ms, prev_lap_num, sectors, self.best_sector_times)
             for sector, milliseconds in sectors.items():
                 self.best_sector_times[sector] = min(self.best_sector_times.get(sector, milliseconds), milliseconds)
-            secs = last_ms / 1000.0
-            mins = int(secs // 60)
-            secs_rem = secs % 60
+            spoken = say.lap_time(last_ms)
 
             # Store as best if first completed lap or faster
             is_best = (self.delta.best_lap_time_ms == 0 or last_ms < self.delta.best_lap_time_ms)
@@ -649,11 +654,18 @@ class AnalysisEngine:
                     self.braking_zones_best = list(self.current_lap_braking_zones)
                     self.ers_zones_best = list(self.current_lap_ers_zones)
 
-                self.speak(f"Personal best! {mins} minute {secs_rem:.3f}. New reference lap set.", Priority.TIMING,
+                self.speak(self.phrases.pick('personal_best', (
+                    f"Good lap! {spoken.capitalize()}, that's a personal best.",
+                    f"{spoken.capitalize()}. Personal best, nice job.",
+                )), Priority.TIMING,
                            key='lap_time', ttl=10, cooldown=0)
             else:
                 diff_s = (last_ms - self.delta.best_lap_time_ms) / 1000.0
-                self.speak(f"Lap complete: {mins} {secs_rem:.3f}. Plus {diff_s:.2f} seconds to your best.", Priority.TIMING,
+                if diff_s < 0.15:
+                    message = f"{spoken.capitalize()}. Just {say.time_amount(diff_s)} off your best."
+                else:
+                    message = f"{spoken.capitalize()}. {say.time_amount(diff_s).capitalize()} off your best."
+                self.speak(message, Priority.TIMING,
                            key='lap_time', ttl=10, cooldown=0)
 
         self.lap_start_fuel = self.latest_status.fuel_in_tank if self.latest_status else None
