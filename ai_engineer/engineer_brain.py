@@ -90,6 +90,14 @@ def format_context(ctx: dict) -> str:
         else ctx.get('lap'))
     add('Position', ctx.get('position'))
     add('Weather', ctx.get('weather'))
+    conditions = ctx.get('track_conditions')
+    if conditions:
+        add('Track wetness (0 dry, 1 standing water; from weather and lap times by tyre type)', (
+            f"{conditions['wetness']} +/- {conditions['sd']}, {conditions['trend']}, quickest tyre "
+            f"{conditions['best_tyre']}" + (f", switch to {conditions['switch_to']} in "
+                                            f"{conditions['switch_in_laps']} laps" if conditions.get('switch_to') else '')
+            + f"; basis: {conditions['basis']}"
+            + (''.join(f"; forecast +{f['in_min']} min rain {f['rain_pct']}%" for f in conditions['forecast_rain'][:4]))))
     add('Track temp C', ctx.get('track_temp_c'))
     add('Air temp C', ctx.get('air_temp_c'))
     add('Safety car out', ctx.get('safety_car') or None)
@@ -261,8 +269,12 @@ def rule_based_answer(command: str, ctx: dict) -> str:
     if command == 'weather':
         if not ctx.get('weather'):
             return 'No weather data yet.'
-        return (f"{ctx['weather'].capitalize()}. Track {ctx.get('track_temp_c')} degrees, "
+        text = (f"{ctx['weather'].capitalize()}. Track {ctx.get('track_temp_c')} degrees, "
                 f"air {ctx.get('air_temp_c')}.")
+        conditions = ctx.get('track_conditions')
+        if conditions and conditions.get('radio'):
+            text += ' ' + conditions['radio']
+        return text
     if command in ('gap_ahead', 'gap_behind'):
         side = 'ahead' if command == 'gap_ahead' else 'behind'
         gap = ctx.get(f'gap_{side}_s')

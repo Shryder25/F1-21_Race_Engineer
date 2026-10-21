@@ -75,10 +75,43 @@ re-runs are spaced at least 3 s apart so a pit cascade doesn't queue one per car
   Plan B. Box this lap for hards. Box, box. Gains about 8 seconds."* The HUD strategy card shows
   it on top for two laps, plus Plan A and any alternative the engine is watching.
 
-When it is raining at the start of a run, every run is wet from the lap in progress and the
-player's plan decides whether we box for inters (a plan that stays on slicks pays the wet
-penalty); rivals still react on their own. A track drying out is not modelled yet (inters pay
-nothing on a dry track), so drying is only a routine re-run, never a forced Plan B.
+### Wet and drying tracks (`track_wetness.py`)
+
+F1 2021 doesn't send how wet the track is, so the engineer estimates it the way a pit wall does:
+
+* **Physics.** Rain soaks the track towards a level set by the rain (light 0.5, heavy 0.8,
+  storm 0.95 on a 0-1 scale, about 3 minutes to get most of the way). Once it stops, the track
+  dries at about 0.03 per minute at 30 C track temperature, faster when it's hotter (+3%/C) or
+  sunny, slower under cloud. A track can only get wetter while it rains.
+* **The game's forecast** (session packet, rain chance per sample, now parsed into
+  `SessionData.weather_forecast`) sets the rain in each simulated race: one draw per run, so a
+  run that gets the shower keeps it for as long as the forecast does. With no forecast, a shower
+  falling now lasts about 20 minutes on average, and new rain uses the track's rain chance.
+* **Lap times as the sensor.** When cars on slicks and on inters (or inters and wets) lap at the
+  same time, the gap between them pins the wetness down. With one tyre type out, each car's
+  lap is compared with its own earlier dry laps (fuel-corrected). Each reading is a Bayesian
+  update on a grid, and without rain it can only make the track drier than the physics says
+  (a dry line), never wetter.
+
+Lap-time cost per tyre type against wetness (a 90 s lap, scaled to the track):
+
+| wetness | 0.0 | 0.1 | 0.2 | 0.3 | 0.5 | 0.7 | 0.85 | 1.0 |
+|---|---|---|---|---|---|---|---|---|
+| slicks | 0 | 1.8 | 4.5 | 9 | 18 | 28 | 34 | 44 |
+| inters | 4 | 4 | 4.5 | 5.5 | 8.5 | 13 | 18 | 24 |
+| wets | 8 | 8 | 8.5 | 9 | 11 | 13 | 16 | 19 |
+
+So slicks and inters cross at 20% wet, and inters and wets at 70%. Inters below 15% wet and wets
+below 35% also overheat and wear three times faster. In the simulator each car (rivals, and us
+after a shower the plan couldn't foresee) changes tyre type once the other type is quicker by its
+own threshold (about 1.2 s/lap, drawn per car and run, so some gamble early), if the laps left
+pay for the stop. Our own changes otherwise follow the plan, and the re-planner offers plans that
+switch a lap before, at, and two laps after the expected crossover. Passing the crossover, or any
+car changing tyre type ("first car on slicks"), triggers an immediate re-run.
+
+**What would make this match the game exactly:** the table and the drying rate are estimates.
+Recordings of real F1 2021 wet races would let both be fitted, the same way `tools/fit_models.py`
+fits tyre wear.
 
 Cost: about 0.1-0.2 s per re-run on the 20-car golden replays, about 0.5 s for a 20-car
 field with six plans in the unit test, all on the simulator's own thread. The HUD only gets a

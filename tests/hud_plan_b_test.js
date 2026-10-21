@@ -63,6 +63,14 @@ vm.runInContext(source, context);
     html = element('strategyList').innerHTML;
     assert.match(html, /plan-b-call[\s\S]*PLAN B · L22[\s\S]*Box this lap for hards/);
     assert.ok(html.indexOf('PLAN B') < html.indexOf('PLAN A'));
+    snapshot.race_strategy.conditions = { wetness: 0.31, sd: 0.05, trend: 'drying', best_tyre: 'inter',
+        switch_to: 'slick', switch_in_laps: 3 };
+    await vm.runInContext('fetchTelemetry()', context);
+    assert.match(element('strategyList').innerHTML, /TRACK 31% WET · DRYING[\s\S]*SLICKS ~3 LAPS/);
+    snapshot.race_strategy.conditions = { ...snapshot.race_strategy.conditions, switch_in_laps: 0 };
+    await vm.runInContext('fetchTelemetry()', context);
+    assert.match(element('strategyList').innerHTML, /threat-medium[\s\S]*SLICKS NOW/);
+    snapshot.race_strategy.conditions = null;
     snapshot.race_strategy.replan = null;
     await vm.runInContext('fetchTelemetry()', context);
     html = element('strategyList').innerHTML;

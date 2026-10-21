@@ -35,8 +35,11 @@ numbers), so plans are compared under the same Safety Cars, the same slow stops 
 same rival form; the difference between them is the plan, not the dice.
 
 Simplifications, all marked where they live: no retirements, Safety Car bunching is
-instant, rain arrives once and stays (if it is raining already, every run is wet from the
-lap in progress and the player's plan decides whether we box for inters), blue flags are implicit (lapped cars never interact
+instant. Rain follows the game's forecast (or, without one, the track profile's
+rain chance and an average shower length); the track soaks and dries per track_wetness.py,
+each tyre type pays its lap-time cost for the wetness, and rivals change tyre type at the
+crossover. The player's plan decides our own tyre changes, except after a shower the plan
+could not foresee, blue flags are implicit (lapped cars never interact
 with the leaders), VSC chance is a fixed share of the SC chance. The constants are
 educated estimates; recordings of real F1 2021 races (tools/fit_models.py,
 tools/backtest.py) are what will sharpen the tyre/fuel inputs, and the SC/overtaking
@@ -59,6 +62,7 @@ import fitted_models as fm
 import race_strategy as rs
 from physics_models import _compound_params
 from track_profiles import get_profile
+import track_wetness as tw
 
 COMPOUNDS = ('SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET')
 _CI = {c: i for i, c in enumerate(COMPOUNDS)}
@@ -106,9 +110,17 @@ POSITION_PACE_STEP_S = 0.08          # guessed pace step per position when a car
 DEFAULT_LAP_S = 90.0
 LAP_NOISE_RANGE_S = (0.15, 0.6)
 
-# ── Rain ──
-RAIN_SLICK_PENALTY_S = 7.0           # per lap on slicks once it is properly wet
-RAIN_REACTION_MAX_LAPS = 1           # cars box for inters 0 or 1 lap after the rain arrives
+# ── Rain, wetness and the tyre crossover (track_wetness.py has the lap-time table) ──
+RAIN_MEAN_DURATION_MIN = 20.0        # no forecast: a shower that is falling now lasts this long on average
+HEAVY_SHOWER_SHARE = 0.3             # no forecast: share of new showers that are heavy rain
+DRY_RATE_RUN_SD = 0.3                # per-run spread (log) of how fast the track dries
+WETNESS_START_SD_RAINING = 0.15      # no live estimate: how unsure the starting wetness is in the rain
+REACT_GAIN_S = 1.2                   # a car changes tyre type once the other type is this much quicker
+REACT_GAIN_SD_S = 0.5                # (per car and run: some gamble early, some wait)
+REACT_GAIN_RANGE_S = (0.3, 3.0)
+WRONG_TYRE_S = 1.0                   # a planned stop onto a tyre this much slower than the best is changed
+WET_TYRE_DRY_DEG_MULT = 3.0          # inters below 15% wet, full wets below 35%, overheat and wear this much faster
+FAM_IDX = np.array([0, 0, 0, 1, 2])  # COMPOUNDS -> tyre family (slick, inter, wet)
 
 
 # ──────────────────────────────────────────────
@@ -141,6 +153,14 @@ class RaceState:
     raining: bool = False
     track_length: int | None = None
     allocation: dict = field(default_factory=lambda: dict(DEFAULT_ALLOCATION))
+    # Conditions (track_wetness.py): live wetness estimate and its sd, weather code now, track
+    # temperature, the game's forecast (WeatherSample-like) and the dry lap time. None/() = unknown.
+    wetness: float | None = None
+    wetness_sd: float = 0.05
+    weather: int | None = None
+    track_temp: float = 30.0
+    forecast: tuple = ()
+    lap_s: float | None = None
 
     @property
     def laps_to_go(self) -> int:
@@ -443,20 +463,105 @@ class RaceSimulator:
         self.fuel0 = np.array([c.fuel_kg if c.fuel_kg else self.fuel_mu * st.laps_to_go + 1.0
                                for c in self.cars])
         self.status = self._neutralisations()
-        p_rain = 0.0
-        if rain and not st.raining and st.total_laps > 0:
-            p_rain = float(self.profile.get('rain_probability', 0.0)) * st.laps_to_go / st.total_laps
-        self.p_rain_input = 1.0 if st.raining else p_rain
-        rains = rng.random(R) < p_rain
-        self.rain_at = np.where(rains, rng.integers(0, max(L, 1), R), -1)
-        if st.raining:                   # wet already: every run is wet from the lap in progress
-            self.rain_at[:] = 0
-        self.rain_reaction = rng.integers(0, RAIN_REACTION_MAX_LAPS + 1, (R, N))
+        self._conditions(rain)
         self.rival_laps, self.rival_comps = self._rival_plans()
         self.gap0 = np.array([c.gap_s for c in self.cars], float)
         self.age0 = np.array([c.tyre_age for c in self.cars], float)
         self.comp0 = np.array([_CI.get(rs.normalise_compound(c.compound) or 'MEDIUM', 1) for c in self.cars])
         self.thr = PASS_THRESHOLD_S.get(min(max(self.overtaking, 1), 5), 0.9)
+
+    def _weather_timeline(self, rain: bool) -> np.ndarray:
+        """(R, L) weather code per lap and run: 0-2 dry, 3 light rain, 4 heavy, 5 storm."""
+        R, L, rng, st = self.runs, len(self.laps), self.rng, self.state
+        now = st.weather if st.weather is not None else (3 if st.raining else 1)
+        if st.raining:
+            now = max(now, 3)
+        elif now >= 3:
+            now = 2
+        code = np.full((R, L), now, dtype=np.int8)
+        if not rain or L <= 1:
+            return code
+        lap_min = self.lap_s / 60.0
+        forecast = [s for s in (st.forecast or ()) if getattr(s, 'offset_min', None) is not None]
+        if forecast:
+            # The game's forecast: one draw per run, so a run that gets the shower keeps it
+            # for as long as the forecast keeps the chance up (rain chance is coherent in time).
+            u = rng.random(R)
+            for li in range(1, L):
+                t = li * lap_min
+                sample = None
+                for s_ in forecast:
+                    if s_.offset_min <= t + 1e-9:
+                        sample = s_
+                if sample is None:
+                    continue
+                wet = u < tw.rain_probability(sample)
+                code[:, li] = np.where(wet, max(sample.weather, 3), min(sample.weather, 2))
+            return code
+        if st.raining:
+            # No forecast: the shower stops after an exponential time, and the sky stays overcast.
+            stop_min = rng.exponential(RAIN_MEAN_DURATION_MIN, R)
+            stop_li = np.ceil(stop_min / lap_min).astype(np.int64)
+            code = np.where(np.arange(L)[None, :] >= stop_li[:, None], 2, code).astype(np.int8)
+            return code
+        p_rain = 0.0
+        if st.total_laps > 0:
+            p_rain = float(self.profile.get('rain_probability', 0.0)) * st.laps_to_go / st.total_laps
+        rains = rng.random(R) < p_rain
+        start = rng.integers(0, max(L, 1), R)
+        heavy = rng.random(R) < HEAVY_SHOWER_SHARE
+        shower = np.where(heavy, 4, 3)
+        on = rains[:, None] & (np.arange(L)[None, :] >= start[:, None])
+        return np.where(on, shower[:, None], code).astype(np.int8)
+
+    def _conditions(self, rain: bool):
+        """Wetness per run and lap, each tyre family's lap-time cost on it, and who reacts."""
+        R, N, L, rng, st = self.runs, self.n, len(self.laps), self.rng, self.state
+        self.lap_s = float(st.lap_s or self.base_ref)
+        code = self._weather_timeline(rain)
+        if st.wetness is not None:
+            w = np.clip(st.wetness + rng.normal(0, 1, R) * max(st.wetness_sd, 0.0), 0.0, 1.0)
+        elif st.raining:
+            target = tw.WET_TARGET.get(int(code[0, 0]), 0.5)
+            w = np.clip(target + rng.normal(0, 1, R) * WETNESS_START_SD_RAINING, 0.0, 1.0)
+        else:
+            w = np.zeros(R)
+        dry_mult = np.exp(rng.normal(0, DRY_RATE_RUN_SD, R))
+        lap_min = self.lap_s / 60.0
+        temp = st.track_temp if st.track_temp is not None else 30.0
+        rate = {c: tw.dry_rate_per_min(temp, c) for c in range(6)}
+        W = np.zeros((R, L))
+        for li in range(L):
+            W[:, li] = w
+            c = code[:, li]
+            target = np.array([tw.WET_TARGET.get(int(k), 0.0) for k in range(6)])[c]
+            soak = w + (target - w) * (1.0 - math.exp(-lap_min / tw.RAIN_TAU_MIN))
+            drain = np.maximum(target, w - 0.5 * rate[2] * dry_mult * lap_min)
+            dry = np.maximum(0.0, w - np.array([rate[k] for k in range(6)])[c] * dry_mult * lap_min)
+            w = np.where(c >= 3, np.where(w < target, soak, drain), dry)
+        self.W = W
+        self.weather_code = code
+        self.pen = np.stack([tw.penalty(f, W, self.lap_s) for f in tw.FAMILIES])      # (3, R, L)
+        wet_lap = code >= 3
+        self.rain_at = np.where(wet_lap.any(axis=1), wet_lap.argmax(axis=1), -1)
+        self.p_rain_input = float(wet_lap.any(axis=1).mean())
+        # The player follows the plan, except after a shower that arrives during the run (one the
+        # plan could not know about): from then on we react like everyone else.
+        new_shower = np.zeros((R, L), dtype=bool)
+        new_shower[:, 1:] = wet_lap[:, 1:] & ~wet_lap[:, :-1]
+        self.player_reacts = np.cumsum(new_shower, axis=1) > 0
+        scale = self.lap_s / tw.REFERENCE_LAP_S
+        self.react_thr = np.clip(REACT_GAIN_S + rng.normal(0, 1, (R, N)) * REACT_GAIN_SD_S,
+                                 *REACT_GAIN_RANGE_S) * scale
+        # Which slick to fit when the track is ready, by laps left (the longest-lasting set that
+        # still has pace: softs for a sprint to the flag, else mediums, else hards).
+        self.dry_life = {name: self.life_mu[_CI[name]] for name in ('SOFT', 'MEDIUM', 'HARD')}
+
+    def _dry_choice(self, laps_left: int) -> int:
+        for name in ('SOFT', 'MEDIUM'):
+            if laps_left <= 0.9 * self.dry_life[name]:
+                return _CI[name]
+        return _CI['HARD']
 
     # ── one plan through every run ──
     def _simulate(self, candidate: Candidate) -> np.ndarray:
@@ -478,7 +583,9 @@ class RaceSimulator:
         out_lap = np.zeros((R, N), dtype=bool)
         fuel = np.broadcast_to(self.fuel0, (R, N)).copy()
         prev_status = np.full(R, self.state.safety_car if self.state.safety_car in (1, 2) else 0)
-        rain_done = np.zeros((R, N), dtype=bool)
+        rivals = np.ones(N, dtype=bool)
+        rivals[p] = False
+        fam_idx = FAM_IDX
         base = self.base[None, :] + self.form
         # Per-stint tyre draws, looked up by compound at use.
         r_idx = rows[:, None]
@@ -490,7 +597,12 @@ class RaceSimulator:
             neutral = sc | vsc
             new_neutral = neutral & (prev_status == 0)
             prev_status = status
-            raining = (self.rain_at >= 0) & (li >= self.rain_at)
+            pen_l = self.pen[:, :, li].T                                   # (R, 3)
+            fam = fam_idx[comp]
+            cur_pen = np.take_along_axis(pen_l, fam, 1)
+            best_pen = pen_l.min(axis=1)
+            best_f = pen_l.argmin(axis=1)
+            laps_left = self.state.total_laps - lapnum
 
             # ── who boxes at the end of this lap ──
             has_next = nxt < S
@@ -498,15 +610,21 @@ class RaceSimulator:
             planned = pending == lapnum
             early = new_neutral[:, None] & (pending > lapnum) & (pending - lapnum <= SC_PIT_WINDOW_LAPS) \
                 & (lapnum < self.laps[-1])
-            on_wets = np.isin(comp, WET_IDX)
-            rain_pit = raining[:, None] & ~on_wets & ~rain_done & (li >= self.rain_at[:, None] + self.rain_reaction)
-            if self.state.raining:
-                # Raining now: the player's plan says whether we box for inters (a plan that
-                # stays on slicks pays for it), so only the rivals react on their own.
-                rain_pit[:, p] = False
-            pit = (planned | early | rain_pit) & (lapnum < self.state.total_laps)
+            # Conditions: a car whose tyre type is clearly slower than the best one on this
+            # surface changes (its own threshold: some gamble early, some wait), if the laps
+            # left repay the stop. The player only does so after an unforeseen shower.
+            gain = cur_pen - best_pen[:, None]
+            adapts = np.broadcast_to(rivals[None, :], (R, N)).copy()
+            adapts[:, p] = self.player_reacts[:, li]
+            cond = (adapts & (gain >= self.react_thr) & (gain * laps_left > self.pit_loss_mean)
+                    & (laps_left >= 2) & ~out_lap)
+            pit = (planned | early | cond) & (lapnum < self.state.total_laps)
             next_set = np.take_along_axis(stop_comp, np.minimum(nxt, S - 1)[..., None], 2)[..., 0]
-            new_comp = np.where(rain_pit, _CI['INTERMEDIATE'], next_set)
+            cond_comp = np.where(best_f == 0, self._dry_choice(laps_left),
+                                 np.where(best_f == 1, _CI['INTERMEDIATE'], _CI['WET']))[:, None]
+            wrong = (np.take_along_axis(pen_l, fam_idx[next_set], 1) - best_pen[:, None]) > WRONG_TYRE_S * (
+                self.lap_s / tw.REFERENCE_LAP_S)
+            new_comp = np.where(cond | (pit & wrong & adapts), cond_comp, next_set)
 
             # ── lap times ──
             k = np.minimum(stint, self.z_slope.shape[2] - 1)
@@ -517,11 +635,14 @@ class RaceSimulator:
                 first_stint = stint[:, p] == 0
                 slope[:, p] = np.where(first_stint, self.player_deg[0] + self.player_deg[1] * zs[:, p], slope[:, p])
             slope = np.maximum(slope, 0.0) * self.slope_mult[None, :]
+            W_l = self.W[:, li][:, None]
+            overheat = ((fam == 1) & (W_l < 0.15)) | ((fam == 2) & (W_l < 0.35))
+            slope = np.where(overheat, slope * WET_TYRE_DRY_DEG_MULT, slope)
             life = self.life_mu[comp] * self.life_mult[None, :] * np.exp(self.life_rel_sd[comp] * zl)
             past = np.maximum(age - life, 0.0)
             tyre = self.offset[comp] + slope * age + rs.CLIFF_RATE * past * past + out_lap * rs.OUT_LAP_WARMUP_S
             lt = base + tyre + fm.FUEL_EFFECT_S_PER_KG * fuel + self.noise[:, li, :]
-            lt = lt + np.where(raining[:, None] & ~on_wets, RAIN_SLICK_PENALTY_S, 0.0)
+            lt = lt + cur_pen
             neutral_lt = np.where(sc, self.base_ref * SC_LAP_FACTOR, self.base_ref * VSC_LAP_FACTOR)
             lt = np.where(neutral[:, None], neutral_lt[:, None], lt)
 
@@ -551,15 +672,15 @@ class RaceSimulator:
             T = T_new + pit * self.pit_loss[:, li, :] * factor[:, None]
 
             # ── after the line ──
-            consumed = pit & ~rain_pit
+            consumed = pit & ~cond
             nxt = nxt + consumed
-            nxt = np.where(rain_pit, S, nxt)            # once on inters for the rain, no more planned stops
-            rain_done |= rain_pit
+            nxt = np.where(cond, S, nxt)                # a tyre-type change replaces the dry stop plan
             comp = np.where(pit, new_comp, comp)
             stint = stint + pit
             age = np.where(pit, 0.0, age + 1.0)
             out_lap = pit
             fuel = np.maximum(fuel - self.burn, 0.0)
+        self.last_compounds = comp            # every car's tyre at the flag (for checks and tests)
         return T
 
     def _resolve_traffic(self, T_start, T_new, order, pit, green, li):
@@ -809,7 +930,7 @@ class FieldTracker:
 
 def build_state(laps, statuses, player_index: int, session, tracker: FieldTracker,
                 names: dict | None = None, predictions: dict | None = None,
-                models: fm.ModelStore | None = None) -> RaceState | None:
+                models: fm.ModelStore | None = None, conditions: dict | None = None) -> RaceState | None:
     """RaceState from the latest Lap Data / Car Status packets and the field tracker."""
     if session is None or not laps or player_index >= len(laps):
         return None
@@ -842,7 +963,7 @@ def build_state(laps, statuses, player_index: int, session, tracker: FieldTracke
         return None
     return RaceState(session.track_id, session.total_laps, me.current_lap_num, cars,
                      session.safety_car_status if session.safety_car_status in (1, 2) else 0,
-                     session.weather >= 3, session.track_length, alloc)
+                     session.weather >= 3, session.track_length, alloc, **(conditions or {}))
 
 
 class SimRunner:

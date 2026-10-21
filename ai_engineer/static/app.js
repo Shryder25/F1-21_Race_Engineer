@@ -980,6 +980,18 @@ async function fetchTelemetry() {
                         <span class="gap-val">${rp.last_call.message}</span>
                     </div>`);
                 }
+                // Track wetness: how wet, which way it is going, and when to change tyre type
+                const cond = strat.conditions;
+                if (cond) {
+                    const words = { slick: 'SLICKS', inter: 'INTERS', wet: 'WETS' };
+                    const sw = cond.switch_to
+                        ? (cond.switch_in_laps === 0 ? `${words[cond.switch_to]} NOW` : `${words[cond.switch_to]} ~${cond.switch_in_laps} LAPS`)
+                        : `${words[cond.best_tyre]} BEST`;
+                    rows.push(`<div class="gap-item ${cond.switch_to && cond.switch_in_laps === 0 ? 'threat-medium' : 'threat-low'}">
+                        <span class="gap-label">TRACK ${Math.round(cond.wetness * 100)}% WET · ${cond.trend.toUpperCase()}</span>
+                        <span class="gap-val">${sw}</span>
+                    </div>`);
+                }
                 if (rp && rp.plan_a) {
                     const a = rp.plan_a;
                     const aBox = a.pit_laps.length ? `BOX L${a.pit_laps.join(', L')}` : 'NO STOP';

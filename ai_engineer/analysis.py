@@ -33,6 +33,7 @@ import rival_strategy
 import fitted_models
 import race_sim
 import strategy_replan
+import track_wetness
 import track_maps
 from session_history import SessionLog, lap_rows, stint_rows
 
@@ -148,6 +149,8 @@ class AnalysisEngine:
         self.field_tracker = race_sim.FieldTracker()
         # Live re-planning on top of the simulator: Plan A, triggers and the Plan B call.
         self.replanner = strategy_replan.Replanner(replan)
+        # How wet the track is and where it is heading: weather physics + the field's lap times.
+        self.wetness = track_wetness.TrackWetness()
         self._last_sim_key = None                # key of the last re-run sent
         self._last_event_submit = -1e9           # monotonic time of the last event-only re-run
         self.field_laps = None
@@ -278,6 +281,7 @@ class AnalysisEngine:
             self.field_laps = None
             self.sim_runner.reset()
             self.replanner.reset()
+            self.wetness.reset()
             self._last_sim_key = None
             self._last_event_submit = -1e9
             self.undercut_calls.clear()
@@ -332,6 +336,8 @@ class AnalysisEngine:
             self._change_conditions(session)
             self.weather_group = weather_group
         self.session = session
+        self.wetness.update_weather(session.weather, session.track_temperature, time.monotonic(),
+                                    getattr(session, 'weather_forecast', ()))
         self.radio.session = session
         self.race_control.session = session
         self.track_id = session.track_id
@@ -997,7 +1003,11 @@ class AnalysisEngine:
         clean-lap pace for the race simulator."""
         self.rivals.update_laps(laps, player_index)
         self.field_laps, self.player_index = laps, player_index
-        if self.session is None or self.session_mode != session_modes.RACE:
+        if self.session is None:
+            return
+        self.wetness.observe_field(laps, self.all_status, time.monotonic(),
+                                   neutralised=self.session.safety_car_status in (1, 2))
+        if self.session_mode != session_modes.RACE:
             return
         self.field_tracker.update(laps, session_time, self.all_status,
                                   neutralised=self.session.safety_car_status in (1, 2))
@@ -1560,8 +1570,14 @@ class AnalysisEngine:
             except Exception:                 # a broken rival model must not stop the sim
                 predictions = None
         names = {i: self.radio.driver_name(i) for i in range(len(laps))}
+        w = self.wetness
+        conditions = None if w.wetness is None else {
+            'wetness': w.wetness, 'wetness_sd': w.sd, 'weather': self.session.weather,
+            'track_temp': self.session.track_temperature,
+            'forecast': tuple(getattr(self.session, 'weather_forecast', ())),
+            'lap_s': w.lap_s if w.dry_laps else None}
         return race_sim.build_state(laps, statuses, index, self.session, self.field_tracker, names,
-                                    predictions, self.fitted)
+                                    predictions, self.fitted, conditions)
 
     def update_race_simulation(self):
         """Re-run the simulation once a lap, and straight away on a Safety Car, VSC, rain or a
@@ -1572,14 +1588,20 @@ class AnalysisEngine:
         if status is None or lap is None or session is None:
             return
         replanner = self.replanner
+        families = None
+        if self.all_status:
+            families = {i: track_wetness.family(st.compound_name) for i, st in enumerate(self.all_status)
+                        if st is not None and (not self.field_laps or i >= len(self.field_laps)
+                                               or self.field_laps[i].result_status == 2)}
+        best = track_wetness.best_family(self.wetness.wetness) if self.wetness.wetness is not None else None
         replanner.observe(lap.current_lap_num, session.safety_car_status, session.weather,
-                          self.field_laps, self.player_index, self.radio.driver_name)
+                          self.field_laps, self.player_index, self.radio.driver_name, best, families)
         self._consider_plan_b()
         if lap.pit_status:
             return
         wet = session.weather >= strategy_replan.WET_WEATHER
         key = (lap.current_lap_num, session.safety_car_status, lap.num_pit_stops, status.compound_name,
-               wet, replanner.events)
+               (wet, replanner.seen_best), replanner.events)
         if key == self.sim_runner.latest_key:
             return
         now = time.monotonic()
@@ -1592,8 +1614,12 @@ class AnalysisEngine:
             return
         replanner.sync_plan_a(plan, lap.current_lap_num, lap.num_pit_stops, status.compound_name,
                               plan.laps_remaining)
+        last_lap = session.total_laps - 1
+        trajectory = self.wetness.trajectory(max(plan.laps_remaining, 1)) if self.wetness.wetness is not None else None
+        if trajectory is not None and max(trajectory) < 0.02 and not wet:
+            trajectory = None               # dry and staying dry: no tyre-type options needed
         candidates = replanner.candidates(plan, lap.current_lap_num, session.safety_car_status in (1, 2),
-                                          wet, status.compound_name)
+                                          wet, status.compound_name, trajectory, last_lap)
         if not candidates:
             return
         state = self.race_sim_state()
@@ -1658,6 +1684,7 @@ class AnalysisEngine:
         lap = self.latest_lap
         replan = self.replanner.summary(lap.current_lap_num if lap else None) if self.sim_runner.enabled else None
         summary['replan'] = replan
+        summary['conditions'] = self.conditions_summary()
         if replan:
             a = replan['plan_a']
             if (a['compounds'], a['pit_laps']) != (plan.best.compounds, plan.best.pit_laps):
@@ -1688,6 +1715,19 @@ class AnalysisEngine:
         if self.session and self.session.pit_stop_rejoin_position:
             summary['game_rejoin_position'] = self.session.pit_stop_rejoin_position
         return summary
+
+    def conditions_summary(self) -> dict | None:
+        """Track wetness, quickest tyre, and when to change tyre type; None on a dry, dry-forecast day."""
+        status = self.latest_status
+        fam = track_wetness.family(status.compound_name) if status else None
+        out = self.wetness.summary(fam)
+        if out is None:
+            return None
+        rain_coming = any(f['rain_pct'] >= 30 or f['weather'] >= 3 for f in out['forecast_rain'])
+        if out['wetness'] < 0.02 and out['trend'] != 'wetting' and not rain_coming and fam != 'inter' and fam != 'wet':
+            return None
+        out['radio'] = self.wetness.radio(fam)
+        return out
 
     def opponent_threats(self) -> list[dict]:
         """Nearby cars ranked by how much pressure they put on the player right now."""
@@ -1760,6 +1800,7 @@ class AnalysisEngine:
         ctx['strategy'] = self.strategy_summary()
         rivals = (ctx['strategy'] or {}).get('rivals')
         ctx['rival_predictions'] = [r['summary'] for r in rivals['nearby']] if rivals and rivals['nearby'] else None
+        ctx['track_conditions'] = self.conditions_summary()
         ctx['recent_race_events'] = [event['text'] for event in self.race_control.recent(5)] or None
         if self.session_lap_stats:
             last = self.session_lap_stats[-1]
