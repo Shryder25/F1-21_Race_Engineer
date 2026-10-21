@@ -218,6 +218,59 @@ class ChannelLoggerTest(unittest.TestCase):
 
 
 @needs_pyarrow
+class FindSessionFileTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def make(self, name, mtime):
+        import os
+        path = self.dir / name
+        log = ChannelLogger(self.dir, clock=lambda: 1_790_000_000.0)
+        drive(log, [build_session_packet(0.0, 1)] + sample(0.1, 2, 10.0) + sample(0.2, 3, 20.0))
+        log.close()
+        log.files[0].rename(path)
+        os.utime(path, (mtime, mtime))
+        return path
+
+    def test_a_folder_means_its_newest_file(self):
+        self.make('old.parquet', 1000)
+        new = self.make('new.parquet', 2000)
+        self.assertEqual(channel_store.find_session_file(self.dir), new)
+        cols, _ = read_session(self.dir)
+        self.assertEqual(len(cols['session_time']), 2)
+
+    def test_the_parquet_extension_is_optional(self):
+        path = self.make('race.parquet', 1000)
+        self.assertEqual(channel_store.find_session_file(self.dir / 'race'), path)
+
+    def test_a_wrong_name_lists_the_files_that_are_there(self):
+        self.make('race.parquet', 1000)
+        with self.assertRaises(ValueError) as caught:
+            channel_store.find_session_file(self.dir / 'THE-FILE-NAME.parquet')
+        self.assertIn('race.parquet', str(caught.exception))
+
+    def test_an_empty_or_missing_folder_says_so(self):
+        with self.assertRaisesRegex(ValueError, 'No .parquet files'):
+            channel_store.find_session_file(self.dir)
+        with self.assertRaisesRegex(ValueError, 'does not exist'):
+            channel_store.find_session_file(self.dir / 'nope' / 'x.parquet')
+        with self.assertRaisesRegex(ValueError, 'no folder called'):
+            channel_store.find_session_file(self.dir / 'channels')
+
+    def test_an_unfinished_file_gets_a_plain_explanation(self):
+        path = self.make('race.parquet', 1000)
+        path.write_bytes(path.read_bytes()[:-8])
+        with self.assertRaisesRegex(ValueError, 'never finished'):
+            read_session(path)
+        with self.assertRaisesRegex(ValueError, 'never finished'):
+            motec.export_session(path)
+
+
+@needs_pyarrow
 class LapAlignmentTest(unittest.TestCase):
     def cols(self):
         # Two laps of a 1000 m track; lap 2 is 10% faster everywhere.

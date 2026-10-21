@@ -75,7 +75,7 @@ python main.py --log-channels channels/                      # log while you dri
 python tools/channels.py build recordings/race.f1rec.gz       # or rebuild from a raw recording
 python tools/channels.py laps channels/<session>.parquet      # lap list: times, clean / pit / invalid
 python tools/channels.py compare channels/<session>.parquet 4 7 --channels speed throttle brake
-python main.py --export-motec channels/<session>.parquet      # writes <session>.ld + .ldx for MoTeC i2
+python main.py --export-motec                                 # newest file in channels/ -> .ld + .ldx for MoTeC i2
 ```
 
 ### Golden-session regression tests

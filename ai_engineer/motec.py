@@ -37,7 +37,8 @@ from xml.sax.saxutils import quoteattr
 
 import numpy as np
 
-from channel_store import CHANNELS, CHANNELS_BY_NAME, lap_summary, read_session, resample
+from channel_store import (CHANNELS, CHANNELS_BY_NAME, find_session_file, lap_summary,
+                           read_session, resample)
 
 HEADER_FMT = '<I4xII20xI24xHHHI8sHHI4x16s16x16s16x64s64s64x64s64x1024xI66x64s126x'
 EVENT_FMT = '<64s64s1024sH'
@@ -236,7 +237,7 @@ def export_session(parquet_path, out_path=None, rate_hz=None, fmt='ld'):
 
     Returns a dict describing what was written.
     """
-    parquet_path = Path(parquet_path)
+    parquet_path = find_session_file(parquet_path)
     cols, meta = read_session(parquet_path)
     if len(cols['session_time']) < 2:
         raise ValueError(f'{parquet_path} has fewer than two samples; nothing to export')
