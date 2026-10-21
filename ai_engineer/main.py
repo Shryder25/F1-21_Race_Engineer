@@ -9,6 +9,8 @@ Usage:
     python main.py --record race.f1rec.gz        # also save every datagram for replay
     python main.py --replay race.f1rec.gz [--replay-speed 1|10|max]   # run from a recording
     python main.py --find-ptt-button             # pick the wheel/controller radio button once
+    python main.py --log-channels channels/      # log every sample per channel to Parquet
+    python main.py --export-motec channels/X.parquet   # write X.ld + X.ldx for MoTeC i2, then exit
 
 Game Setup (F1 2021 Settings → Telemetry):
     UDP Telemetry:  ON
@@ -143,6 +145,22 @@ def print_live_dashboard(telemetry: CarTelemetryData, lap: LapData,
 # Main UDP Listener
 # ──────────────────────────────────────────────
 
+def export_motec(args) -> int:
+    """--export-motec: write a channel-store file out for MoTeC i2 and return an exit code."""
+    try:
+        from motec import export_session
+        result = export_session(args.export_motec, args.motec_out, rate_hz=args.motec_rate,
+                                fmt=args.motec_format)
+    except (OSError, ValueError, RuntimeError) as e:
+        print(f"[ERROR] MoTeC export failed: {e}")
+        return 1
+    print(f"[MoTeC] Wrote {result['path']} ({result['channels']} channels at {result['rate_hz']} Hz, "
+          f"{result['laps']} laps)")
+    if result.get('ldx'):
+        print(f"[MoTeC] Wrote {result['ldx']} (lap markers; keep it next to the .ld)")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="F1 2021 AI Race Engineer")
     parser.add_argument("--port", type=int, default=20777,
@@ -217,9 +235,23 @@ def main():
                      help='Read telemetry from a recording instead of the game')
     rec.add_argument('--replay-speed', type=parse_speed, default=1.0, metavar='SPEED',
                      help='Replay speed: 1 (real time, default), 10, or max (as fast as possible)')
+    ch = parser.add_argument_group('channel data store and MoTeC export (docs/channel-store.md)')
+    ch.add_argument('--log-channels', type=Path, default=None, metavar='DIR',
+                    help='Log every telemetry sample to DIR/<session>.parquet, keyed by lap '
+                         'distance (needs pyarrow). Works live and with --replay')
+    ch.add_argument('--export-motec', type=Path, default=None, metavar='PARQUET',
+                    help='Export a channel file to MoTeC i2 (.ld + .ldx) and exit')
+    ch.add_argument('--motec-out', type=Path, default=None, metavar='FILE',
+                    help='Output path for --export-motec (default: next to the Parquet file)')
+    ch.add_argument('--motec-format', choices=('ld', 'csv'), default='ld',
+                    help='ld (MoTeC i2 log, default) or csv (MoTeC-style CSV)')
+    ch.add_argument('--motec-rate', type=int, default=None, metavar='HZ',
+                    help='Sample rate for the export (default: the rate the game sent)')
     args = parser.parse_args()
     if args.record and args.replay:
         parser.error('--record and --replay cannot be used together')
+    if args.export_motec:
+        sys.exit(export_motec(args))
     if args.find_ptt_button:
         sys.exit(push_to_talk.run_button_finder(args.ptt_mode or push_to_talk.HOLD))
     ptt_settings = None
@@ -301,6 +333,16 @@ def main():
                                            Priority.LOW, key='ai_ready', ttl=15))
             if launcher.start():
                 atexit.register(launcher.shutdown)
+
+    channel_logger = None
+    if args.log_channels:
+        try:
+            from channel_store import ChannelLogger
+            channel_logger = ChannelLogger(
+                args.log_channels, on_file=lambda path: print(f"\n[CHANNELS] Saved {path}"))
+            print(f"[CHANNELS] Logging every sample to {args.log_channels}/")
+        except RuntimeError as e:  # pyarrow missing
+            print(f"[WARN] Channel logging disabled: {e}")
 
     # ─── Set up UDP Socket (or a recording standing in for it) ───
     recorder = None
@@ -400,6 +442,8 @@ def main():
             packets_received += 1
             if recorder:
                 recorder.write(data)
+            if channel_logger:
+                channel_logger.handle(data)
             if not stream.handle(data):
                 if args.debug and stream.last_error:
                     print(f'[DEBUG] Ignored packet: {stream.last_error}')
@@ -442,6 +486,11 @@ def main():
         if recorder:
             recorder.close()
             print(f"[REC] Saved {recorder.count} datagrams to {args.record}")
+        if channel_logger:
+            try:
+                channel_logger.close()
+            except Exception as e:
+                print(f"[CHANNELS] Could not finish the channel file: {e}")
         if listener:
             listener.stop()
         if radio:
