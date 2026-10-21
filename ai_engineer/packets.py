@@ -22,6 +22,7 @@ Packet IDs:
  11 = Session History
 """
 
+import math
 import struct
 from dataclasses import dataclass, field
 from typing import Optional
@@ -494,6 +495,9 @@ class SessionData:
     pit_stop_rejoin_position: int = 0
     # The game's weather forecast for this session: WeatherSample tuples, soonest first.
     weather_forecast: tuple = ()
+    # Marshal zones: (zone_start as a fraction of the lap 0-1, flag) per zone.
+    # Flag: -1 invalid, 0 none, 1 green, 2 blue, 3 yellow, 4 red.
+    marshal_zones: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -532,6 +536,29 @@ def parse_weather_forecast(data: bytes, session_type: int) -> tuple:
     return tuple(sorted(samples, key=lambda w: w.offset_min))
 
 
+# Session packet offsets (after the header) of the marshal zones, F1 2021 spec:
+# numMarshalZones at 18, then 21 zones of (float zoneStart, int8 zoneFlag).
+MARSHAL_ZONE_COUNT_OFFSET = 18
+MARSHAL_ZONE_OFFSET = 19
+MARSHAL_ZONE_FORMAT = '<fb'
+MARSHAL_ZONE_SIZE = struct.calcsize(MARSHAL_ZONE_FORMAT)
+MAX_MARSHAL_ZONES = 21
+
+
+def parse_marshal_zones(data: bytes) -> tuple:
+    """(zone_start, flag) for each marshal zone the game says is in use."""
+    if len(data) < HEADER_SIZE + MARSHAL_ZONE_OFFSET + MARSHAL_ZONE_SIZE * MAX_MARSHAL_ZONES:
+        return ()
+    count = min(data[HEADER_SIZE + MARSHAL_ZONE_COUNT_OFFSET], MAX_MARSHAL_ZONES)
+    zones = []
+    for i in range(count):
+        start, flag = struct.unpack_from(MARSHAL_ZONE_FORMAT, data,
+                                         HEADER_SIZE + MARSHAL_ZONE_OFFSET + i * MARSHAL_ZONE_SIZE)
+        if math.isfinite(start):
+            zones.append((start, flag))
+    return tuple(zones)
+
+
 def parse_session_data(data: bytes) -> SessionData:
     """Parse session data (partial — just the fields we need)."""
     values = struct.unpack_from(SESSION_PARTIAL_FORMAT, data, HEADER_SIZE)
@@ -541,6 +568,7 @@ def parse_session_data(data: bytes) -> SessionData:
         session.game_paused = data[HEADER_SIZE + 14]
         session.is_spectating = data[HEADER_SIZE + 15]
         session.safety_car_status = data[HEADER_SIZE + 124]
+        session.marshal_zones = parse_marshal_zones(data)
         (session.pit_stop_window_ideal_lap, session.pit_stop_window_latest_lap,
          session.pit_stop_rejoin_position) = struct.unpack_from('<BBB', data, HEADER_SIZE + 589)
         session.weather_forecast = parse_weather_forecast(data, session.session_type)

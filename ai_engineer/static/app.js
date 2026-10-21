@@ -913,6 +913,33 @@ async function fetchTelemetry() {
     renderTelemetry(data, null);
 }
 
+const TRACK_STATUS_CLASSES = {
+    RED: 'sc-red', SC: 'sc-full', VSC: 'sc-vsc', FORMATION: 'sc-vsc',
+    YELLOW: 'sc-yellow', BLUE: 'sc-blue', CLEAR: 'sc-none',
+};
+
+// The track status to show; older servers only send the safety_car string.
+function trackStatus(data) {
+    const status = data.track_status;
+    if (status && TRACK_STATUS_CLASSES[status.state]) return status;
+    if (data.safety_car === 'SAFETY CAR') return { state: 'SC', label: 'SAFETY CAR DEPLOYED' };
+    if (data.safety_car === 'VSC') return { state: 'VSC', label: 'VIRTUAL SAFETY CAR' };
+    return { state: 'CLEAR', label: 'TRACK CLEAR' };
+}
+
+// One sector box: this lap's time if driven, otherwise the last lap's (previous: true).
+function sectorSplit(data, s) {
+    const current = (data.current_sectors_ms || {})[s];
+    if (current && current > 0) {
+        return { timeMs: current, bestMs: (data.personal_sectors_ms || {})[s], previous: false };
+    }
+    const last = (data.last_lap_sectors_ms || {})[s];
+    if (last && last > 0) {
+        return { timeMs: last, bestMs: (data.last_lap_sector_refs_ms || {})[s], previous: true };
+    }
+    return null;
+}
+
 // Draw the HUD from a state snapshot. changed: the keys that changed since the last draw
 // (null = draw everything).
 function renderTelemetry(data, changed) {
@@ -975,21 +1002,13 @@ function renderTelemetry(data, changed) {
             el.style.display = visible ? '' : 'none';
         });
 
-        // 3. Safety Car Pill
+        // 3. Track status pill: red flag, SC, VSC, yellow, blue or clear
         const scPill = document.getElementById('safetyCarPill');
         const scText = document.getElementById('safetyCarText');
         if (scPill && scText) {
-            scPill.className = 'safety-car-pill';
-            if (data.safety_car === 'SAFETY CAR') {
-                scPill.classList.add('sc-full');
-                scText.textContent = 'SAFETY CAR DEPLOYED';
-            } else if (data.safety_car === 'VSC') {
-                scPill.classList.add('sc-vsc');
-                scText.textContent = 'VIRTUAL SAFETY CAR';
-            } else {
-                scPill.classList.add('sc-none');
-                scText.textContent = 'TRACK CLEAR';
-            }
+            const status = trackStatus(data);
+            scPill.className = 'safety-car-pill ' + TRACK_STATUS_CLASSES[status.state];
+            scText.textContent = status.label;
         }
 
         // 4. Timing Tower
@@ -1215,24 +1234,22 @@ function renderTelemetry(data, changed) {
             }).join('');
         }
 
-        // Sector Splits (Purple/Green/Yellow)
-        const currentSectors = data.current_sectors_ms || {};
-        const personalSectors = data.personal_sectors_ms || {};
-
+        // Sector Splits (Purple/Green/Yellow). A sector not yet driven this lap shows the
+        // last lap's time (dimmed), so S3 stays up after the line: the game never sends S3
+        // live, it is worked out from the lap time when the lap ends.
         for (let s = 1; s <= 3; s++) {
             const box = document.getElementById(`sectorBox${s}`);
             const timeEl = document.getElementById(`secTime${s}`);
             const deltaEl = document.getElementById(`secDelta${s}`);
             if (!box || !timeEl) continue;
-
-            const timeMs = currentSectors[s];
-            const bestMs = personalSectors[s];
+            const split = sectorSplit(data, s);
 
             box.className = 'sector-box';
-            if (timeMs && timeMs > 0) {
-                timeEl.textContent = (timeMs / 1000).toFixed(3);
-                if (bestMs) {
-                    const diff = timeMs - bestMs;
+            if (split) {
+                if (split.previous) box.classList.add('sec-prev');
+                timeEl.textContent = (split.timeMs / 1000).toFixed(3);
+                if (split.bestMs) {
+                    const diff = split.timeMs - split.bestMs;
                     if (deltaEl) deltaEl.textContent = (diff > 0 ? '+' : '') + (diff / 1000).toFixed(2);
                     if (diff <= -50) {
                         box.classList.add('sec-purple'); // Overall fastest session split
