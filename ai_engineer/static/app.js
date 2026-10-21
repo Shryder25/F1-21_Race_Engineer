@@ -7,7 +7,8 @@ function escapeHtml(text) {
  * F1 2021 AI Race Engineer — Client Controller & Telemetry Engine
  * ==============================================================
  * Manages:
- *   1. Real-time UDP telemetry polling & UI rendering (Timing Tower, Tyres, Pedals)
+ *   1. Live telemetry pushed over a WebSocket (polling fallback) & UI rendering
+ *      (Timing Tower, Tyres, Pedals)
  *   2. Canvas Live Track Map with X/Z coordinates, car dot, braking & ERS zones
  *   3. 24-Track Database & AI Setup Advisor
  *   4. Latency audio cue & team radio voice command dispatching
@@ -28,9 +29,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initSetupAdvisor();
     initVoiceCommands();
     buildRevLeds();
+    initPitWallCharts();
 
-    // Start polling telemetry
-    setInterval(fetchTelemetry, 150);
+    // Live state: pushed by the server over a WebSocket; polls only while that is down.
+    startLiveFeed();
 });
 
 // ──────────────────────────────────────────────
@@ -52,6 +54,9 @@ function initTabs() {
                 redrawTrackMap();
             } else if (btn.dataset.tab === 'tab-corners' && speedChart) {
                 speedChart.resize();
+            } else if (btn.dataset.tab === 'tab-pitwall') {
+                if (gapChart) gapChart.resize();
+                if (oddsChart) oddsChart.resize();
             }
         });
     });
@@ -807,12 +812,112 @@ function fmtDelta(deltaMs) {
 
 let lastSetupSessionMode = null;
 
+// ──────────────────────────────────────────────
+// Live feed: WebSocket push, with polling only as a fallback
+// ──────────────────────────────────────────────
+// The server sends the whole state once, then only the keys that changed. They are merged
+// into hudState and drawn at most once per animation frame, and only the panels whose keys
+// changed are rebuilt.
+const hudState = {};
+let pendingChanges = null;
+let renderQueued = false;
+let pollTimer = null;
+let socketRetryMs = 1000;
+
+function startLiveFeed() {
+    if (typeof WebSocket === 'undefined') { startPolling(); return; }
+    connectSocket();
+}
+
+function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(fetchTelemetry, 150);
+    fetchTelemetry();
+}
+
+function stopPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+}
+
+function connectSocket() {
+    let socket;
+    try {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        socket = new WebSocket(`${proto}//${location.host}/ws`);
+    } catch (err) {
+        startPolling();
+        return;
+    }
+    socket.onopen = () => {
+        socketRetryMs = 1000;
+        stopPolling();
+        const beacon = document.getElementById('statusBeacon');
+        if (beacon) beacon.title = 'Live push (WebSocket)';
+    };
+    socket.onmessage = event => {
+        try { applyLiveMessage(JSON.parse(event.data)); } catch (err) { console.error('[HUD] bad message', err); }
+    };
+    socket.onclose = () => {
+        const beacon = document.getElementById('statusBeacon');
+        if (beacon) beacon.title = 'Polling (WebSocket reconnecting)';
+        startPolling();
+        setTimeout(connectSocket, socketRetryMs);
+        socketRetryMs = Math.min(socketRetryMs * 2, 10000);
+    };
+    socket.onerror = () => socket.close();
+}
+
+function applyLiveMessage(msg) {
+    const state = msg.state || {};
+    const status = msg.status || {};
+    if (!pendingChanges) pendingChanges = new Set();
+    if (msg.type === 'full') {
+        Object.keys(hudState).forEach(k => delete hudState[k]);
+        pendingChanges.add('*');
+    }
+    Object.assign(hudState, state, status);
+    Object.keys(state).forEach(k => pendingChanges.add(k));
+    Object.keys(status).forEach(k => pendingChanges.add(k));
+    if (!renderQueued) {
+        renderQueued = true;
+        (window.requestAnimationFrame || (fn => setTimeout(fn, 16)))(flushRender);
+    }
+}
+
+function flushRender() {
+    renderQueued = false;
+    const changed = pendingChanges;
+    pendingChanges = null;
+    if (!changed) return;
+    renderTelemetry(hudState, changed.has('*') ? null : changed);
+}
+
+function showDisconnected() {
+    const beacon = document.getElementById('statusBeacon');
+    const statusText = document.getElementById('statusText');
+    if (beacon) beacon.classList.remove('connected');
+    if (statusText) statusText.innerText = 'DISCONNECTED';
+}
+
 async function fetchTelemetry() {
+    let data;
     try {
         const res = await fetch('/api/telemetry');
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
+        data = await res.json();
+    } catch (err) {
+        showDisconnected();
+        return;
+    }
+    renderTelemetry(data, null);
+}
 
+// Draw the HUD from a state snapshot. changed: the keys that changed since the last draw
+// (null = draw everything).
+function renderTelemetry(data, changed) {
+    const dirty = (...keys) => !changed || keys.some(k => changed.has(k));
+    try {
         // 1. Connection Beacon
         const beacon = document.getElementById('statusBeacon');
         const statusText = document.getElementById('statusText');
@@ -944,7 +1049,7 @@ async function fetchTelemetry() {
         // Nearby opponent threats (physics-model gap/pace scoring)
         const threatsCard = document.getElementById('threatsCard');
         const threatsList = document.getElementById('threatsList');
-        if (threatsCard && threatsList) {
+        if (threatsCard && threatsList && dirty('opponent_threats')) {
             const threats = data.opponent_threats || [];
             threatsCard.style.display = threats.length ? '' : 'none';
             threatsList.innerHTML = threats.map(t => {
@@ -964,7 +1069,7 @@ async function fetchTelemetry() {
         // Race strategy (stop count, compounds, undercut on the car ahead, last call)
         const strategyCard = document.getElementById('strategyCard');
         const strategyList = document.getElementById('strategyList');
-        if (strategyCard && strategyList) {
+        if (strategyCard && strategyList && dirty('race_strategy')) {
             const strat = data.race_strategy;
             strategyCard.style.display = strat ? '' : 'none';
             if (strat) {
@@ -1059,7 +1164,7 @@ async function fetchTelemetry() {
         // Fitted tyre / fuel models: [low, expected, high] ranges
         const modelCard = document.getElementById('modelCard');
         const modelList = document.getElementById('modelList');
-        if (modelCard && modelList) {
+        if (modelCard && modelList && dirty('model_ranges')) {
             const m = data.model_ranges;
             modelCard.style.display = m ? '' : 'none';
             if (m) {
@@ -1094,7 +1199,7 @@ async function fetchTelemetry() {
         // Race Control feed (newest first)
         const raceControlCard = document.getElementById('raceControlCard');
         const raceControlList = document.getElementById('raceControlList');
-        if (raceControlCard && raceControlList) {
+        if (raceControlCard && raceControlList && dirty('race_control')) {
             const events = data.race_control || [];
             raceControlCard.style.display = events.length ? '' : 'none';
             const escapeHtml = text => String(text).replace(/[&<>"']/g,
@@ -1261,7 +1366,7 @@ async function fetchTelemetry() {
 
         // 8. Radio Transcript Log
         const voiceList = document.getElementById('voiceList');
-        if (voiceList) {
+        if (voiceList && dirty('voice_log')) {
             const logs = data.voice_log || [];
             const countEl = document.getElementById('logCount');
             if (countEl) countEl.textContent = `${logs.length} messages`;
@@ -1276,7 +1381,7 @@ async function fetchTelemetry() {
 
         // 9. Corner Diagnostics Breakdown
         const cornerList = document.getElementById('cornerList');
-        if (cornerList) {
+        if (cornerList && dirty('corner_analysis')) {
             const corners = data.corner_analysis || [];
             cornerList.innerHTML = corners.map(c => `
                 <div class="corner-card">
@@ -1298,7 +1403,7 @@ async function fetchTelemetry() {
         }
 
         // 10. Speed Trace Chart
-        if (speedChart) {
+        if (speedChart && dirty('speed_trace_best', 'speed_trace_current', 'track_length')) {
             const points = trace => (trace || []).map(([x, y]) => ({ x, y }));
             speedChart.data.datasets[0].data = points(data.speed_trace_best);
             speedChart.data.datasets[1].data = points(data.speed_trace_current);
@@ -1307,14 +1412,12 @@ async function fetchTelemetry() {
         }
 
         // 11. Race Report Table (Feature: lap/sector/speed-trap report)
-        renderRaceReport(data.race_report);
+        if (dirty('race_report')) renderRaceReport(data.race_report);
 
+        // 12. Pit Wall: timing tower, race chart, tyre stints, strategy odds
+        renderPitWall(data, dirty);
     } catch (err) {
-        // Disconnected state
-        const beacon = document.getElementById('statusBeacon');
-        const statusText = document.getElementById('statusText');
-        if (beacon) beacon.classList.remove('connected');
-        if (statusText) statusText.innerText = 'DISCONNECTED';
+        console.error('[HUD] render failed', err);
     }
 }
 
@@ -1344,4 +1447,281 @@ function renderRaceReport(laps) {
             <td>${lap.compound || '--'}</td>
         </tr>
     `).join('');
+}
+
+// ──────────────────────────────────────────────
+// 13. Pit Wall: timing tower, gap-to-leader chart, tyre stints, strategy odds
+// ──────────────────────────────────────────────
+let gapChart = null;
+let oddsChart = null;
+const COMPOUND_CLASS = { S: 'compound-soft', M: 'compound-medium', H: 'compound-hard',
+                         I: 'compound-inter', W: 'compound-wet' };
+
+function teamColour(teamId) {
+    return TEAM_COLOURS[teamId] || '#94a3b8';
+}
+
+// "Verstappen" -> "VER"; the player without a name -> "YOU".
+function driverCode(name, isPlayer, index) {
+    const letters = String(name || '').replace(/[^A-Za-zÀ-ÿ]/g, '');
+    if (letters.length >= 3) return letters.slice(0, 3).toUpperCase();
+    return isPlayer ? 'YOU' : `CAR${(index ?? 0) + 1}`;
+}
+
+function compoundLetter(name) {
+    const n = String(name || '').toLowerCase();
+    if (!n) return null;
+    if (n.startsWith('s') || n.includes('soft')) return 'S';
+    if (n.startsWith('m')) return 'M';
+    if (n.startsWith('h')) return 'H';
+    if (n.startsWith('i')) return 'I';
+    if (n.startsWith('w')) return 'W';
+    return null;
+}
+
+function tyreBadge(letter) {
+    if (!letter) return '';
+    return `<span class="pw-tyre ${COMPOUND_CLASS[letter] || ''}">${letter}</span>`;
+}
+
+function pct(p) {
+    return p == null ? '--' : `${Math.round(p * 100)}%`;
+}
+
+function initPitWallCharts() {
+    if (typeof Chart === 'undefined') return;
+    const gapCanvas = document.getElementById('gapChart');
+    if (gapCanvas) {
+        gapChart = new Chart(gapCanvas, {
+            type: 'line',
+            data: { datasets: [] },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                interaction: { mode: 'nearest', intersect: false },
+                scales: {
+                    x: { type: 'linear', min: 1, title: { display: true, text: 'Lap', color: '#64748b' },
+                         grid: { color: 'rgba(39, 49, 66, 0.4)' }, ticks: { color: '#64748b', precision: 0 } },
+                    y: { reverse: true, min: 0, title: { display: true, text: 'Gap to leader (s)', color: '#64748b' },
+                         grid: { color: 'rgba(39, 49, 66, 0.4)' }, ticks: { color: '#64748b' } },
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: c => `${c.dataset.label}: +${c.parsed.y.toFixed(1)}s (lap ${c.parsed.x})` } },
+                },
+            },
+        });
+    }
+    const oddsCanvas = document.getElementById('oddsChart');
+    if (oddsCanvas) {
+        const line = (label, colour) => ({ label, data: [], borderColor: colour, backgroundColor: colour,
+                                           borderWidth: 2, pointRadius: 2, tension: 0.25 });
+        oddsChart = new Chart(oddsCanvas, {
+            type: 'line',
+            data: { datasets: [line('Win', '#b138dd'), line('Podium', '#00d2be'), line('Points', '#94a3b8')] },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+                scales: {
+                    x: { type: 'linear', title: { display: true, text: 'Lap simulated', color: '#64748b' },
+                         grid: { color: 'rgba(39, 49, 66, 0.4)' }, ticks: { color: '#64748b', precision: 0 } },
+                    y: { min: 0, max: 100, grid: { color: 'rgba(39, 49, 66, 0.4)' },
+                         ticks: { color: '#64748b', callback: v => `${v}%` } },
+                },
+                plugins: { legend: { labels: { color: '#f8fafc', boxWidth: 12 } } },
+            },
+        });
+    }
+}
+
+function renderPitWall(data, dirty) {
+    const race = (data.session_mode || 'race') === 'race';
+    if (dirty('lap_num', 'total_laps')) {
+        const badge = document.getElementById('pwLapBadge');
+        if (badge) badge.textContent = `LAP ${data.lap_num || '--'} / ${data.total_laps || '--'}`;
+    }
+    if (dirty('timing_tower', 'session_mode')) renderTimingTower(data.timing_tower || [], race);
+    if (dirty('gap_history')) renderGapChart(data.gap_history || []);
+    if (dirty('tyre_stints', 'total_laps', 'lap_num', 'race_strategy')) renderStints(data);
+    if (dirty('strategy_odds', 'position')) renderStrategyOdds(data.strategy_odds, data.position);
+}
+
+function towerGap(row, race) {
+    if (row.status !== 'RUN' && row.status !== 'FIN') return row.status;
+    if (row.laps_down > 0) return `<span class="pw-lapped">+${row.laps_down} LAP${row.laps_down > 1 ? 'S' : ''}</span>`;
+    if (row.position === 1 && row.gap_s === 0) return race ? 'LEADER' : '—';
+    return row.gap_s == null ? '--' : `+${row.gap_s.toFixed(3)}`;
+}
+
+function renderTimingTower(rows, race) {
+    const body = document.getElementById('pwTowerBody');
+    if (!body) return;
+    const gapHead = document.getElementById('pwGapHead');
+    if (gapHead) gapHead.textContent = race ? 'GAP' : 'GAP (BEST)';
+    if (!rows.length) {
+        body.innerHTML = '<tr class="pw-empty"><td colspan="8">Waiting for the field&hellip;</td></tr>';
+        return;
+    }
+    body.innerHTML = rows.map(r => {
+        const out = r.status !== 'RUN' && r.status !== 'FIN';
+        const cls = [r.is_player ? 'pw-player' : '', out ? 'pw-out' : ''].join(' ');
+        const name = r.name ? escapeHtml(r.name) : (r.is_player ? 'You' : '');
+        const interval = r.interval_s == null ? (r.position === 1 ? '' : '--')
+            : `<span class="${race && r.interval_s < 1.0 ? 'pw-int-close' : ''}">+${r.interval_s.toFixed(3)}</span>`;
+        const best = r.best_lap_ms ? `<span class="${r.fastest_lap ? 'pw-fastest' : ''}">${fmtTime(r.best_lap_ms)}</span>` : '--';
+        const pit = r.pit ? '<span class="pw-inpit">PIT</span>' : `<span class="pw-stops">${r.stops || 0}</span>`;
+        return `<tr class="${cls}">
+            <td class="c-pos"><span class="pw-pos">${r.position}</span></td>
+            <td class="c-drv"><div class="pw-drv"><span class="pw-team" style="background:${teamColour(r.team_id)}"></span>
+                <span class="pw-code">${escapeHtml(driverCode(r.name, r.is_player, r.index))}</span>
+                <span class="pw-name">${name}</span></div></td>
+            <td class="c-num">${towerGap(r, race)}</td>
+            <td class="c-num">${interval}</td>
+            <td class="c-num c-last">${r.last_lap_ms ? fmtTime(r.last_lap_ms) : '--'}</td>
+            <td class="c-num c-best">${best}</td>
+            <td class="c-tyre">${tyreBadge(r.compound)}${r.tyre_age != null ? `<span class="pw-age">${r.tyre_age}</span>` : ''}</td>
+            <td class="c-pit">${pit}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderGapChart(cars) {
+    const empty = document.getElementById('gapChartEmpty');
+    if (empty) empty.style.display = cars.some(c => c.points.length) ? 'none' : '';
+    if (!gapChart) return;
+    const seenTeams = {};
+    // The player is drawn last so their line sits on top.
+    const ordered = cars.filter(c => !c.is_player).concat(cars.filter(c => c.is_player));
+    gapChart.data.datasets = ordered.map(c => {
+        const colour = c.is_player ? '#ffffff' : teamColour(c.team_id);
+        const second = c.team_id != null && seenTeams[c.team_id];
+        if (c.team_id != null) seenTeams[c.team_id] = true;
+        return {
+            label: driverCode(c.name, c.is_player, c.index),
+            data: c.points.map(([x, y]) => ({ x, y })),
+            borderColor: colour, backgroundColor: colour,
+            borderWidth: c.is_player ? 3 : 1.5,
+            borderDash: second && !c.is_player ? [5, 3] : [],
+            pointRadius: c.is_player ? 2 : 0, tension: 0.15,
+        };
+    });
+    gapChart.update('none');
+}
+
+// The rest of our race as the strategy model plans it: [{compound, start_lap, end_lap}].
+function plannedStints(strategy, lapNum, totalLaps) {
+    const best = strategy && strategy.best;
+    if (!best || !best.compounds || !lapNum || !totalLaps) return [];
+    const plan = [];
+    best.compounds.forEach((compound, i) => {
+        const start = i === 0 ? lapNum + 1 : best.pit_laps[i - 1] + 1;
+        const end = i < best.pit_laps.length ? best.pit_laps[i] : totalLaps;
+        const letter = compoundLetter(compound);
+        if (letter && end >= start) plan.push({ compound: letter, start_lap: start, end_lap: end });
+    });
+    return plan;
+}
+
+function renderStints(data) {
+    const box = document.getElementById('pwStints');
+    if (!box) return;
+    const cars = data.tyre_stints || [];
+    if (!cars.length) {
+        box.innerHTML = '<div class="pw-empty-block">No tyre data yet.</div>';
+        return;
+    }
+    const lapNum = data.lap_num || 0;
+    const maxEnd = Math.max(1, ...cars.flatMap(c => c.stints.map(s => s.end_lap)));
+    const total = Math.max(data.total_laps || 0, maxEnd, lapNum);
+    const plan = (data.session_mode || 'race') === 'race' ? plannedStints(data.race_strategy, lapNum, total) : [];
+    const segment = (s, extra) => {
+        const left = (s.start_lap - 1) / total * 100;
+        const width = (s.end_lap - s.start_lap + 1) / total * 100;
+        const laps = s.end_lap - s.start_lap + 1;
+        const label = width > 4 ? `${s.compound}${laps}` : '';
+        return `<div class="pw-seg ${COMPOUND_CLASS[s.compound] || ''} ${extra}" style="left:${left}%;width:${width}%"
+                     title="${s.compound} laps ${s.start_lap}–${s.end_lap} (${laps})">${label}</div>`;
+    };
+    const now = lapNum ? `<div class="pw-now" style="left:${Math.min(100, lapNum / total * 100)}%"></div>` : '';
+    const rows = cars.map(c => {
+        const segs = c.stints.map(s => segment(s, s.open ? 'pw-open' : '')).join('')
+            + (c.is_player ? plan.map(s => segment(s, 'pw-plan')).join('') : '');
+        return `<div class="pw-stint-row ${c.is_player ? 'pw-player' : ''}">
+            <div class="pw-stint-label"><span class="pw-p">${c.position || ''}</span>${escapeHtml(driverCode(c.name, c.is_player, c.index))}</div>
+            <div class="pw-stint-track">${segs}${now}</div>
+        </div>`;
+    });
+    const step = total > 40 ? 10 : 5;
+    const ticks = [];
+    for (let lap = step; lap <= total; lap += step) {
+        ticks.push(`<span style="left:${(lap - 0.5) / total * 100}%">${lap}</span>`);
+    }
+    box.innerHTML = rows.join('') + `<div class="pw-axis">${ticks.join('')}</div>`;
+}
+
+function trendText(history, key) {
+    if (!history || history.length < 2) return '';
+    const diff = Math.round((history[history.length - 1][key] - history[history.length - 2][key]) * 100);
+    if (diff === 0) return 'no change';
+    return `<span class="${diff > 0 ? 'pw-up' : 'pw-down'}">${diff > 0 ? '▲' : '▼'} ${Math.abs(diff)} pts</span> since L${history[history.length - 2].lap}`;
+}
+
+function renderStrategyOdds(odds, position) {
+    const empty = document.getElementById('pwOddsEmpty');
+    const body = document.getElementById('pwOddsBody');
+    if (!body) return;
+    if (!odds) {
+        if (empty) empty.style.display = '';
+        body.style.display = 'none';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+    body.style.display = '';
+    const meta = document.getElementById('pwOddsMeta');
+    if (meta) meta.textContent = `${odds.runs} simulated races from lap ${odds.lap} · ${odds.laps_to_go} to go`;
+    const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+    set('pwWin', pct(odds.p_win));
+    set('pwPodium', pct(odds.p_podium));
+    set('pwPoints', pct(odds.p_points));
+    set('pwWinTrend', trendText(odds.history, 'p_win'));
+    set('pwPodiumTrend', trendText(odds.history, 'p_podium'));
+    set('pwPointsTrend', trendText(odds.history, 'p_points'));
+    const range = odds.position_range || [];
+    set('pwExpected', range.length ? `P${range[1]}` : '--');
+    set('pwExpectedRange', range.length ? `P${range[0]}–P${range[2]} (80%)` : '');
+
+    set('pwPlans', (odds.plans || []).map((p, i) => {
+        const tyres = (p.compounds || []).map(c => tyreBadge(compoundLetter(c))).join('');
+        const box = p.pit_laps && p.pit_laps.length ? `box L${p.pit_laps.join(', L')}` : 'no stop';
+        const r = p.position_range || [];
+        const slower = p.time_vs_best_s && i > 0 ? ` · +${p.time_vs_best_s[1].toFixed(1)}s` : '';
+        return `<div class="pw-plan ${i === 0 ? 'pw-best' : ''}">
+            <div class="pw-plan-name">${tyres}<span>${p.stops}-STOP</span></div>
+            <div class="pw-plan-pct">${pct(p.p_best)}</div>
+            <div class="pw-plan-bar"><div style="width:${Math.round((p.p_best || 0) * 100)}%"></div></div>
+            <div class="pw-plan-meta">${box} · P${r[1] ?? '-'} (P${r[0] ?? '-'}–P${r[2] ?? '-'}) · win ${pct(p.p_win)} · podium ${pct(p.p_podium)}${slower}</div>
+        </div>`;
+    }).join(''));
+
+    const probs = odds.position_probs || [];
+    const peak = Math.max(0.01, ...probs);
+    set('pwDist', probs.map((p, i) => {
+        const pos = i + 1;
+        const cls = [pos <= 3 ? 'pw-podium' : pos <= 10 ? 'pw-points' : '', pos === position ? 'pw-current' : ''].join(' ');
+        return `<div class="pw-dist-col ${cls}" title="P${pos}: ${(p * 100).toFixed(1)}%">
+            <div class="pw-dist-bar" style="height:${Math.round(p / peak * 100)}%"></div>
+            <span class="pw-dist-lbl">${pos % 5 === 0 || pos === 1 ? pos : ''}</span>
+        </div>`;
+    }).join(''));
+    const loss = odds.pit_loss_s || [];
+    set('pwFactors', [
+        `SC ${pct(odds.p_safety_car)}`, `VSC ${pct(odds.p_vsc)}`, `RAIN ${pct(odds.p_rain)}`,
+        loss.length ? `PIT LOSS ${loss[1].toFixed(1)}s` : null,
+    ].filter(Boolean).map(t => `<span class="pw-factor">${t}</span>`).join(''));
+
+    if (oddsChart) {
+        const history = odds.history || [];
+        ['p_win', 'p_podium', 'p_points'].forEach((key, i) => {
+            oddsChart.data.datasets[i].data = history.map(h => ({ x: h.lap, y: Math.round(h[key] * 1000) / 10 }));
+        });
+        oddsChart.update('none');
+    }
 }

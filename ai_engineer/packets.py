@@ -248,6 +248,43 @@ def parse_all_positions(data: bytes) -> list[tuple[float, float]]:
             for i in range(22)]
 
 
+# Extra data for the player's car only, after the 22 per-car blocks (120 bytes).
+# Wheel arrays are in the game's order: RL, RR, FL, FR.
+MOTION_EX_FORMAT = (
+    "<"
+    "4f"      # suspensionPosition (mm)
+    "4f"      # suspensionVelocity (mm/s)
+    "4f"      # suspensionAcceleration (mm/s^2)
+    "4f"      # wheelSpeed (m/s)
+    "4f"      # wheelSlip (ratio)
+    "3f"      # localVelocity x, y, z (m/s)
+    "3f"      # angularVelocity x, y, z (rad/s)
+    "3f"      # angularAcceleration x, y, z (rad/s^2)
+    "f"       # frontWheelsAngle (rad)
+)
+MOTION_EX_OFFSET = HEADER_SIZE + 22 * CAR_MOTION_SIZE  # 1,344
+
+
+@dataclass
+class PlayerMotionExtra:
+    suspension_position: tuple
+    suspension_velocity: tuple
+    suspension_acceleration: tuple
+    wheel_speed: tuple
+    wheel_slip: tuple
+    local_velocity: tuple
+    angular_velocity: tuple
+    angular_acceleration: tuple
+    front_wheels_angle: float
+
+
+def parse_player_motion_extra(data: bytes) -> PlayerMotionExtra:
+    """The player-only block at the end of PacketMotionData (suspension, wheel speed/slip...)."""
+    v = struct.unpack_from(MOTION_EX_FORMAT, data, MOTION_EX_OFFSET)
+    return PlayerMotionExtra(v[0:4], v[4:8], v[8:12], v[12:16], v[16:20],
+                             v[20:23], v[23:26], v[26:29], v[29])
+
+
 # ──────────────────────────────────────────────
 # Packet ID 6: Car Telemetry Data
 # ──────────────────────────────────────────────

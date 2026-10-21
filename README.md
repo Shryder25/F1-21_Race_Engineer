@@ -66,6 +66,18 @@ python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --info     # wh
 
 `1` replays in real time with the recorded gaps between datagrams, `10` ten times faster, `max` without waiting. `main.py --replay` never drops datagrams; UDP replay at `max` can, if the receiver falls behind. In code, `udp_recording.replay_into(stream, path)` feeds a `TelemetryStream` directly using the recorded clock.
 
+## 📈 Channel data store & MoTeC i2 export
+
+Every telemetry sample of your car (about 80 channels: speed, throttle, brake, steering, gear, RPM, tyre and brake temperatures, tyre pressures, suspension, wheel speed and slip, G-forces, fuel, ERS, tyre wear and more) can be logged to a Parquet file, one row per sample with the lap number and lap distance on every row, so laps can be overlaid metre by metre. The same file exports to MoTeC i2 (`.ld` log + `.ldx` lap markers), or to a MoTeC-style CSV. Needs `pyarrow` (in `ai_engineer/requirements.txt`). Details and limitations: [`docs/channel-store.md`](docs/channel-store.md).
+
+```bash
+python main.py --log-channels channels/                      # log while you drive (or with --replay)
+python tools/channels.py build recordings/race.f1rec.gz       # or rebuild from a raw recording
+python tools/channels.py laps channels/<session>.parquet      # lap list: times, clean / pit / invalid
+python tools/channels.py compare channels/<session>.parquet 4 7 --channels speed throttle brake
+python main.py --export-motec channels/<session>.parquet      # writes <session>.ld + .ldx for MoTeC i2
+```
+
 ### Golden-session regression tests
 
 `tests/golden/sessions/` holds recorded sessions (race, qualifying, wet, Safety Car) with the radio calls, voice-command answers and key numbers the engineer produced on them. The test suite replays them and fails if behaviour changes. Four sessions come from a deterministic full-field simulator; four more slots wait for real recordings from the game. See [`tests/golden/README.md`](tests/golden/README.md) for how to record one and how to accept an intended change (`python tools/golden_sessions.py bless NAME`).
@@ -108,6 +120,8 @@ Simulated races (the golden sessions plus two longer races generated into `recor
 * **Race Report Table:** A lap-by-lap table (lap time, sector 1/2/3, speed trap, tyre compound) on its own HUD tab, built from the same per-lap stats the learning engine already records plus the game's Speed Trap ('SPTP') event packets.
 * **Comprehensive Setup Advisor:** Includes a track database (`track_data.py`) covering all 24 circuits in F1 2021[cite: 1]. Suggests aerodynamic, transmission, and suspension setups customized to specific tracks.
 * **F1-TV Style Web HUD:** A professional, dark-mode web dashboard (`web_hud.py`) displaying live timing towers, color-coded sector deltas, tire wear percentages, and individual tire temperatures[cite: 1].
+* **Pit Wall Tab:** A full-field timing tower (gap to leader, interval, last/best lap, tyre and age, stops, in-pit flag), a gap-to-leader race chart lap by lap, a tyre stint chart for every car with our planned stints dashed in, and the race simulator's odds (win / podium / points, which plan comes out best, finishing-position spread, SC/VSC/rain chances, and how the odds moved over the race). Gaps are measured at timing loops every ~100 m like real F1 timing (`pit_wall.py`).
+* **Live Push:** The HUD gets its data over a WebSocket (`ws://localhost:5000/ws`): the server sends only what changed, up to 30 times a second, instead of the browser polling every 150 ms. If the socket drops, the HUD falls back to polling `/api/telemetry` and reconnects on its own.
 
 ---
 

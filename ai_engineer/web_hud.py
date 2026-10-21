@@ -9,12 +9,14 @@ Provides:
   4. Audio Callout Log & Setup Recommendations
 """
 
+import base64
+import hashlib
 import http.server
 import socketserver
+import struct
 import threading
 import json
 import time
-import copy
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -96,21 +98,125 @@ dashboard_state: dict[str, Any] = {
 }
 
 state_lock = threading.Lock()
+state_changed = threading.Condition(state_lock)
+
+# Each key's value is also kept as JSON text, encoded once when it is set. The WebSocket
+# push and the polling endpoint send that text as it is, and only the keys that changed
+# since a client's last message, so nothing deep-copies the whole state every frame (that
+# copy used to be most of the engine's per-frame CPU).
+_encoded: dict[str, str] = {}
+_key_version: dict[str, int] = {}
+state_version = 0
+# Changes every frame and is turned into 'connected' / 'data_age_seconds' instead.
+_LOCAL_KEYS = frozenset({'last_update_monotonic'})
+
+
+def _finite(value):
+    """NaN/inf -> None, recursively (JSON has no such numbers)."""
+    if isinstance(value, float):
+        return value if value == value and value not in (float('inf'), float('-inf')) else None
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(v) for v in value]
+    return value
+
+
+_encoder = json.JSONEncoder(allow_nan=False, separators=(',', ':'))   # built once: cheaper per call
+_lenient_encoder = json.JSONEncoder(allow_nan=False, separators=(',', ':'), default=str)
+
+
+def _encode(value) -> str:
+    try:
+        return _encoder.encode(value)
+    except (ValueError, TypeError):
+        return _lenient_encoder.encode(_finite(value))
+
+
+def _set_encoded(key: str, text: str) -> bool:
+    """Store one key's JSON text (caller holds the lock). True if it changed."""
+    global state_version
+    if _encoded.get(key) == text:
+        return False
+    state_version += 1
+    _encoded[key] = text
+    _key_version[key] = state_version
+    return True
+
 
 def update_web_state(data: dict[str, Any]):
+    """Set HUD keys. Values are encoded to JSON here, on the caller's thread, which owns
+    them, so later changes to the caller's objects never reach the HUD half-done and no
+    copy of the values is needed."""
+    encoded = {key: _encode(value) for key, value in data.items()}
     with state_lock:
-        dashboard_state.update(copy.deepcopy(data))
+        changed = False
+        for key, text in encoded.items():
+            dashboard_state[key] = data[key]      # latest value, for in-process callers
+            changed = _set_encoded(key, text) or changed
+        if changed:
+            state_changed.notify_all()
+
+
+def replace_web_state(state: dict[str, Any]):
+    """Swap the whole state (tests restore a saved one this way)."""
+    with state_lock:
+        dashboard_state.clear()
+        _encoded.clear()
+        _key_version.clear()
+    update_web_state(state)
+
+
+def _connection_status(now: float) -> dict:
+    """'connected' and 'data_age_seconds' as of now (caller holds the lock)."""
+    last_update = dashboard_state.get('last_update_monotonic')
+    age = max(0.0, now - last_update) if last_update is not None else None
+    return {'connected': bool(dashboard_state.get('connected') and age is not None
+                              and age <= TELEMETRY_TIMEOUT),
+            'data_age_seconds': age}
 
 
 def get_web_state(now=None):
+    """A decoded snapshot of the state, as the HUD sees it (JSON types, a private copy)."""
+    return json.loads(web_state_json(now))
+
+
+def web_state_message(since_version: int | None = None, now=None) -> tuple[int, str]:
+    """(version, JSON message) with every key changed after since_version (all keys when
+    None) plus the connection status. Built from the stored JSON text: no copying."""
     now = time.monotonic() if now is None else now
     with state_lock:
-        snapshot = copy.deepcopy(dashboard_state)
-        last_update = snapshot.pop('last_update_monotonic', None)
-        age = max(0.0, now - last_update) if last_update is not None else None
-        snapshot['connected'] = bool(snapshot['connected'] and age is not None and age <= TELEMETRY_TIMEOUT)
-        snapshot['data_age_seconds'] = age
-        return snapshot
+        if since_version is None or since_version > state_version:
+            keys = [k for k in _encoded if k not in _LOCAL_KEYS]
+            kind = 'full'
+        else:
+            keys = [k for k, v in _key_version.items() if v > since_version and k not in _LOCAL_KEYS]
+            kind = 'delta'
+        body = ','.join(f'{json.dumps(k)}:{_encoded[k]}' for k in keys)
+        status = _encode(_connection_status(now))
+        version = state_version
+    return version, f'{{"type":"{kind}","version":{version},"state":{{{body}}},"status":{status}}}'
+
+
+def web_state_json(now=None) -> str:
+    """The whole state as one JSON object, as the polling endpoint serves it."""
+    now = time.monotonic() if now is None else now
+    with state_lock:
+        status = _connection_status(now)
+        parts = [f'{json.dumps(k)}:{_encoded[k]}' for k in _encoded
+                 if k not in _LOCAL_KEYS and k not in status]
+    parts += [f'{json.dumps(k)}:{_encode(v)}' for k, v in status.items()]
+    return '{' + ','.join(parts) + '}'
+
+
+def wait_for_web_state(version: int, timeout: float) -> int:
+    """Block until the state moves past version (or timeout). Returns the current version."""
+    with state_changed:
+        state_changed.wait_for(lambda: state_version != version, timeout)
+        return state_version
+
+
+update_web_state(dict(dashboard_state))
 
 # Voice-command hook: main.py registers CommandDispatcher.handle_text so the HUD (or any
 # local client) can ask the engineer a question without a microphone.
@@ -164,9 +270,11 @@ def _analysis_params(source: dict) -> tuple:
 
 def add_voice_log(message: str, status='spoken'):
     with state_lock:
-        log = dashboard_state.get("voice_log", [])
-        log.insert(0, {"time": time.strftime("%H:%M:%S"), "message": message, 'status': status})
-        dashboard_state["voice_log"] = log[:20]
+        log = [{"time": time.strftime("%H:%M:%S"), "message": message, 'status': status}]
+        log = (log + json.loads(_encoded.get("voice_log", "[]")))[:20]
+        dashboard_state["voice_log"] = log
+        if _set_encoded("voice_log", _encode(log)):
+            state_changed.notify_all()
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -649,12 +757,126 @@ MIME_TYPES = {
 }
 
 
+# ──────────────────────────────────────────────
+# WebSocket push (RFC 6455, standard library only)
+# ──────────────────────────────────────────────
+# The HUD opens ws://<host>/ws. The server sends the whole state once, then after every
+# change only the keys that changed, at most WS_MAX_HZ times a second. With nothing new it
+# still sends a small heartbeat every WS_HEARTBEAT_S so the HUD can show "stale".
+
+WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+WS_MAX_HZ = 30
+WS_HEARTBEAT_S = 0.5
+WS_MAX_INCOMING = 1 << 16
+ws_clients = 0
+_ws_clients_lock = threading.Lock()
+
+
+def ws_accept_key(key: str) -> str:
+    return base64.b64encode(hashlib.sha1((key + WS_GUID).encode('ascii')).digest()).decode('ascii')
+
+
+def ws_frame(payload: bytes, opcode: int = 0x1) -> bytes:
+    """One unmasked, unfragmented server frame (text by default)."""
+    n = len(payload)
+    if n < 126:
+        head = struct.pack('!BB', 0x80 | opcode, n)
+    elif n < 1 << 16:
+        head = struct.pack('!BBH', 0x80 | opcode, 126, n)
+    else:
+        head = struct.pack('!BBQ', 0x80 | opcode, 127, n)
+    return head + payload
+
+
+def ws_read_frame(rfile) -> tuple[int, bytes] | None:
+    """(opcode, payload) of the next client frame, or None at end of stream."""
+    head = rfile.read(2)
+    if len(head) < 2:
+        return None
+    opcode, length = head[0] & 0x0F, head[1] & 0x7F
+    if length == 126:
+        length = struct.unpack('!H', rfile.read(2))[0]
+    elif length == 127:
+        length = struct.unpack('!Q', rfile.read(8))[0]
+    if length > WS_MAX_INCOMING:
+        raise ValueError('client frame too large')
+    mask = rfile.read(4) if head[1] & 0x80 else b''
+    payload = rfile.read(length)
+    if len(payload) < length:
+        return None
+    if mask:
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return opcode, payload
+
+
 class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
+    def _serve_websocket(self):
+        global ws_clients
+        key = self.headers.get('Sec-WebSocket-Key')
+        if not key or 'websocket' not in self.headers.get('Upgrade', '').lower():
+            self.send_response(400)
+            self.end_headers()
+            return
+        self.send_response(101, 'Switching Protocols')
+        self.send_header('Upgrade', 'websocket')
+        self.send_header('Connection', 'Upgrade')
+        self.send_header('Sec-WebSocket-Accept', ws_accept_key(key.strip()))
+        self.end_headers()
+        self.wfile.flush()
+        self.close_connection = True
+        closed = threading.Event()
+        send_lock = threading.Lock()
+
+        def send(payload: bytes, opcode: int = 0x1):
+            with send_lock:
+                self.wfile.write(ws_frame(payload, opcode))
+                self.wfile.flush()
+
+        def read_client():
+            try:
+                while not closed.is_set():
+                    frame = ws_read_frame(self.rfile)
+                    if frame is None or frame[0] == 0x8:
+                        break
+                    if frame[0] == 0x9:
+                        send(frame[1], 0xA)          # ping -> pong
+            except (OSError, ValueError, struct.error):
+                pass
+            finally:
+                closed.set()
+
+        threading.Thread(target=read_client, daemon=True, name='WebHUDSocketReader').start()
+        with _ws_clients_lock:
+            ws_clients += 1
+        version = None
+        try:
+            while not closed.is_set():
+                sent_at = time.monotonic()
+                version, message = web_state_message(version)
+                send(message.encode('utf-8'))
+                rest = 1.0 / WS_MAX_HZ - (time.monotonic() - sent_at)
+                if rest > 0 and closed.wait(rest):
+                    break
+                wait_for_web_state(version, WS_HEARTBEAT_S)
+        except OSError:
+            pass
+        finally:
+            closed.set()
+            with _ws_clients_lock:
+                ws_clients -= 1
+            try:
+                send(b'', 0x8)
+            except OSError:
+                pass
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        if path in ("/", "/index.html"):
+        if path == "/ws":
+            self._serve_websocket()
+
+        elif path in ("/", "/index.html"):
             template_path = Path(__file__).resolve().parent / "templates" / "index.html"
             content = None
             if template_path.is_file():
@@ -691,8 +913,7 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            data_copy = json.dumps(get_web_state(), allow_nan=False)
-            self.wfile.write(data_copy.encode("utf-8"))
+            self.wfile.write(web_state_json().encode("utf-8"))
 
         elif path == "/api/tracks":
             self.send_response(200)
@@ -783,7 +1004,8 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
 def start_web_hud_server(port: int = 5000):
     """Start the HUD HTTP server on a background daemon thread."""
     class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-        # Threaded so a slow AI setup consult never stalls the 10 Hz telemetry polling.
+        # Threaded: each WebSocket client holds a thread, and a slow AI setup consult never
+        # stalls the live push.
         allow_reuse_address = True
         daemon_threads = True
 

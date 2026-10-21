@@ -17,8 +17,11 @@ from __future__ import annotations
 import re
 from typing import Callable
 
-from ai_client import AIClient, AIUnavailable
+from ai_client import AIClient, AITimeout, AIUnavailable
 import session_modes
+
+# Radio lines are under 25 words; with thinking off this leaves plenty of room for the JSON.
+RADIO_MAX_TOKENS = 220
 
 COMMAND_QUESTIONS = {
     'weather': 'Give me a weather report.',
@@ -48,6 +51,7 @@ Rules:
 - Rival stop predictions are the model's guess of when nearby cars will box next and which tyre they will fit, from their tyre age, wear and the track's usual strategy. Say "likely" or "expect": they are forecasts, not facts.
 - The race simulation line is a Monte Carlo of the whole field (Safety Cars, VSCs, pit-stop spread, traffic, overtaking): quote its odds as odds ("two-stop comes out best 60% of the time"), never as certainties.
 - Opponent threats, when present, are nearby cars already ranked by how much pressure they put on the driver; mention one only if it changes what the driver should do right now.
+- "Driver's own history at this track" summarises this driver's past laps here. Use it to make advice personal when it fits (e.g. "you usually lose time in sector two here"), never as a substitute for live data.
 - When a rival's driver name is given, call them by that name like a real engineer would (for example "Hamilton is one point two ahead"). Never make up a name that is not in the data.
 - Sound like a real F1 engineer: calm, clipped, encouraging. Say lap times the way engineers do ("one thirty-two four"), talk about small time differences in tenths ("two tenths up", "a tenth down"), and say "box, box" only for an actual pit call.
 - The driver may ask anything in their own words. Answer what they actually asked from the data. If the data cannot answer it, say so in a few words and offer the closest thing you do know.
@@ -143,6 +147,7 @@ def format_context(ctx: dict) -> str:
                     f"(range {_fmt_range(fuel.get('per_lap_kg_range'))}), "
                     f"{fuel['laps_of_fuel']} laps of fuel, margin {fuel['margin_laps']} laps "
                     f"(range {_fmt_range(fuel.get('margin_laps_range'))})")
+    add("Driver's own history at this track", ctx.get('driver_profile'))
     add('Last lap sector times ms', ctx.get('last_lap_sectors_ms'))
     add('Last lap sector deltas to personal best ms', ctx.get('last_lap_sector_deltas_ms'))
     tire = ctx.get('tire_health')
@@ -408,18 +413,23 @@ class EngineerBrain:
         if self.client is None:
             return None
         system, user = build_prompt(question, ctx)
+        # Radio answers are short: no long reasoning, small token budget (much lower latency).
+        fast = {'fast': True, 'max_tokens': RADIO_MAX_TOKENS} if getattr(self.client, 'supports_fast', False) else {}
         if hasattr(self.client, 'chat_json'):
             try:
-                result = self.client.chat_json(system, user)
+                result = self.client.chat_json(system, user, **fast)
                 voice = clean_radio_text(str(result.get('voice') or ''))
                 if voice:
                     self.last_source = 'ai'
                     self.last_advice = str(result.get('advice') or '').strip()
                     return voice
+            except AITimeout as error:
+                print(f'[Engineer] AI too slow ({error}); answering from rules.')
+                return None
             except AIUnavailable as error:
                 print(f'[Engineer] AI JSON reply unavailable ({error}); trying plain text.')
         try:
-            text = clean_radio_text(self.client.chat(system, user))
+            text = clean_radio_text(self.client.chat(system, user, **fast))
             if text:
                 self.last_source = 'ai'
                 self.last_advice = ''

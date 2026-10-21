@@ -1636,3 +1636,135 @@ body.f1-theme {
 .race-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 12px; margin-top: 4px; }
 .race-facts span b { color: var(--text-white); font-family: var(--font-mono); }
 .race-facts span { color: var(--text-muted); }
+
+/* =====================================================================
+   Pit Wall tab: full-field timing tower, race chart, stints, strategy odds
+   ===================================================================== */
+.header-bar.purple { background-color: var(--sector-purple); }
+
+.pitwall-grid {
+    display: grid;
+    grid-template-columns: minmax(520px, 0.95fr) minmax(0, 1.25fr);
+    gap: 16px;
+    align-items: start;
+}
+.pw-tower-panel { position: sticky; top: 12px; }
+.pw-right { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.pw-hint { font-size: 11px; color: var(--text-dim); text-transform: none; letter-spacing: 0; }
+.pw-sub { font-size: 10px; color: var(--text-dim); text-transform: none; letter-spacing: 0; font-weight: 500; margin-left: 6px; }
+.pw-empty-block { padding: 18px; color: var(--text-dim); font-size: 12px; text-align: center; }
+
+/* Timing tower */
+.pw-tower { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 12.5px; }
+.pw-tower thead th {
+    font-family: var(--font-heading); font-weight: 700; font-size: 11px; letter-spacing: 1.2px;
+    color: var(--text-dim); text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border-color);
+    background: rgba(12, 16, 23, 0.5);
+}
+.pw-tower td { padding: 0 8px; height: 29px; border-bottom: 1px solid rgba(39, 49, 66, 0.45); white-space: nowrap; }
+.pw-tower tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
+.pw-tower .c-num { text-align: right; font-variant-numeric: tabular-nums; }
+.pw-tower th.c-num { text-align: right; }
+.pw-tower .c-pos { width: 44px; }
+.pw-tower .c-tyre, .pw-tower .c-pit { width: 62px; }
+.pw-pos {
+    display: inline-block; min-width: 26px; text-align: center; font-family: var(--font-heading);
+    font-weight: 800; font-size: 15px; color: var(--text-white);
+}
+.pw-drv { display: flex; align-items: center; gap: 8px; font-family: var(--font-heading); font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
+.pw-team { width: 4px; height: 18px; border-radius: 2px; flex: none; }
+.pw-code { min-width: 38px; }
+.pw-name { font-family: var(--font-body); font-size: 11px; color: var(--text-dim); font-weight: 500; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.pw-tower tr.pw-player td { background: rgba(0, 210, 190, 0.10) !important; }
+.pw-tower tr.pw-player .pw-code { color: var(--f1-teal); }
+.pw-tower tr.pw-out td { color: var(--text-dim); opacity: 0.6; }
+.pw-tower tr.pw-empty td { color: var(--text-dim); text-align: center; height: 60px; font-family: var(--font-body); }
+.pw-int-close { color: var(--sector-green); }          /* inside DRS range */
+.pw-fastest { color: var(--sector-purple); font-weight: 700; }
+.pw-lapped { color: var(--text-muted); }
+.pw-tyre {
+    display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+    border-radius: 50%; border: 2px solid; font-family: var(--font-heading); font-weight: 800; font-size: 12px;
+    background: transparent !important; color: inherit;
+}
+.pw-tyre.compound-soft { color: var(--f1-red); }
+.pw-tyre.compound-medium { color: var(--sector-yellow); }
+.pw-tyre.compound-hard { color: #fff; }
+.pw-tyre.compound-inter { color: var(--sector-green); }
+.pw-tyre.compound-wet { color: var(--tyre-cold); }
+.pw-age { color: var(--text-muted); margin-left: 5px; font-size: 11px; }
+.pw-inpit {
+    display: inline-block; padding: 1px 5px; border-radius: 3px; background: var(--f1-red);
+    color: #fff; font-family: var(--font-heading); font-weight: 800; font-size: 11px; letter-spacing: 0.5px;
+}
+.pw-stops { color: var(--text-muted); }
+
+/* Gap chart */
+.pw-chart-wrap { position: relative; height: 300px; padding: 10px 12px 6px; }
+.pw-chart-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 12px; pointer-events: none; }
+
+/* Stint chart */
+.pw-legend { display: flex; align-items: center; gap: 6px; }
+.pw-legend .pw-tyre { width: 18px; height: 18px; font-size: 11px; }
+.pw-legend-plan { font-size: 11px; color: var(--text-muted); padding: 1px 6px; border: 1px dashed var(--text-muted); border-radius: 3px; margin-left: 4px; }
+.pw-stints { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 3px; }
+.pw-stint-row { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 8px; height: 18px; }
+.pw-stint-label { font-family: var(--font-heading); font-weight: 700; font-size: 13px; display: flex; gap: 6px; align-items: center; }
+.pw-stint-label .pw-p { color: var(--text-dim); min-width: 22px; text-align: right; }
+.pw-stint-row.pw-player .pw-stint-label { color: var(--f1-teal); }
+.pw-stint-track { position: relative; height: 14px; background: rgba(255, 255, 255, 0.03); border-radius: 3px; }
+.pw-seg {
+    position: absolute; top: 1px; bottom: 1px; border-radius: 3px; font-family: var(--font-heading);
+    font-weight: 800; font-size: 10px; line-height: 12px; padding-left: 4px; overflow: hidden; color: #000;
+    box-shadow: inset -2px 0 0 rgba(0, 0, 0, 0.35);
+}
+.pw-seg.compound-soft, .pw-seg.compound-wet, .pw-seg.compound-inter { color: #fff; }
+.pw-seg.pw-open { box-shadow: none; background-image: linear-gradient(90deg, transparent 75%, rgba(255,255,255,0.35)); }
+.pw-seg.pw-plan { background: transparent !important; border: 1px dashed; color: var(--text-muted) !important; box-shadow: none; }
+.pw-seg.pw-plan.compound-soft { border-color: var(--f1-red); }
+.pw-seg.pw-plan.compound-medium { border-color: var(--sector-yellow); }
+.pw-seg.pw-plan.compound-hard { border-color: #fff; }
+.pw-seg.pw-plan.compound-inter { border-color: var(--sector-green); }
+.pw-seg.pw-plan.compound-wet { border-color: var(--tyre-cold); }
+.pw-now { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--f1-teal); opacity: 0.7; }
+.pw-axis { position: relative; height: 16px; margin-left: 82px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+.pw-axis span { position: absolute; transform: translateX(-50%); }
+
+/* Strategy odds */
+.pw-odds { padding: 12px 14px 14px; }
+.pw-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.pw-tile { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; }
+.pw-tile-label { font-family: var(--font-heading); font-size: 11px; letter-spacing: 1.2px; color: var(--text-dim); font-weight: 700; }
+.pw-tile-val { font-family: var(--font-heading); font-size: 30px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pw-tile-trend { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); min-height: 15px; }
+.pw-up { color: var(--sector-green); }
+.pw-down { color: #ff5a5a; }
+.pw-odds-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+.pw-plan { display: grid; grid-template-columns: 1fr 52px; gap: 4px 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(39, 49, 66, 0.45); }
+.pw-plan-name { font-family: var(--font-heading); font-weight: 700; font-size: 14px; display: flex; gap: 6px; align-items: center; }
+.pw-plan-name .pw-tyre { width: 17px; height: 17px; font-size: 10px; }
+.pw-plan-pct { font-family: var(--font-heading); font-weight: 800; font-size: 18px; text-align: right; }
+.pw-plan-bar { grid-column: 1 / -1; height: 5px; background: rgba(255, 255, 255, 0.05); border-radius: 3px; overflow: hidden; }
+.pw-plan-bar > div { height: 100%; background: var(--text-muted); border-radius: 3px; }
+.pw-plan.pw-best .pw-plan-bar > div { background: var(--sector-purple); }
+.pw-plan-meta { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+.pw-dist { display: flex; align-items: flex-end; gap: 2px; height: 92px; padding-top: 4px; }
+.pw-dist-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+.pw-dist-bar { width: 100%; background: var(--border-highlight); border-radius: 2px 2px 0 0; min-height: 1px; }
+.pw-dist-col.pw-podium .pw-dist-bar { background: var(--sector-purple); }
+.pw-dist-col.pw-points .pw-dist-bar { background: var(--f1-teal); opacity: 0.8; }
+.pw-dist-col.pw-current .pw-dist-bar { outline: 1px solid #fff; }
+.pw-dist-lbl { font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); margin-top: 2px; }
+.pw-factors { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.pw-factor { font-family: var(--font-mono); font-size: 11px; padding: 3px 7px; border-radius: 3px; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-muted); }
+.pw-trend-wrap { height: 120px; margin-top: 12px; position: relative; }
+
+@media (max-width: 1250px) {
+    .pitwall-grid { grid-template-columns: 1fr; }
+    .pw-tower-panel { position: static; }
+}
+@media (max-width: 700px) {
+    .pw-tiles { grid-template-columns: repeat(2, 1fr); }
+    .pw-odds-cols { grid-template-columns: 1fr; }
+    .pw-tower .c-last, .pw-tower .c-best, .pw-name { display: none; }
+}
