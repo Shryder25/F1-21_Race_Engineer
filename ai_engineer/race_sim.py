@@ -35,7 +35,8 @@ numbers), so plans are compared under the same Safety Cars, the same slow stops 
 same rival form; the difference between them is the plan, not the dice.
 
 Simplifications, all marked where they live: no retirements, Safety Car bunching is
-instant, rain arrives once and stays, blue flags are implicit (lapped cars never interact
+instant, rain arrives once and stays (if it is raining already, every run is wet from the
+lap in progress and the player's plan decides whether we box for inters), blue flags are implicit (lapped cars never interact
 with the leaders), VSC chance is a fixed share of the SC chance. The constants are
 educated estimates; recordings of real F1 2021 races (tools/fit_models.py,
 tools/backtest.py) are what will sharpen the tyre/fuel inputs, and the SC/overtaking
@@ -211,6 +212,11 @@ class StrategyOutcome:
     position_range: list              # [10th pct, median, 90th pct] finishing position
     position_probs: list              # P(finish P1), P(P2), ...
     time_vs_best_s: list              # race time vs the best plan in the same run, [p10, median, p90]
+    is_reference: bool = False        # the plan the others are measured against (the current Plan A)
+    # Against the reference plan in the same runs (None without a reference): median and
+    # [p10, p90] seconds gained, mean places gained, and the share of runs where this plan
+    # finishes ahead of it or in the same place quicker.
+    vs_reference: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -248,7 +254,8 @@ class SimResult:
             'options': [{'label': o.label, 'stops': o.stops, 'pit_laps': o.pit_laps,
                          'p_best': o.p_best, 'p_win': o.p_win, 'p_podium': o.p_podium,
                          'p_points': o.p_points, 'mean_position': o.mean_position,
-                         'position_range': o.position_range} for o in self.outcomes],
+                         'position_range': o.position_range, 'is_reference': o.is_reference,
+                         'vs_reference': o.vs_reference} for o in self.outcomes],
             'p_safety_car': self.p_safety_car, 'p_vsc': self.p_vsc, 'p_rain': self.p_rain,
             'pit_loss_s': self.pit_loss_s, 'overtaking': self.overtaking,
             'inputs': self.inputs,
@@ -439,9 +446,11 @@ class RaceSimulator:
         p_rain = 0.0
         if rain and not st.raining and st.total_laps > 0:
             p_rain = float(self.profile.get('rain_probability', 0.0)) * st.laps_to_go / st.total_laps
-        self.p_rain_input = p_rain
+        self.p_rain_input = 1.0 if st.raining else p_rain
         rains = rng.random(R) < p_rain
         self.rain_at = np.where(rains, rng.integers(0, max(L, 1), R), -1)
+        if st.raining:                   # wet already: every run is wet from the lap in progress
+            self.rain_at[:] = 0
         self.rain_reaction = rng.integers(0, RAIN_REACTION_MAX_LAPS + 1, (R, N))
         self.rival_laps, self.rival_comps = self._rival_plans()
         self.gap0 = np.array([c.gap_s for c in self.cars], float)
@@ -491,6 +500,10 @@ class RaceSimulator:
                 & (lapnum < self.laps[-1])
             on_wets = np.isin(comp, WET_IDX)
             rain_pit = raining[:, None] & ~on_wets & ~rain_done & (li >= self.rain_at[:, None] + self.rain_reaction)
+            if self.state.raining:
+                # Raining now: the player's plan says whether we box for inters (a plan that
+                # stays on slicks pays for it), so only the rivals react on their own.
+                rain_pit[:, p] = False
             pit = (planned | early | rain_pit) & (lapnum < self.state.total_laps)
             next_set = np.take_along_axis(stop_comp, np.minimum(nxt, S - 1)[..., None], 2)[..., 0]
             new_comp = np.where(rain_pit, _CI['INTERMEDIATE'], next_set)
@@ -602,7 +615,15 @@ class RaceSimulator:
             b2 = np.where(on_track, new_b2, b2)
 
     # ── all plans ──
-    def evaluate(self, candidates: Sequence[Candidate]) -> SimResult:
+    def evaluate(self, candidates: Sequence[Candidate], reference: int | None = None) -> SimResult:
+        """Play every plan through the same races. ``reference`` (an index into ``candidates``,
+        usually the current Plan A) adds a paired comparison of each plan against it."""
+        if reference is not None and not 0 <= reference < len(candidates):
+            raise ValueError('reference must index a candidate')
+        if reference is not None and candidates[reference] is None:
+            raise ValueError('reference candidate is None')
+        if reference is not None:
+            reference = sum(1 for c in candidates[:reference] if c is not None)
         candidates = [c for c in candidates if c is not None]
         if not candidates:
             raise ValueError('no candidate plans to simulate')
@@ -628,6 +649,14 @@ class RaceSimulator:
         outcomes = []
         for ci, cand in enumerate(candidates):
             x = pos[ci]
+            vs_ref = None
+            if reference is not None and ci != reference:
+                gain_t = tim[reference] - tim[ci]                 # +: this plan is quicker
+                ahead = score[ci] < score[reference] - 1e-6
+                vs_ref = {'time_gain_s': round(float(np.median(gain_t)), 2),
+                          'time_gain_range_s': [round(_pct(gain_t, 10), 1), round(_pct(gain_t, 90), 1)],
+                          'position_gain': round(float((pos[reference] - x).mean()), 2),
+                          'p_better': round(float(ahead.mean()), 3)}
             probs = np.bincount(x, minlength=N + 1)[1:N + 1] / R
             outcomes.append(StrategyOutcome(
                 cand.label, cand.stops, list(cand.compounds), list(cand.pit_laps),
@@ -636,7 +665,8 @@ class RaceSimulator:
                 round(float(x.mean()), 2),
                 [int(np.percentile(x, 10)), int(np.median(x)), int(np.percentile(x, 90))],
                 [round(float(v), 3) for v in probs],
-                [round(_pct(abs_T[ci], 10), 1), round(_pct(abs_T[ci], 50), 1), round(_pct(abs_T[ci], 90), 1)]))
+                [round(_pct(abs_T[ci], 10), 1), round(_pct(abs_T[ci], 50), 1), round(_pct(abs_T[ci], 90), 1)],
+                ci == reference, vs_ref))
         order = sorted(range(len(outcomes)), key=lambda i: (-outcomes[i].p_best, outcomes[i].mean_position))
         outcomes = [outcomes[i] for i in order]
         rec_ranks = all_pos[order[0]]
@@ -683,8 +713,9 @@ def describe(result: SimResult) -> str:
     return line
 
 
-def simulate(state: RaceState, candidates: Sequence[Candidate], **kwargs) -> SimResult:
-    return RaceSimulator(state, **kwargs).evaluate(candidates)
+def simulate(state: RaceState, candidates: Sequence[Candidate], reference: int | None = None,
+             **kwargs) -> SimResult:
+    return RaceSimulator(state, **kwargs).evaluate(candidates, reference)
 
 
 # ──────────────────────────────────────────────
@@ -825,7 +856,8 @@ class SimRunner:
         self.mode = mode
         self.runs = runs
         self.latest: SimResult | None = None
-        self.latest_key = None
+        self.latest_key = None            # key of the last run, finished or failed
+        self.result_key = None            # key that ``latest`` was computed for
         self.error: str | None = None
         self._busy = False
         self._lock = threading.Lock()
@@ -838,6 +870,7 @@ class SimRunner:
         with self._lock:
             self.latest = None
             self.latest_key = None
+            self.result_key = None
 
     def submit(self, key, state: RaceState, candidates: list, **kwargs) -> bool:
         if not self.enabled or not candidates or key == self.latest_key:
@@ -852,7 +885,7 @@ class SimRunner:
             try:
                 result = simulate(state, candidates, **kwargs)
                 with self._lock:
-                    self.latest, self.latest_key, self.error = result, key, None
+                    self.latest, self.latest_key, self.result_key, self.error = result, key, key, None
             except Exception as error:       # never take the telemetry loop down
                 with self._lock:
                     self.error, self.latest_key = repr(error), key

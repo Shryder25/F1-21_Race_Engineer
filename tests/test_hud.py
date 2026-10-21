@@ -24,6 +24,12 @@ class HUDClientTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @unittest.skipUnless(shutil.which('node'), 'Node.js required for browser script regression test')
+    def test_strategy_card_shows_plan_a_and_plan_b_call(self):
+        result = subprocess.run(['node', str(pathlib.Path(__file__).with_name('hud_plan_b_test.js'))],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js required for browser script regression test')
     def test_track_database_shows_qualifying_plan(self):
         result = subprocess.run(['node', str(pathlib.Path(__file__).with_name('hud_quali_setup_test.js'))],
                                 capture_output=True, text=True, timeout=10)

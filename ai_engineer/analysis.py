@@ -32,6 +32,7 @@ import race_strategy
 import rival_strategy
 import fitted_models
 import race_sim
+import strategy_replan
 import track_maps
 from session_history import SessionLog, lap_rows, stint_rows
 
@@ -66,7 +67,7 @@ WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
 # a this-lap decision, so they break on-demand silence like a real pit wall would.
 PROACTIVE_KEYS = frozenset({'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear',
                             'wing_damage', 'penalty', 'flag_yellow', 'flag_red', 'rival_pit', 'undercut',
-                            'rival_preempt'})
+                            'rival_preempt', 'plan_b'})
 # Only react to a rival's stop when they were this close; further away it changes nothing.
 RIVAL_REACT_GAP_S = 6.0
 # Rival stop forecasts: say who is about to box when their predicted stop is this close
@@ -137,13 +138,18 @@ class AnalysisEngine:
     def __init__(self, voice: VoiceEngine, history: TelemetryHistory | None = None,
                  on_demand: bool = False, fitted: fitted_models.ModelStore | None = None,
                  race_simulation: str = 'off', sim_runs: int = race_sim.DEFAULT_RUNS,
-                 track_store: track_maps.TrackMapStore | None = None):
+                 track_store: track_maps.TrackMapStore | None = None,
+                 replan: strategy_replan.ReplanConfig | None = None):
         self.voice = voice
         # Saved outline + pit lane per circuit (memory-only unless main.py gives it a file).
         self.track_store = track_store if track_store is not None else track_maps.TrackMapStore()
         # Monte Carlo race simulator (race_sim.py): 'async' live, 'sync' in tests, 'off'.
         self.sim_runner = race_sim.SimRunner(race_simulation, sim_runs)
         self.field_tracker = race_sim.FieldTracker()
+        # Live re-planning on top of the simulator: Plan A, triggers and the Plan B call.
+        self.replanner = strategy_replan.Replanner(replan)
+        self._last_sim_key = None                # key of the last re-run sent
+        self._last_event_submit = -1e9           # monotonic time of the last event-only re-run
         self.field_laps = None
         self.player_index = 0
         # Tyre/fuel models fitted to the game (tools/fit_models.py); empty = built-in priors.
@@ -271,6 +277,9 @@ class AnalysisEngine:
             self.field_tracker.reset()
             self.field_laps = None
             self.sim_runner.reset()
+            self.replanner.reset()
+            self._last_sim_key = None
+            self._last_event_submit = -1e9
             self.undercut_calls.clear()
             self.rivals.reset()
             self.rival_calls.clear()
@@ -1555,28 +1564,68 @@ class AnalysisEngine:
                                     predictions, self.fitted)
 
     def update_race_simulation(self):
-        """Re-run the simulation once a lap (and when the race changes: SC, a stop, new tyres)."""
+        """Re-run the simulation once a lap, and straight away on a Safety Car, VSC, rain or a
+        nearby rival's stop; then weigh Plan B against Plan A (strategy_replan.py)."""
         if not self.sim_runner.enabled or self.session_mode != session_modes.RACE:
             return
         status, lap, session = self.latest_status, self.latest_lap, self.session
-        if status is None or lap is None or session is None or lap.pit_status:
+        if status is None or lap is None or session is None:
             return
-        key = (lap.current_lap_num, session.safety_car_status, lap.num_pit_stops, status.compound_name)
+        replanner = self.replanner
+        replanner.observe(lap.current_lap_num, session.safety_car_status, session.weather,
+                          self.field_laps, self.player_index, self.radio.driver_name)
+        self._consider_plan_b()
+        if lap.pit_status:
+            return
+        wet = session.weather >= strategy_replan.WET_WEATHER
+        key = (lap.current_lap_num, session.safety_car_status, lap.num_pit_stops, status.compound_name,
+               wet, replanner.events)
         if key == self.sim_runner.latest_key:
             return
+        now = time.monotonic()
+        last_key = self._last_sim_key
+        event_only = last_key is not None and key[:5] == last_key[:5]
+        if event_only and now - self._last_event_submit < strategy_replan.MIN_EVENT_INTERVAL_S:
+            return                          # only an event changed, and one re-ran a moment ago
         plan = self.strategy_plan()
-        candidates = race_sim.candidates_from_plan(plan)
+        if plan is None:
+            return
+        replanner.sync_plan_a(plan, lap.current_lap_num, lap.num_pit_stops, status.compound_name,
+                              plan.laps_remaining)
+        candidates = replanner.candidates(plan, lap.current_lap_num, session.safety_car_status in (1, 2),
+                                          wet, status.compound_name)
         if not candidates:
             return
         state = self.race_sim_state()
         if state is None:
             return
         deg_scale, life_scale = self.strategy_scales()
-        seed = (lap.current_lap_num * 1009 + session.safety_car_status * 101 + lap.num_pit_stops) & 0xFFFFFFFF
-        self.sim_runner.submit(key, state, candidates, models=self.fitted, seed=seed,
-                               pit_loss_mean=race_strategy.pit_loss_s(session.track_id),
-                               player_deg_scale=deg_scale, player_life_scale=life_scale,
-                               player_deg=self.deg_forecast())
+        seed = (lap.current_lap_num * 1009 + session.safety_car_status * 101 + lap.num_pit_stops
+                + replanner.events * 7919) & 0xFFFFFFFF
+        reference = 0 if replanner.plan_a is not None else None
+        if self.sim_runner.submit(key, state, candidates, reference=reference, models=self.fitted, seed=seed,
+                                  pit_loss_mean=race_strategy.pit_loss_s(session.track_id),
+                                  player_deg_scale=deg_scale, player_life_scale=life_scale,
+                                  player_deg=self.deg_forecast()):
+            self._last_sim_key = key
+            if event_only:
+                self._last_event_submit = now
+            if reference is not None:
+                replanner.note_submitted(key)
+            self._consider_plan_b()         # 'sync' mode: the result is already in
+
+    def _consider_plan_b(self):
+        """Call Plan B when the latest re-run says it beats Plan A by the set margin."""
+        lap = self.latest_lap
+        if lap is None:
+            return
+        runner = self.sim_runner
+        call = self.replanner.consider(runner.latest, runner.result_key, lap.current_lap_num)
+        if call is None:
+            return
+        self.last_strategy_call = {**call.as_dict(), 'gain_s': call.time_gain_s, 'gap_s': None,
+                                   'car_index': None}
+        self.speak(call.message, Priority.STRATEGY, key='plan_b', ttl=12, cooldown=0)
 
     def race_simulation(self) -> dict | None:
         """Latest simulation summary, or None when it is off, not run yet or out of date."""
@@ -1606,6 +1655,13 @@ class AnalysisEngine:
         summary['simulation'] = simulation
         if simulation and simulation.get('radio'):
             summary['radio'] += ' ' + simulation['radio']
+        lap = self.latest_lap
+        replan = self.replanner.summary(lap.current_lap_num if lap else None) if self.sim_runner.enabled else None
+        summary['replan'] = replan
+        if replan:
+            a = replan['plan_a']
+            if (a['compounds'], a['pit_laps']) != (plan.best.compounds, plan.best.pit_laps):
+                summary['radio'] += ' ' + replan['radio']
         summary['last_call'] = self.last_strategy_call
         status, rival = self.latest_status, self._rival_status(self.radio.car_ahead_index)
         wet = race_strategy.normalise_compound(status.compound_name if status else None) in race_strategy.WET_COMPOUNDS

@@ -53,6 +53,7 @@ from ai_client import AIClient
 from engineer_brain import EngineerBrain
 from voice_commands import CommandDispatcher, VoiceCommandListener
 import push_to_talk
+import strategy_replan
 from udp_recording import (MAX_DATAGRAM, RecordingWriter, ReplayFinished, ReplaySource,
                            parse_speed)
 import webbrowser
@@ -165,6 +166,13 @@ def main():
                         help='Turn off the Monte Carlo race simulator (strategy win chances)')
     parser.add_argument('--sim-runs', type=int, default=300, metavar='N',
                         help='Races the Monte Carlo simulator runs per update (default 300)')
+    parser.add_argument('--plan-b-margin', type=float, default=strategy_replan.REPLAN_MARGIN_S, metavar='SECONDS',
+                        help='Only call Plan B when it beats the current plan by this much race time '
+                             f'(default {strategy_replan.REPLAN_MARGIN_S:g})')
+    parser.add_argument('--plan-b-places', type=float, default=strategy_replan.REPLAN_MARGIN_POSITIONS,
+                        metavar='PLACES',
+                        help='... or by this many finishing places on average '
+                             f'(default {strategy_replan.REPLAN_MARGIN_POSITIONS:g})')
     tts = parser.add_argument_group('engineer voice')
     tts.add_argument('--tts', choices=('kokoro', 'system'), default='kokoro',
                      help='Voice: kokoro (default; free offline neural voice, falls back to the system '
@@ -267,6 +275,8 @@ def main():
     analysis = AnalysisEngine(voice, history=history, on_demand=not args.chatty, fitted=fitted,
                               race_simulation='off' if args.no_race_sim else 'async',
                               sim_runs=args.sim_runs,
+                              replan=strategy_replan.ReplanConfig(margin_s=args.plan_b_margin,
+                                                                  margin_positions=args.plan_b_places),
                               track_store=TrackMapStore(args.history_dir / 'track_maps.json'))
     stream = TelemetryStream(analysis)
     voice.set_silence_filter(analysis.is_driver_busy)

@@ -130,7 +130,7 @@ class SafetyCarAndRainTests(unittest.TestCase):
         s = sim.RaceSimulator(state, runs=4000, seed=2, profile={'rain_probability': 0.4, 'sc_probability': 0})
         self.assertAlmostEqual((s.rain_at >= 0).mean(), 0.4 * 25 / 50, delta=0.03)
         dry = sim.RaceSimulator(replace(state, raining=True), runs=500, seed=2, profile={'rain_probability': 1.0})
-        self.assertFalse((dry.rain_at >= 0).any())       # already wet: no new shower
+        self.assertTrue((dry.rain_at == 0).all())        # already wet: wet from the lap in progress
         off = sim.RaceSimulator(state, runs=500, seed=2, profile={'rain_probability': 1.0}, rain=False)
         self.assertFalse((off.rain_at >= 0).any())
 

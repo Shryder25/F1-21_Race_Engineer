@@ -178,6 +178,17 @@ def format_context(ctx: dict) -> str:
                 + f"; chance of a Safety Car {round(sim['p_safety_car'] * 100)}%, VSC {round(sim['p_vsc'] * 100)}%, "
                   f"rain {round(sim['p_rain'] * 100)}%; pit loss {sim['pit_loss_s'][1]}s "
                   f"({sim['pit_loss_s'][0]}-{sim['pit_loss_s'][2]}s); overtaking difficulty {sim['overtaking']}/5"))
+        replan = strategy.get('replan')
+        if replan and replan.get('plan_a'):
+            a = replan['plan_a']
+            text = f"{a['label']}, box lap(s) {a['pit_laps'] or 'none'}; status {replan['status']}"
+            ch = replan.get('challenger')
+            if ch:
+                text += (f"; best alternative {ch['label']} gains {ch['time_gain_s']}s / "
+                         f"{ch['position_gain']} places, ahead in {round(ch['p_better'] * 100)}% of runs")
+            if replan.get('call_active') and replan.get('last_call'):
+                text += f"; Plan B called on lap {replan['last_call']['lap']}: {replan['last_call']['message']}"
+            add('Current plan (Plan A, the plan we are on)', text)
         spread = strategy.get('uncertainty')
         if spread and spread.get('worse') and spread.get('better'):
             add('Strategy across the tyre-model range', (
@@ -306,6 +317,9 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         if not strategy:
             return 'No strategy data yet.'
         text = strategy['radio']
+        replan = strategy.get('replan')
+        if replan and replan.get('call_active') and replan.get('last_call'):
+            text = replan['last_call']['message'] + ' ' + text
         undercut = strategy.get('undercut_on_car_ahead')
         if undercut:
             text += (' Undercut on the car ahead is on.' if undercut['works']

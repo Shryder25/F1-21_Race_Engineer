@@ -51,6 +51,39 @@ unchanged). It shows in the strategy summary (`strategy_summary()['simulation']`
 strategy card, the AI prompt and the strategy voice answer. A result more than three laps old
 is not quoted.
 
+## Live re-planning: Plan A and Plan B (`strategy_replan.py`)
+
+The simulator re-runs once a lap, and also straight away when something changes the race:
+a Safety Car or VSC, rain arriving, or a rival within three places boxing (rival-stop
+re-runs are spaced at least 3 s apart so a pit cascade doesn't queue one per car).
+
+* **Plan A** is the plan we are on: the first race plan, moved along as we stop (a stop we
+  skip slides to the current lap, an unplanned stop or a flashback starts it again). It only
+  changes when the engineer calls Plan B.
+* Every re-run plays Plan A first, then the strategy model's options, then event options:
+  Plan A's next stop brought forward to this lap under SC/VSC or after a nearby rival stops,
+  and "box now for inters" when it is raining and we are on slicks. At most six plans per run.
+* The simulator compares each plan with Plan A in the same races (`vs_reference`): median
+  seconds gained, mean places gained, and the share of runs where it finishes ahead.
+* **Plan B is called** only when it gains at least `REPLAN_MARGIN_S` (3 s, `--plan-b-margin`)
+  **or** `REPLAN_MARGIN_POSITIONS` (0.5 places, `--plan-b-places`), **and** is ahead in at least
+  60% of runs. On a routine lap re-run it must also win two re-runs in a row and come at least
+  3 laps after the last call; after an SC, VSC, rain or rival-stop trigger one run is enough.
+  The same tyres with stops within two laps count as the same plan (no call), unless one of them
+  says box this lap.
+* The call is a short `plan_b` radio line, which also plays in quiet mode: *"Safety car. Plan B,
+  Plan B. Box this lap for hards. Box, box. Gains about 8 seconds."* The HUD strategy card shows
+  it on top for two laps, plus Plan A and any alternative the engine is watching.
+
+When it is raining at the start of a run, every run is wet from the lap in progress and the
+player's plan decides whether we box for inters (a plan that stays on slicks pays the wet
+penalty); rivals still react on their own. A track drying out is not modelled yet (inters pay
+nothing on a dry track), so drying is only a routine re-run, never a forced Plan B.
+
+Cost: about 0.1-0.2 s per re-run on the 20-car golden replays, about 0.5 s for a 20-car
+field with six plans in the unit test, all on the simulator's own thread. The HUD only gets a
+small summary dict.
+
 ## Validation so far, and what real recordings would sharpen
 
 The sandbox has no F1 2021 game data, so `tests/test_race_sim.py` checks the mechanics on
