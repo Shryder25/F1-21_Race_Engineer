@@ -539,6 +539,7 @@ body.f1-theme {
 }
 
 .gap-item.threat-high { border-color: #ff3b3b; }
+.gap-item.plan-b-call { background: rgba(255, 59, 59, 0.18); font-weight: 700; }
 .gap-item.threat-medium { border-color: #ffb020; }
 .gap-item.threat-low { border-color: var(--border-color); }
 

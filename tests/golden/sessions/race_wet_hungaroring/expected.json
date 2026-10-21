@@ -209,7 +209,7 @@
    ],
    "race_report_laps": 2,
    "answers": {
-    "weather": "Light rain. Track 24 degrees, air 19.",
+    "weather": "Light rain. Track 24 degrees, air 19. Track about 9% wet, wetting. Inters quicker in about 1 lap.",
     "tyre_temps": "Fronts 77 and 77, rears 77 and 77. Worst wear 3 percent.",
     "pit_window": "Not enough laps on these tyres to predict a window yet.",
     "gap_ahead": "Gap to Bottas ahead is 1.6.",
@@ -253,7 +253,7 @@
    "top_threat": null,
    "race_report_laps": 3,
    "answers": {
-    "weather": "Light rain. Track 24 degrees, air 19.",
+    "weather": "Light rain. Track 24 degrees, air 19. Track about 24% wet, wetting.",
     "tyre_temps": "Fronts 94 and 94, rears 94 and 94. Worst wear 0 percent.",
     "pit_window": "Not enough laps on these tyres to predict a window yet.",
     "gap_ahead": "No gap ahead reading right now.",
@@ -303,7 +303,7 @@
    ],
    "race_report_laps": 4,
    "answers": {
-    "weather": "Heavy rain. Track 24 degrees, air 19.",
+    "weather": "Heavy rain. Track 24 degrees, air 19. Track about 37% wet, wetting. Full wets quicker in about 3 laps.",
     "tyre_temps": "Fronts 91 and 91, rears 91 and 91. Worst wear 6 percent.",
     "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "Gap to Norris ahead is 2.9.",
@@ -353,7 +353,7 @@
    ],
    "race_report_laps": 4,
    "answers": {
-    "weather": "Heavy rain. Track 24 degrees, air 19.",
+    "weather": "Heavy rain. Track 24 degrees, air 19. Track about 51% wet, wetting. Full wets quicker in about 3 laps.",
     "tyre_temps": "Fronts 90 and 90, rears 90 and 90. Worst wear 6 percent.",
     "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "Gap to Norris ahead is 2.8.",
@@ -398,7 +398,7 @@
    "top_threat": null,
    "race_report_laps": 5,
    "answers": {
-    "weather": "Heavy rain. Track 24 degrees, air 19.",
+    "weather": "Heavy rain. Track 24 degrees, air 19. Track about 60% wet, wetting. Full wets quicker in about 2 laps.",
     "tyre_temps": "Fronts 95 and 95, rears 95 and 95. Worst wear 9 percent.",
     "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "No gap ahead reading right now.",
@@ -450,7 +450,7 @@
   "race_report_laps": 5
  },
  "answers": {
-  "weather": "Heavy rain. Track 24 degrees, air 19.",
+  "weather": "Heavy rain. Track 24 degrees, air 19. Track about 61% wet, wetting. Full wets quicker in about 2 laps.",
   "tyre_temps": "Fronts 95 and 95, rears 95 and 95. Worst wear 12 percent.",
   "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
   "gap_ahead": "No gap ahead reading right now.",

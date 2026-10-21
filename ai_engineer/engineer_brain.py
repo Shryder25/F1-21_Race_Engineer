@@ -94,6 +94,14 @@ def format_context(ctx: dict) -> str:
         else ctx.get('lap'))
     add('Position', ctx.get('position'))
     add('Weather', ctx.get('weather'))
+    conditions = ctx.get('track_conditions')
+    if conditions:
+        add('Track wetness (0 dry, 1 standing water; from weather and lap times by tyre type)', (
+            f"{conditions['wetness']} +/- {conditions['sd']}, {conditions['trend']}, quickest tyre "
+            f"{conditions['best_tyre']}" + (f", switch to {conditions['switch_to']} in "
+                                            f"{conditions['switch_in_laps']} laps" if conditions.get('switch_to') else '')
+            + f"; basis: {conditions['basis']}"
+            + (''.join(f"; forecast +{f['in_min']} min rain {f['rain_pct']}%" for f in conditions['forecast_rain'][:4]))))
     add('Track temp C', ctx.get('track_temp_c'))
     add('Air temp C', ctx.get('air_temp_c'))
     add('Safety car out', ctx.get('safety_car') or None)
@@ -183,6 +191,17 @@ def format_context(ctx: dict) -> str:
                 + f"; chance of a Safety Car {round(sim['p_safety_car'] * 100)}%, VSC {round(sim['p_vsc'] * 100)}%, "
                   f"rain {round(sim['p_rain'] * 100)}%; pit loss {sim['pit_loss_s'][1]}s "
                   f"({sim['pit_loss_s'][0]}-{sim['pit_loss_s'][2]}s); overtaking difficulty {sim['overtaking']}/5"))
+        replan = strategy.get('replan')
+        if replan and replan.get('plan_a'):
+            a = replan['plan_a']
+            text = f"{a['label']}, box lap(s) {a['pit_laps'] or 'none'}; status {replan['status']}"
+            ch = replan.get('challenger')
+            if ch:
+                text += (f"; best alternative {ch['label']} gains {ch['time_gain_s']}s / "
+                         f"{ch['position_gain']} places, ahead in {round(ch['p_better'] * 100)}% of runs")
+            if replan.get('call_active') and replan.get('last_call'):
+                text += f"; Plan B called on lap {replan['last_call']['lap']}: {replan['last_call']['message']}"
+            add('Current plan (Plan A, the plan we are on)', text)
         spread = strategy.get('uncertainty')
         if spread and spread.get('worse') and spread.get('better'):
             add('Strategy across the tyre-model range', (
@@ -255,8 +274,12 @@ def rule_based_answer(command: str, ctx: dict) -> str:
     if command == 'weather':
         if not ctx.get('weather'):
             return 'No weather data yet.'
-        return (f"{ctx['weather'].capitalize()}. Track {ctx.get('track_temp_c')} degrees, "
+        text = (f"{ctx['weather'].capitalize()}. Track {ctx.get('track_temp_c')} degrees, "
                 f"air {ctx.get('air_temp_c')}.")
+        conditions = ctx.get('track_conditions')
+        if conditions and conditions.get('radio'):
+            text += ' ' + conditions['radio']
+        return text
     if command in ('gap_ahead', 'gap_behind'):
         side = 'ahead' if command == 'gap_ahead' else 'behind'
         gap = ctx.get(f'gap_{side}_s')
@@ -311,6 +334,9 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         if not strategy:
             return 'No strategy data yet.'
         text = strategy['radio']
+        replan = strategy.get('replan')
+        if replan and replan.get('call_active') and replan.get('last_call'):
+            text = replan['last_call']['message'] + ' ' + text
         undercut = strategy.get('undercut_on_car_ahead')
         if undercut:
             text += (' Undercut on the car ahead is on.' if undercut['works']

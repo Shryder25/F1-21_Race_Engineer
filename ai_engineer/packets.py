@@ -492,6 +492,44 @@ class SessionData:
     pit_stop_window_ideal_lap: int = 0
     pit_stop_window_latest_lap: int = 0
     pit_stop_rejoin_position: int = 0
+    # The game's weather forecast for this session: WeatherSample tuples, soonest first.
+    weather_forecast: tuple = ()
+
+
+@dataclass(frozen=True)
+class WeatherSample:
+    """One forecast sample: weather and rain chance ``offset_min`` minutes from now."""
+    session_type: int
+    offset_min: int
+    weather: int              # 0 clear, 1 light cloud, 2 overcast, 3 light rain, 4 heavy rain, 5 storm
+    track_temperature: int
+    track_temperature_change: int   # 0 up, 1 down, 2 no change
+    air_temperature: int
+    air_temperature_change: int
+    rain_percentage: int      # chance of rain, 0-100
+
+
+# Session packet offsets (after the header) of the forecast block, F1 2021 spec:
+# networkGame at 125, numWeatherForecastSamples at 126, then 56 samples of 8 bytes.
+WEATHER_FORECAST_COUNT_OFFSET = 126
+WEATHER_FORECAST_OFFSET = 127
+WEATHER_SAMPLE_FORMAT = '<BBBbbbbB'
+WEATHER_SAMPLE_SIZE = struct.calcsize(WEATHER_SAMPLE_FORMAT)
+MAX_WEATHER_SAMPLES = 56
+
+
+def parse_weather_forecast(data: bytes, session_type: int) -> tuple:
+    """This session's forecast samples (the packet also carries the next sessions')."""
+    if len(data) < HEADER_SIZE + WEATHER_FORECAST_OFFSET + WEATHER_SAMPLE_SIZE * MAX_WEATHER_SAMPLES:
+        return ()
+    count = min(data[HEADER_SIZE + WEATHER_FORECAST_COUNT_OFFSET], MAX_WEATHER_SAMPLES)
+    samples = []
+    for i in range(count):
+        sample = WeatherSample(*struct.unpack_from(
+            WEATHER_SAMPLE_FORMAT, data, HEADER_SIZE + WEATHER_FORECAST_OFFSET + i * WEATHER_SAMPLE_SIZE))
+        if sample.session_type == session_type and sample.weather <= 5 and sample.rain_percentage <= 100:
+            samples.append(sample)
+    return tuple(sorted(samples, key=lambda w: w.offset_min))
 
 
 def parse_session_data(data: bytes) -> SessionData:
@@ -505,6 +543,7 @@ def parse_session_data(data: bytes) -> SessionData:
         session.safety_car_status = data[HEADER_SIZE + 124]
         (session.pit_stop_window_ideal_lap, session.pit_stop_window_latest_lap,
          session.pit_stop_rejoin_position) = struct.unpack_from('<BBB', data, HEADER_SIZE + 589)
+        session.weather_forecast = parse_weather_forecast(data, session.session_type)
     return session
 
 

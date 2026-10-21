@@ -1076,10 +1076,42 @@ function renderTelemetry(data, changed) {
                 const best = strat.best;
                 const sets = best.compounds.map((c, i) => `${c[0]}${best.stint_laps[i]}`).join(' → ');
                 const box = best.pit_laps.length ? `BOX L${best.pit_laps.join(', L')}` : 'NO STOP';
-                const rows = [`<div class="gap-item">
-                    <span class="gap-label">${best.stops}-STOP ${sets}</span>
+                const rows = [];
+                // Live re-planning: a fresh Plan B call on top, then the plan we are on
+                const rp = strat.replan;
+                if (rp && rp.call_active && rp.last_call) {
+                    rows.push(`<div class="gap-item threat-high plan-b-call">
+                        <span class="gap-label">PLAN B · L${rp.last_call.lap}</span>
+                        <span class="gap-val">${rp.last_call.message}</span>
+                    </div>`);
+                }
+                // Track wetness: how wet, which way it is going, and when to change tyre type
+                const cond = strat.conditions;
+                if (cond) {
+                    const words = { slick: 'SLICKS', inter: 'INTERS', wet: 'WETS' };
+                    const sw = cond.switch_to
+                        ? (cond.switch_in_laps === 0 ? `${words[cond.switch_to]} NOW` : `${words[cond.switch_to]} ~${cond.switch_in_laps} LAPS`)
+                        : `${words[cond.best_tyre]} BEST`;
+                    rows.push(`<div class="gap-item ${cond.switch_to && cond.switch_in_laps === 0 ? 'threat-medium' : 'threat-low'}">
+                        <span class="gap-label">TRACK ${Math.round(cond.wetness * 100)}% WET · ${cond.trend.toUpperCase()}</span>
+                        <span class="gap-val">${sw}</span>
+                    </div>`);
+                }
+                if (rp && rp.plan_a) {
+                    const a = rp.plan_a;
+                    const aBox = a.pit_laps.length ? `BOX L${a.pit_laps.join(', L')}` : 'NO STOP';
+                    const ch = rp.challenger;
+                    const watch = ch && ch.clears_margin && rp.status !== 'switched'
+                        ? ` · B? ${ch.label.toUpperCase()} +${ch.time_gain_s.toFixed(1)}s` : '';
+                    rows.push(`<div class="gap-item">
+                        <span class="gap-label">PLAN A ${a.label.toUpperCase()}${watch}</span>
+                        <span class="gap-val">${aBox}</span>
+                    </div>`);
+                }
+                rows.push(`<div class="gap-item${rp && rp.plan_a ? ' threat-low' : ''}">
+                    <span class="gap-label">${rp && rp.plan_a ? 'MODEL ' : ''}${best.stops}-STOP ${sets}</span>
                     <span class="gap-val">${box}</span>
-                </div>`];
+                </div>`);
                 (strat.alternatives || []).forEach(o => rows.push(`<div class="gap-item threat-low">
                     <span class="gap-label">${o.stops}-STOP</span>
                     <span class="gap-val">+${o.slower_by_s.toFixed(1)}s</span>
@@ -1090,7 +1122,7 @@ function renderTelemetry(data, changed) {
                     sim.options.forEach((o, i) => {
                         const r = o.position_range;
                         rows.push(`<div class="gap-item ${i === 0 ? 'threat-high' : 'threat-low'}">
-                            <span class="gap-label">SIM ${o.label.toUpperCase()} P${r[1]} (P${r[0]}–P${r[2]})</span>
+                            <span class="gap-label">SIM ${o.is_reference ? 'A ' : ''}${o.label.toUpperCase()} P${r[1]} (P${r[0]}–P${r[2]})</span>
                             <span class="gap-val">${Math.round(o.p_best * 100)}%</span>
                         </div>`);
                     });
