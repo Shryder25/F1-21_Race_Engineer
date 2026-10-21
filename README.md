@@ -64,6 +64,18 @@ python ai_engineer/replay_udp.py recordings/silverstone.f1rec.gz --info     # wh
 
 `1` replays in real time with the recorded gaps between datagrams, `10` ten times faster, `max` without waiting. `main.py --replay` never drops datagrams; UDP replay at `max` can, if the receiver falls behind. In code, `udp_recording.replay_into(stream, path)` feeds a `TelemetryStream` directly using the recorded clock.
 
+## 📈 Channel data store & MoTeC i2 export
+
+Every telemetry sample of your car (about 80 channels: speed, throttle, brake, steering, gear, RPM, tyre and brake temperatures, tyre pressures, suspension, wheel speed and slip, G-forces, fuel, ERS, tyre wear and more) can be logged to a Parquet file, one row per sample with the lap number and lap distance on every row, so laps can be overlaid metre by metre. The same file exports to MoTeC i2 (`.ld` log + `.ldx` lap markers), or to a MoTeC-style CSV. Needs `pyarrow` (in `ai_engineer/requirements.txt`). Details and limitations: [`docs/channel-store.md`](docs/channel-store.md).
+
+```bash
+python main.py --log-channels channels/                      # log while you drive (or with --replay)
+python tools/channels.py build recordings/race.f1rec.gz       # or rebuild from a raw recording
+python tools/channels.py laps channels/<session>.parquet      # lap list: times, clean / pit / invalid
+python tools/channels.py compare channels/<session>.parquet 4 7 --channels speed throttle brake
+python main.py --export-motec channels/<session>.parquet      # writes <session>.ld + .ldx for MoTeC i2
+```
+
 ### Golden-session regression tests
 
 `tests/golden/sessions/` holds recorded sessions (race, qualifying, wet, Safety Car) with the radio calls, voice-command answers and key numbers the engineer produced on them. The test suite replays them and fails if behaviour changes. Four sessions come from a deterministic full-field simulator; four more slots wait for real recordings from the game. See [`tests/golden/README.md`](tests/golden/README.md) for how to record one and how to accept an intended change (`python tools/golden_sessions.py bless NAME`).
