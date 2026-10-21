@@ -51,6 +51,9 @@
         <button class="tab-btn active" data-tab="tab-live">
             <span class="tab-icon">🏁</span> LIVE BROADCAST & TRACK MAP
         </button>
+        <button class="tab-btn" data-tab="tab-pitwall">
+            <span class="tab-icon">🗼</span> PIT WALL
+        </button>
         <button class="tab-btn" data-tab="tab-setup">
             <span class="tab-icon">⚙️</span> TRACK DATABASE & SETUP ADVISOR
         </button>
@@ -334,6 +337,99 @@
                 <div class="ers-mode-label" id="ersModeText">DEPLOY: BALANCED</div>
             </div>
         </section>
+    </main>
+
+    <!-- MAIN TAB: Pit Wall (full-field timing, race chart, stints, strategy odds) -->
+    <main class="tab-content" id="tab-pitwall">
+        <div class="pitwall-grid">
+            <section class="panel pw-tower-panel">
+                <div class="panel-header">
+                    <span class="header-bar red"></span>
+                    <h2>TIMING TOWER</h2>
+                    <span class="session-badge" id="pwLapBadge">LAP -- / --</span>
+                </div>
+                <table class="pw-tower">
+                    <thead>
+                        <tr>
+                            <th class="c-pos">POS</th>
+                            <th class="c-drv">DRIVER</th>
+                            <th class="c-num" id="pwGapHead">GAP</th>
+                            <th class="c-num">INT</th>
+                            <th class="c-num c-last">LAST</th>
+                            <th class="c-num c-best">BEST</th>
+                            <th class="c-tyre">TYRE</th>
+                            <th class="c-pit">PIT</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pwTowerBody">
+                        <tr class="pw-empty"><td colspan="8">Waiting for the field&hellip;</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <div class="pw-right">
+                <section class="panel pw-chart-panel">
+                    <div class="panel-header">
+                        <span class="header-bar teal"></span>
+                        <h2>GAP TO LEADER</h2>
+                        <span class="pw-hint">Each car's gap at the line, lap by lap. Leader on top.</span>
+                    </div>
+                    <div class="pw-chart-wrap">
+                        <canvas id="gapChart"></canvas>
+                        <div class="pw-chart-empty" id="gapChartEmpty">The race chart starts when the leader completes lap 1.</div>
+                    </div>
+                </section>
+
+                <section class="panel pw-stint-panel">
+                    <div class="panel-header">
+                        <span class="header-bar yellow"></span>
+                        <h2>TYRE STINTS</h2>
+                        <div class="pw-legend">
+                            <span class="pw-tyre compound-soft">S</span>
+                            <span class="pw-tyre compound-medium">M</span>
+                            <span class="pw-tyre compound-hard">H</span>
+                            <span class="pw-tyre compound-inter">I</span>
+                            <span class="pw-tyre compound-wet">W</span>
+                            <span class="pw-legend-plan">Our plan</span>
+                        </div>
+                    </div>
+                    <div class="pw-stints" id="pwStints">
+                        <div class="pw-empty-block">No tyre data yet.</div>
+                    </div>
+                </section>
+
+                <section class="panel pw-odds-panel">
+                    <div class="panel-header">
+                        <span class="header-bar purple"></span>
+                        <h2>STRATEGY PROBABILITIES</h2>
+                        <span class="pw-hint" id="pwOddsMeta">Monte Carlo race simulation</span>
+                    </div>
+                    <div class="pw-odds" id="pwOdds">
+                        <div class="pw-empty-block" id="pwOddsEmpty">The race simulation runs once the race is under way.</div>
+                        <div class="pw-odds-body" id="pwOddsBody" style="display:none;">
+                            <div class="pw-tiles">
+                                <div class="pw-tile"><span class="pw-tile-label">WIN</span><span class="pw-tile-val" id="pwWin">--</span><span class="pw-tile-trend" id="pwWinTrend"></span></div>
+                                <div class="pw-tile"><span class="pw-tile-label">PODIUM</span><span class="pw-tile-val" id="pwPodium">--</span><span class="pw-tile-trend" id="pwPodiumTrend"></span></div>
+                                <div class="pw-tile"><span class="pw-tile-label">POINTS</span><span class="pw-tile-val" id="pwPoints">--</span><span class="pw-tile-trend" id="pwPointsTrend"></span></div>
+                                <div class="pw-tile"><span class="pw-tile-label">EXPECTED</span><span class="pw-tile-val" id="pwExpected">--</span><span class="pw-tile-trend" id="pwExpectedRange"></span></div>
+                            </div>
+                            <div class="pw-odds-cols">
+                                <div>
+                                    <div class="card-title">PLAN ODDS <span class="pw-sub">share of races each plan comes out best</span></div>
+                                    <div id="pwPlans"></div>
+                                </div>
+                                <div>
+                                    <div class="card-title">FINISHING POSITION <span class="pw-sub">recommended plan</span></div>
+                                    <div class="pw-dist" id="pwDist"></div>
+                                    <div class="pw-factors" id="pwFactors"></div>
+                                </div>
+                            </div>
+                            <div class="pw-trend-wrap"><canvas id="oddsChart"></canvas></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
     </main>
 
     <!-- MAIN TAB 2: Setup Advisor & Track Database -->
