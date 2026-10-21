@@ -168,6 +168,26 @@ body.f1-theme {
     animation: pulse-border 1s infinite;
 }
 
+.sc-red {
+    background-color: rgba(225, 6, 0, 0.45);
+    color: #ffffff;
+    border: 1px solid var(--f1-red);
+    animation: pulse-border 0.8s infinite;
+}
+
+.sc-yellow {
+    background-color: rgba(255, 221, 0, 0.18);
+    color: #ffdd00;
+    border: 1px solid #ffdd00;
+    animation: pulse-border 1.5s infinite;
+}
+
+.sc-blue {
+    background-color: rgba(0, 144, 255, 0.2);
+    color: #4db2ff;
+    border: 1px solid #0090ff;
+}
+
 .header-right {
     display: flex;
     align-items: center;
@@ -472,6 +492,11 @@ body.f1-theme {
     background: rgba(255, 187, 0, 0.15);
     border-color: var(--sector-yellow);
     color: var(--sector-yellow);
+}
+
+/* Last lap's split, shown until this lap's sector is done */
+.sec-prev {
+    opacity: 0.55;
 }
 
 /* Lap times table */

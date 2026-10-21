@@ -37,6 +37,7 @@ import strategy_replan
 import track_wetness
 import track_maps
 import pit_wall
+import track_status
 from session_history import SessionLog, lap_rows, stint_rows
 
 
@@ -222,6 +223,12 @@ class AnalysisEngine:
         self.weather_group: str | None = None
         self.best_sector_times: dict[int, int] = {}
         self.current_sector_times: dict[int, int] = {}
+        # The last finished lap's sectors (S3 = lap time - S1 - S2, since the game never
+        # sends S3 on its own) and the personal bests they were up against.
+        self.last_lap_sectors: dict[int, int] = {}
+        self.last_lap_sector_refs: dict[int, int] = {}
+        # Lap distance (m) where sectors 2 and 3 start, learned while driving.
+        self.sector_starts: dict[int, float] = {}
 
         self.tyre_state = TyreState()
         self.driver_profile = None
@@ -303,6 +310,9 @@ class AnalysisEngine:
             self.brake_start_distance = None
             self.current_sector_times.clear()
             self.best_sector_times.clear()
+            self.last_lap_sectors = {}
+            self.last_lap_sector_refs = {}
+            self.sector_starts = {}
             self.session_lap_stats.clear()
             self.session_log = SessionLog(session_uid, player_index)
             self._session_log_capture = None
@@ -371,6 +381,8 @@ class AnalysisEngine:
                 'tyre_surface_temps': [0] * 4, 'tyre_inner_temps': [0] * 4,
                 'tyre_pressures': [0] * 4, 'engine_temp': 0,
                 'personal_sectors_ms': self.best_sector_times,
+                'current_sectors_ms': {}, 'last_lap_sectors_ms': {}, 'last_lap_sector_refs_ms': {},
+                'track_status': dict(track_status.CLEAR), 'safety_car': 'NONE',
                 'timing_tower': [], 'gap_history': [], 'tyre_stints': [], 'strategy_odds': None,
             })
             self.radio.reset(session)
@@ -854,6 +866,8 @@ class AnalysisEngine:
 
         # Sector reporting (Sector 0 -> 1 -> 2)
         if lap.sector != self.last_sector:
+            if lap.sector == self.last_sector + 1 and lap.lap_distance > 0:
+                self.sector_starts[lap.sector + 1] = lap.lap_distance
             self._on_sector_change(lap)
             self.last_sector = lap.sector
 
@@ -930,6 +944,9 @@ class AnalysisEngine:
         sectors = dict(self.current_sector_times)
         if 1 in sectors and 2 in sectors and lap.last_lap_time_ms > sectors[1] + sectors[2]:
             sectors[3] = lap.last_lap_time_ms - sectors[1] - sectors[2]
+        if prev_lap_num > 0 and lap.last_lap_time_ms > 0 and sectors:
+            self.last_lap_sectors = dict(sectors)
+            self.last_lap_sector_refs = dict(self.best_sector_times)
         if prev_lap_num > 0 and lap.last_lap_time_ms > 0:
             self._record_lap_stats(prev_lap_num, lap.last_lap_time_ms, complete, sectors,
                                    self.current_lap_speed_trap_kph)
@@ -2021,6 +2038,11 @@ class AnalysisEngine:
             "sector": lap.sector,
             "current_sectors_ms": dict(self.current_sector_times),
             "personal_sectors_ms": dict(self.best_sector_times),
+            "last_lap_sectors_ms": dict(self.last_lap_sectors),
+            "last_lap_sector_refs_ms": dict(self.last_lap_sector_refs),
+            "track_status": track_status.describe(
+                self.session, self.latest_status.fia_flags if self.latest_status else 0,
+                self.sector_starts),
             "gap_ahead_s": self.radio.gap_ahead_s,
             "gap_behind_s": self.radio.gap_behind_s,
             "car_ahead_name": self.radio.driver_name(self.radio.car_ahead_index),
