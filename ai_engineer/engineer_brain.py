@@ -51,6 +51,7 @@ Rules:
 - Rival stop predictions are the model's guess of when nearby cars will box next and which tyre they will fit, from their tyre age, wear and the track's usual strategy. Say "likely" or "expect": they are forecasts, not facts.
 - The race simulation line is a Monte Carlo of the whole field (Safety Cars, VSCs, pit-stop spread, traffic, overtaking): quote its odds as odds ("two-stop comes out best 60% of the time"), never as certainties.
 - Opponent threats, when present, are nearby cars already ranked by how much pressure they put on the driver; mention one only if it changes what the driver should do right now.
+- "Driver's own history at this track" summarises this driver's past laps here. Use it to make advice personal when it fits (e.g. "you usually lose time in sector two here"), never as a substitute for live data.
 - When a rival's driver name is given, call them by that name like a real engineer would (for example "Hamilton is one point two ahead"). Never make up a name that is not in the data.
 - Sound like a real F1 engineer: calm, clipped, encouraging. Say lap times the way engineers do ("one thirty-two four"), talk about small time differences in tenths ("two tenths up", "a tenth down"), and say "box, box" only for an actual pit call.
 - The driver may ask anything in their own words. Answer what they actually asked from the data. If the data cannot answer it, say so in a few words and offer the closest thing you do know.
@@ -138,6 +139,7 @@ def format_context(ctx: dict) -> str:
                     f"(range {_fmt_range(fuel.get('per_lap_kg_range'))}), "
                     f"{fuel['laps_of_fuel']} laps of fuel, margin {fuel['margin_laps']} laps "
                     f"(range {_fmt_range(fuel.get('margin_laps_range'))})")
+    add("Driver's own history at this track", ctx.get('driver_profile'))
     add('Last lap sector times ms', ctx.get('last_lap_sectors_ms'))
     add('Last lap sector deltas to personal best ms', ctx.get('last_lap_sector_deltas_ms'))
     tire = ctx.get('tire_health')

@@ -26,6 +26,7 @@ from history import TelemetryHistory
 from race_radio import RaceRadio
 from race_events import RaceControl
 import radio_phrases as say
+import driver_profile
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
 import race_strategy
@@ -51,6 +52,7 @@ TYRE_TEMP_RISE_RATE_C_PER_S = 1.5   # minimum ΔT/Δt to treat a spike as genuin
 TYRE_TEMP_ALERT_COOLDOWN_SECS = 40.0  # between 30-45s, per the requested fix
 TYRE_CRITICAL_SUSTAIN_SECS = 0.5      # critical must hold (and keep climbing) this long
 TYRE_SUMMARY_MIN_SECS = 4.0           # seconds out of the window in a lap before it's mentioned
+PROFILE_REFRESH_LAPS = 3              # rebuild the driver profile every few completed laps
 TYRE_SUMMARY_REPEAT_LAPS = 3          # an unchanged tyre issue is repeated at most every 3 laps
 
 BRAKING_WARN_DISTANCE = 220  # Metres before braking zone to announce
@@ -212,6 +214,7 @@ class AnalysisEngine:
         self.current_sector_times: dict[int, int] = {}
 
         self.tyre_state = TyreState()
+        self.driver_profile = None
         self.delta = DeltaTracker()
         self.session: Optional[SessionData] = None
         self.track_id: int = -1
@@ -274,6 +277,7 @@ class AnalysisEngine:
             self.session_uid = session_uid
             self.delta = DeltaTracker()
             self.tyre_state = TyreState()
+            self.driver_profile = None
             self.current_corner_data.clear()
             self.best_corner_data.clear()
             self.corner_diagnostics.clear()
@@ -393,8 +397,16 @@ class AnalysisEngine:
                 self.delta.best_lap_speeds = reference['speeds']
                 self.best_corner_data = reference['corners']
                 self.best_sector_times = self.history.personal_sectors(session)
+            self._refresh_driver_profile()
         except (OSError, ValueError, KeyError, sqlite3.Error) as error:
             print(f'[History] Could not load track history: {error}')
+
+    def _refresh_driver_profile(self):
+        """How this driver usually drives this track, from every saved clean lap (for the AI)."""
+        try:
+            self.driver_profile = driver_profile.build_profile(self.history, self.session)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'[History] Could not build driver profile: {error}')
 
     def _change_conditions(self, session: SessionData):
         """Dry -> intermediate -> wet within one session: keep the race, swap the references.
@@ -906,6 +918,8 @@ class AnalysisEngine:
                                             lap.last_lap_time_ms, complete, recording)
                 except (OSError, ValueError, sqlite3.Error) as error:
                     print(f'[History] Could not save lap: {error}')
+                if complete and prev_lap_num % PROFILE_REFRESH_LAPS == 0:
+                    self._refresh_driver_profile()     # learns from the laps just driven
         if complete and lap.last_lap_time_ms > 0 and self.delta.current_lap_times:
             last_ms = lap.last_lap_time_ms
             self.radio.completed_lap(last_ms, prev_lap_num, sectors, self.best_sector_times)
@@ -1730,6 +1744,7 @@ class AnalysisEngine:
         ctx['strategy'] = self.strategy_summary()
         rivals = (ctx['strategy'] or {}).get('rivals')
         ctx['rival_predictions'] = [r['summary'] for r in rivals['nearby']] if rivals and rivals['nearby'] else None
+        ctx['driver_profile'] = driver_profile.describe(self.driver_profile)
         ctx['recent_race_events'] = [event['text'] for event in self.race_control.recent(5)] or None
         if self.session_lap_stats:
             last = self.session_lap_stats[-1]
