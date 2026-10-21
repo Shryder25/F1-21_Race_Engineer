@@ -7,3 +7,5 @@ pygame>=2.5
 # Natural engineer voice (Kokoro; falls back to pyttsx3 if these are missing):
 kokoro-onnx>=0.4
 sounddevice>=0.4
+# Channel data store (Parquet, docs/channel-store.md) and the MoTeC i2 export:
+pyarrow>=14
