@@ -41,6 +41,7 @@
   {"t": 147.0, "key": "rival_pit", "priority": "STRATEGY", "proactive": true, "text": "Norris behind has boxed. Gap is 1.6, undercut will not work. Stay out."},
   {"t": 147.55, "key": "fastest_lap", "priority": "NORMAL", "proactive": false, "text": "Bottas sets the fastest lap, 1:09.850."},
   {"t": 148.8, "key": "position", "priority": "TIMING", "proactive": false, "text": "P2."},
+  {"t": 149.2, "key": "tyre_summary", "priority": "LOW", "proactive": false, "text": "All four tyres ran cold that lap."},
   {"t": 150.2, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Heavy downhill braking zone, main overtaking spot, 210 metres."},
   {"t": 159.0, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Downhill off-camber left-hander, easy to slide wide, 220 metres."},
   {"t": 167.6, "key": "braking", "priority": "CRITICAL", "proactive": false, "text": "Blind crest uphill left, high-speed commitment, 210 metres."},

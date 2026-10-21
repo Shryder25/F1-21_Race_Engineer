@@ -17,8 +17,11 @@ from __future__ import annotations
 import re
 from typing import Callable
 
-from ai_client import AIClient, AIUnavailable
+from ai_client import AIClient, AITimeout, AIUnavailable
 import session_modes
+
+# Radio lines are under 25 words; with thinking off this leaves plenty of room for the JSON.
+RADIO_MAX_TOKENS = 220
 
 COMMAND_QUESTIONS = {
     'weather': 'Give me a weather report.',
@@ -382,18 +385,23 @@ class EngineerBrain:
         if self.client is None:
             return None
         system, user = build_prompt(question, ctx)
+        # Radio answers are short: no long reasoning, small token budget (much lower latency).
+        fast = {'fast': True, 'max_tokens': RADIO_MAX_TOKENS} if getattr(self.client, 'supports_fast', False) else {}
         if hasattr(self.client, 'chat_json'):
             try:
-                result = self.client.chat_json(system, user)
+                result = self.client.chat_json(system, user, **fast)
                 voice = clean_radio_text(str(result.get('voice') or ''))
                 if voice:
                     self.last_source = 'ai'
                     self.last_advice = str(result.get('advice') or '').strip()
                     return voice
+            except AITimeout as error:
+                print(f'[Engineer] AI too slow ({error}); answering from rules.')
+                return None
             except AIUnavailable as error:
                 print(f'[Engineer] AI JSON reply unavailable ({error}); trying plain text.')
         try:
-            text = clean_radio_text(self.client.chat(system, user))
+            text = clean_radio_text(self.client.chat(system, user, **fast))
             if text:
                 self.last_source = 'ai'
                 self.last_advice = ''
