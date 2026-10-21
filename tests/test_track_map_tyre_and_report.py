@@ -182,6 +182,19 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             self.engine.analyze_tyres(self.make_telemetry(90), self.lap)
             clock['t'] += 1.0  # total 40s since the first critical alert: cooldown elapsed
             self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 10), self.lap)
+            clock['t'] += 0.6
+            self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 12), self.lap)
+            same_lap = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
+            self.assertEqual(same_lap, second_count, 'at most one critical call per lap')
+
+            # A new lap: a fresh overheat may be called again.
+            self.engine._report_tyre_lap()
+            clock['t'] += 1.0
+            self.engine.analyze_tyres(self.make_telemetry(90), self.lap)
+            clock['t'] += 1.0
+            self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 10), self.lap)
+            clock['t'] += 0.6
+            self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 12), self.lap)
             third_count = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
             self.assertGreater(third_count, second_count, 'a new critical event after cooldown should alert again')
         finally:
@@ -311,3 +324,56 @@ class HistorySpeedTrapColumnTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TyreLapSummaryTests(unittest.TestCase):
+    """Mid-lap the driver sees temps on screen: only critical calls; the rest once per lap."""
+
+    def setUp(self):
+        import time as time_module
+        self.time_module = time_module
+        self.real_time = time_module.time
+        self.clock = {'t': 5000.0}
+        time_module.time = lambda: self.clock['t']
+        self.engine = AnalysisEngine(SilentVoice(), on_demand=False)
+        self.engine.update_session(SessionData(0, 30, 20, 20, 1000, 10, 11, 0))
+        self.lap = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 3), 0)
+
+    def tearDown(self):
+        self.time_module.time = self.real_time
+
+    def drive(self, temp, seconds):
+        telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 150, 1, 0, 4, temp), 0)
+        for _ in range(int(seconds / 0.1)):
+            self.engine.analyze_tyres(telemetry, self.lap)
+            self.clock['t'] += 0.1
+
+    def tyre_calls(self):
+        return [m for m, p, kw in self.engine.voice.messages
+                if 'tyre' in str(kw.get('key', '')) or 'hot' in m or 'cold' in m]
+
+    def test_hot_tyres_are_silent_mid_lap_and_summarised_at_lap_end(self):
+        self.drive(108, 60)                 # a whole minute hot: old code called every 25 s
+        self.assertEqual(self.tyre_calls(), [])
+        self.engine._report_tyre_lap()
+        self.assertEqual(self.tyre_calls(), ['All four tyres ran hot that lap, peak one sixteen.'])  # fronts run 8 hotter
+
+    def test_unchanged_issue_repeats_only_every_few_laps(self):
+        for _ in range(6):
+            self.drive(108, 10)
+            self.engine._report_tyre_lap()
+        self.assertEqual(len(self.tyre_calls()), 2)     # lap 1 and lap 4
+
+    def test_short_spell_out_of_window_is_not_mentioned(self):
+        self.drive(108, 2)
+        self.drive(95, 20)
+        self.engine._report_tyre_lap()
+        self.assertEqual(self.tyre_calls(), [])
+
+    def test_critical_call_is_short(self):
+        for temp in range(100, 125, 2):
+            self.drive(temp, 0.3)
+        calls = [m for m, p, kw in self.engine.voice.messages
+                 if str(kw.get('key', '')).endswith('tyre_temperature')]
+        self.assertEqual(calls, ['Fronts overheating, cool them.'])
+        self.assertLessEqual(len(calls[0].split()), 6)

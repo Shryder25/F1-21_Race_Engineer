@@ -51,6 +51,7 @@ from telemetry_stream import TelemetryStream
 from web_hud import (start_web_hud_server, add_voice_log, set_command_handler,
                      set_setup_ai_client, set_reset_map_handler)
 from ai_launcher import LocalAILauncher
+import auto_refit
 from ai_client import AIClient
 from engineer_brain import EngineerBrain
 from voice_commands import CommandDispatcher, VoiceCommandListener
@@ -179,6 +180,8 @@ def main():
     parser.add_argument('--models', type=Path, default=None, metavar='FILE',
                         help='Tyre/fuel models fitted by tools/fit_models.py '
                              '(default: <history-dir>/fitted_models.json; built-in estimates if missing)')
+    parser.add_argument('--no-auto-refit', action='store_true',
+                        help="Don't refit the tyre/fuel models from your laps when the engineer closes")
     parser.add_argument('--no-race-sim', action='store_true',
                         help='Turn off the Monte Carlo race simulator (strategy win chances)')
     parser.add_argument('--sim-runs', type=int, default=300, metavar='N',
@@ -496,6 +499,13 @@ def main():
         if radio:
             radio.stop()
         dispatcher.shutdown()
+        if not args.no_auto_refit:
+            # Learn from this session: refit tyre/fuel/pit models from every lap driven so far.
+            try:
+                auto_refit.refit(history, models_path,
+                                 extra_recordings=[args.record] if args.record else ())
+            except Exception as error:      # never let learning break shutdown
+                print(f'[Learn] Model refit skipped: {error}')
         history.close()
         if web_server:
             web_server.shutdown()

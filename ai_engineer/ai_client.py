@@ -14,8 +14,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import urllib.error
 import urllib.request
+
+from ai_launcher import KEEP_ALIVE, ollama_root
 
 DEFAULT_BASE_URL = 'http://localhost:11434/v1'
 DEFAULT_MODEL = 'deepseek-r1:8b'
@@ -26,6 +29,16 @@ _THINK_OPEN = re.compile(r'<think>.*', re.DOTALL | re.IGNORECASE)
 
 class AIUnavailable(Exception):
     """The model could not be reached or returned nothing usable."""
+
+
+class AITimeout(AIUnavailable):
+    """The model took longer than the timeout. Retrying would only double the wait."""
+
+
+def _is_timeout(error) -> bool:
+    if isinstance(error, (TimeoutError, socket.timeout)):
+        return True
+    return isinstance(error, urllib.error.URLError) and isinstance(error.reason, (TimeoutError, socket.timeout))
 
 
 def strip_reasoning(text: str) -> str:
@@ -42,6 +55,55 @@ class AIClient:
         self.model = model or os.environ.get('F1_AI_MODEL') or DEFAULT_MODEL
         self.api_key = api_key or os.environ.get('F1_AI_API_KEY') or 'ollama'
         self.timeout = timeout
+        # Local Ollama gets the native API for quick radio answers: it can switch
+        # DeepSeek R1's long "thinking" off, which is most of the wait.
+        self.ollama_root = ollama_root(self.base_url)
+
+    supports_fast = True
+
+    def _post_native(self, system: str, user: str, temperature: float, max_tokens: int,
+                     json_mode: bool, think: bool | None) -> str:
+        body = {
+            'model': self.model,
+            'messages': [{'role': 'system', 'content': system},
+                         {'role': 'user', 'content': user}],
+            'stream': False,
+            'keep_alive': KEEP_ALIVE,
+            'options': {'temperature': temperature, 'num_predict': max_tokens},
+        }
+        if think is not None:
+            body['think'] = think
+        if json_mode:
+            body['format'] = 'json'
+        request = urllib.request.Request(
+            f'{self.ollama_root}/api/chat', data=json.dumps(body).encode('utf-8'), method='POST',
+            headers={'Content-Type': 'application/json'})
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode('utf-8'))
+            return payload['message']['content']
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError,
+                KeyError, IndexError, TypeError) as error:
+            if _is_timeout(error):
+                raise AITimeout(str(error)) from error
+            raise AIUnavailable(str(error)) from error
+
+    def _fast(self, system, user, temperature, max_tokens, json_mode) -> str | None:
+        """Native Ollama call with thinking off; None means use the OpenAI-compatible path."""
+        if not self.ollama_root:
+            return None
+        try:
+            return self._post_native(system, user, temperature, max_tokens, json_mode, think=False)
+        except AITimeout:
+            raise
+        except AIUnavailable:
+            pass
+        try:   # e.g. an older Ollama or a model that rejects the think switch
+            return self._post_native(system, user, temperature, max_tokens, json_mode, think=None)
+        except AITimeout:
+            raise
+        except AIUnavailable:
+            return None
 
     def _post(self, system: str, user: str, temperature: float, max_tokens: int,
              json_mode: bool) -> str:
@@ -65,23 +127,27 @@ class AIClient:
             return payload['choices'][0]['message']['content']
         except (urllib.error.URLError, TimeoutError, OSError, ValueError,
                 KeyError, IndexError, TypeError) as error:
+            if _is_timeout(error):
+                raise AITimeout(str(error)) from error
             raise AIUnavailable(str(error)) from error
 
     def chat(self, system: str, user: str, *, temperature: float = 0.3,
-             max_tokens: int = 600) -> str:
+             max_tokens: int = 600, fast: bool = False) -> str:
         """Return the model's final answer text, or raise AIUnavailable.
 
         ``max_tokens`` is generous on purpose: R1-style models spend tokens on
         reasoning before the answer, and a tight limit would cut the answer off.
         """
-        content = self._post(system, user, temperature, max_tokens, json_mode=False)
+        content = self._fast(system, user, temperature, max_tokens, False) if fast else None
+        if content is None:
+            content = self._post(system, user, temperature, max_tokens, json_mode=False)
         answer = strip_reasoning(content)
         if not answer:
             raise AIUnavailable('empty response')
         return answer
 
     def chat_json(self, system: str, user: str, *, temperature: float = 0.3,
-                 max_tokens: int = 700) -> dict:
+                 max_tokens: int = 700, fast: bool = False) -> dict:
         """Chat with the server's JSON-object mode, returning the parsed object.
 
         Prefer this over scraping free text out of ``chat()`` whenever the prompt asks for
@@ -94,10 +160,14 @@ class AIClient:
         and parses the (``<think>``-stripped) reply as JSON by hand. Still raises AIUnavailable
         if no valid JSON object can be found either way.
         """
-        try:
-            content = self._post(system, user, temperature, max_tokens, json_mode=True)
-        except AIUnavailable:
-            content = self._post(system, user, temperature, max_tokens, json_mode=False)
+        content = self._fast(system, user, temperature, max_tokens, True) if fast else None
+        if content is None:
+            try:
+                content = self._post(system, user, temperature, max_tokens, json_mode=True)
+            except AITimeout:
+                raise                 # a slow model won't be faster the second time
+            except AIUnavailable:
+                content = self._post(system, user, temperature, max_tokens, json_mode=False)
         text = strip_reasoning(content)
         if not text:
             raise AIUnavailable('empty response')

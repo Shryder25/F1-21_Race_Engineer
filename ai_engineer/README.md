@@ -62,6 +62,15 @@ from built-in rules, and the engineer says "Pit wall is connected" when DeepSeek
 On a weaker PC use `--ai-model deepseek-r1:1.5b` (~1 GB). `--no-ai-autostart` turns this off;
 `--no-ai` uses rules only. Ask any question with the push-to-talk button or the HUD text box.
 
+### Learns as you drive
+- **Your tyre, fuel and pit models** are refitted from all your saved laps each time the
+  engineer closes (`--no-auto-refit` to skip), so wear, fuel and pit-window predictions
+  for each track and compound get sharper the more you drive.
+- **Your driver profile** per track (best and typical lap, consistency, the sector and
+  corners where you usually lose time) is rebuilt every few laps and given to DeepSeek
+  with each question, so answers can be about how *you* drive that track.
+DeepSeek itself isn't retrained; it gets better information about you.
+
 Completed lap recordings are saved locally in `telemetry-history/telemetry.sqlite3`.
 Each recording belongs to its own track and session capture. Invalid or incomplete
 recordings are archived but excluded from references. Returning to a track loads

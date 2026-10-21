@@ -26,6 +26,7 @@ from history import TelemetryHistory
 from race_radio import RaceRadio
 from race_events import RaceControl
 import radio_phrases as say
+import driver_profile
 from web_hud import update_web_state, add_voice_log
 import strategy_ml
 import race_strategy
@@ -49,6 +50,10 @@ TYRE_TEMP_SUSTAIN_SECS = 2.5
 # doesn't repeat every single frame while the tyre stays hot.
 TYRE_TEMP_RISE_RATE_C_PER_S = 1.5   # minimum ΔT/Δt to treat a spike as genuine overheating
 TYRE_TEMP_ALERT_COOLDOWN_SECS = 40.0  # between 30-45s, per the requested fix
+TYRE_CRITICAL_SUSTAIN_SECS = 0.5      # critical must hold (and keep climbing) this long
+TYRE_SUMMARY_MIN_SECS = 4.0           # seconds out of the window in a lap before it's mentioned
+PROFILE_REFRESH_LAPS = 3              # rebuild the driver profile every few completed laps
+TYRE_SUMMARY_REPEAT_LAPS = 3          # an unchanged tyre issue is repeated at most every 3 laps
 
 BRAKING_WARN_DISTANCE = 220  # Metres before braking zone to announce
 
@@ -94,6 +99,20 @@ SILVERSTONE_CORNERS = [
 ]
 
 
+def _wheel_group(wheels) -> str:
+    """Wheel indices (RL, RR, FL, FR order) as a driver would hear them: 'Fronts', 'Front left'."""
+    wheels = sorted(set(wheels))
+    if wheels == [0, 1, 2, 3]:
+        return 'All four tyres'
+    if wheels == [2, 3]:
+        return 'Fronts'
+    if wheels == [0, 1]:
+        return 'Rears'
+    names = [WHEEL_NAMES[i].lower() for i in wheels]
+    text = names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' and ' + names[-1]
+    return text[0].upper() + text[1:]
+
+
 @dataclass
 class TyreState:
     hot_since: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
@@ -105,6 +124,14 @@ class TyreState:
     last_temp_sample: list[float] | None = None
     last_temp_sample_time: float = 0.0
     last_critical_alert_time: float = 0.0
+    # Per-lap record for the end-of-lap summary (the driver can see live temps on screen,
+    # so mid-lap the engineer only speaks for a critical overheat, once per lap at most).
+    lap_peak: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    lap_hot_secs: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    lap_cold_secs: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    critical_called_this_lap: bool = False
+    last_summary: str | None = None
+    laps_since_summary: int = 0
 
 
 @dataclass
@@ -187,6 +214,7 @@ class AnalysisEngine:
         self.current_sector_times: dict[int, int] = {}
 
         self.tyre_state = TyreState()
+        self.driver_profile = None
         self.delta = DeltaTracker()
         self.session: Optional[SessionData] = None
         self.track_id: int = -1
@@ -249,6 +277,7 @@ class AnalysisEngine:
             self.session_uid = session_uid
             self.delta = DeltaTracker()
             self.tyre_state = TyreState()
+            self.driver_profile = None
             self.current_corner_data.clear()
             self.best_corner_data.clear()
             self.corner_diagnostics.clear()
@@ -368,8 +397,16 @@ class AnalysisEngine:
                 self.delta.best_lap_speeds = reference['speeds']
                 self.best_corner_data = reference['corners']
                 self.best_sector_times = self.history.personal_sectors(session)
+            self._refresh_driver_profile()
         except (OSError, ValueError, KeyError, sqlite3.Error) as error:
             print(f'[History] Could not load track history: {error}')
+
+    def _refresh_driver_profile(self):
+        """How this driver usually drives this track, from every saved clean lap (for the AI)."""
+        try:
+            self.driver_profile = driver_profile.build_profile(self.history, self.session)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(f'[History] Could not build driver profile: {error}')
 
     def _change_conditions(self, session: SessionData):
         """Dry -> intermediate -> wet within one session: keep the race, swap the references.
@@ -570,60 +607,59 @@ class AnalysisEngine:
         self.tyre_state.last_temp_sample = list(temps)
         self.tyre_state.last_temp_sample_time = now
 
-        hot_wheels = []
-        cold_wheels = []
+        dt = min(now - prev_time, 0.5) if prev_sample is not None and now > prev_time else 0.0
         critical_wheels = []
-
         for i in range(4):
             temp = temps[i]
+            state = self.tyre_state
+            state.lap_peak[i] = max(state.lap_peak[i], temp)
+            if temp > TYRE_TEMP_HIGH:
+                state.lap_hot_secs[i] += dt
+            elif temp < TYRE_TEMP_LOW:
+                state.lap_cold_secs[i] += dt
             if temp >= TYRE_TEMP_CRITICAL and rise_rates[i] >= TYRE_TEMP_RISE_RATE_C_PER_S:
-                critical_wheels.append((WHEEL_NAMES[i], temp))
-            elif temp > TYRE_TEMP_HIGH:
-                if self.tyre_state.hot_since[i] == 0.0:
-                    self.tyre_state.hot_since[i] = now
-                elif now - self.tyre_state.hot_since[i] >= TYRE_TEMP_SUSTAIN_SECS:
-                    hot_wheels.append((WHEEL_NAMES[i], temp))
-            else:
-                self.tyre_state.hot_since[i] = 0.0
+                if state.hot_since[i] == 0.0:
+                    state.hot_since[i] = now
+                if now - state.hot_since[i] >= TYRE_CRITICAL_SUSTAIN_SECS:
+                    critical_wheels.append(i)
+            elif temp < TYRE_TEMP_CRITICAL:
+                state.hot_since[i] = 0.0
 
-            if temp < TYRE_TEMP_LOW:
-                if self.tyre_state.cold_since[i] == 0.0:
-                    self.tyre_state.cold_since[i] = now
-                elif now - self.tyre_state.cold_since[i] >= TYRE_TEMP_SUSTAIN_SECS:
-                    cold_wheels.append((WHEEL_NAMES[i], temp))
-            else:
-                self.tyre_state.cold_since[i] = 0.0
-
-        if critical_wheels and now - self.tyre_state.last_critical_alert_time >= TYRE_TEMP_ALERT_COOLDOWN_SECS:
-            names = " and ".join(w[0].lower() for w in critical_wheels)
-            verb = "is" if len(critical_wheels) == 1 else "are"
-            self.speak(
-                f"Careful, {names} {verb} overheating, {say.number_words(int(critical_wheels[0][1]))} degrees. "
-                f"Cool it down, lift and coast into the next braking zone.",
-                Priority.CRITICAL, key='tyre_temperature', ttl=5, cooldown=25
-            )
+        # Mid-lap: one short call per lap, and only for a genuine, still-climbing overheat.
+        if (critical_wheels and not self.tyre_state.critical_called_this_lap
+                and now - self.tyre_state.last_critical_alert_time >= TYRE_TEMP_ALERT_COOLDOWN_SECS):
+            self.speak(f"{_wheel_group(critical_wheels)} overheating, cool {'it' if len(critical_wheels) == 1 else 'them'}.",
+                       Priority.CRITICAL, key='tyre_temperature', ttl=4, cooldown=25)
+            self.tyre_state.critical_called_this_lap = True
             self.tyre_state.last_critical_alert_time = now
             self.tyre_state.last_alert_time = now
-            return
 
-        if now - self.tyre_state.last_alert_time < 25.0:
-            return
+    def tyre_lap_summary(self) -> str | None:
+        """One short line on how the tyres ran that lap, or None if nothing worth saying."""
+        state = self.tyre_state
+        hot = [i for i in range(4) if state.lap_hot_secs[i] >= TYRE_SUMMARY_MIN_SECS]
+        cold = [i for i in range(4) if state.lap_cold_secs[i] >= TYRE_SUMMARY_MIN_SECS and i not in hot]
+        if hot:
+            peak = int(max(state.lap_peak[i] for i in hot))
+            return f"{_wheel_group(hot)} ran hot that lap, peak {say.number_words(peak)}."
+        if cold:
+            return f"{_wheel_group(cold)} ran cold that lap."
+        return None
 
-        if hot_wheels:
-            fronts = [w for w in hot_wheels if "Front" in w[0]]
-            rears = [w for w in hot_wheels if "Rear" in w[0]]
-            if fronts and rears:
-                self.speak("Tyres are running hot all round. Back off for a couple of corners "
-                           "and let them recover.", Priority.NORMAL)
-            elif fronts:
-                avg = sum(w[1] for w in fronts) // len(fronts)
-                self.speak(f"Fronts are getting hot, {say.number_words(int(avg))}. Be gentle on turn-in.",
-                           Priority.NORMAL)
-            elif rears:
-                avg = sum(w[1] for w in rears) // len(rears)
-                self.speak(f"Rears are getting hot, {say.number_words(int(avg))}. Smooth on the throttle "
-                           f"out of the slow corners.", Priority.NORMAL)
-            self.tyre_state.last_alert_time = now
+    def _report_tyre_lap(self):
+        """End-of-lap tyre summary: said when the picture changes, else every few laps."""
+        state = self.tyre_state
+        summary = self.tyre_lap_summary()
+        state.laps_since_summary += 1
+        if summary and (summary.split(',')[0] != (state.last_summary or '').split(',')[0]
+                        or state.laps_since_summary >= TYRE_SUMMARY_REPEAT_LAPS):
+            self.speak(summary, Priority.LOW, key='tyre_summary', ttl=10, cooldown=0)
+            state.laps_since_summary = 0
+        state.last_summary = summary
+        state.lap_peak = [0.0, 0.0, 0.0, 0.0]
+        state.lap_hot_secs = [0.0, 0.0, 0.0, 0.0]
+        state.lap_cold_secs = [0.0, 0.0, 0.0, 0.0]
+        state.critical_called_this_lap = False
 
     # ──────────────────────────────────────────
     # Braking Point Callouts
@@ -849,6 +885,8 @@ class AnalysisEngine:
             self._capture_outline(prev_lap_num, lap.current_lap_num)
         self.delta.current_lap_num = lap.current_lap_num
         self.announced_braking.clear()
+        if prev_lap_num > 0:
+            self._report_tyre_lap()
 
         # If previous lap completed with valid lap time
         track_length = self.session.track_length if self.session else 0
@@ -880,6 +918,8 @@ class AnalysisEngine:
                                             lap.last_lap_time_ms, complete, recording)
                 except (OSError, ValueError, sqlite3.Error) as error:
                     print(f'[History] Could not save lap: {error}')
+                if complete and prev_lap_num % PROFILE_REFRESH_LAPS == 0:
+                    self._refresh_driver_profile()     # learns from the laps just driven
         if complete and lap.last_lap_time_ms > 0 and self.delta.current_lap_times:
             last_ms = lap.last_lap_time_ms
             self.radio.completed_lap(last_ms, prev_lap_num, sectors, self.best_sector_times)
@@ -1704,6 +1744,7 @@ class AnalysisEngine:
         ctx['strategy'] = self.strategy_summary()
         rivals = (ctx['strategy'] or {}).get('rivals')
         ctx['rival_predictions'] = [r['summary'] for r in rivals['nearby']] if rivals and rivals['nearby'] else None
+        ctx['driver_profile'] = driver_profile.describe(self.driver_profile)
         ctx['recent_race_events'] = [event['text'] for event in self.race_control.recent(5)] or None
         if self.session_lap_stats:
             last = self.session_lap_stats[-1]
