@@ -183,7 +183,7 @@ def format_context(ctx: dict) -> str:
         if rivals and rivals.get('nearby'):
             add('Rival stop predictions', ' '.join(r['summary'] for r in rivals['nearby']))
         sim = strategy.get('simulation')
-        if sim and sim.get('options'):
+        if sim and sim.get('options') and not (sim.get('inputs') or {}).get('settled'):
             add(f"Race simulation ({sim['runs']} Monte Carlo races from lap {sim['lap']})", (
                 '; '.join(f"{o['label']}: best {round(o['p_best'] * 100)}% of runs, expected P{o['position_range'][1]} "
                           f"(P{o['position_range'][0]}-P{o['position_range'][2]}), podium {round(o['p_podium'] * 100)}%"

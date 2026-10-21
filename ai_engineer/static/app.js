@@ -1676,7 +1676,7 @@ function renderStrategyOdds(odds, position) {
     if (empty) empty.style.display = 'none';
     body.style.display = '';
     const meta = document.getElementById('pwOddsMeta');
-    if (meta) meta.textContent = `${odds.runs} simulated races from lap ${odds.lap} · ${odds.laps_to_go} to go`;
+    if (meta) meta.textContent = odds.runs ? `${odds.runs} simulated races from lap ${odds.lap} · ${odds.laps_to_go} to go` : 'Race finished · final result';
     const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
     set('pwWin', pct(odds.p_win));
     set('pwPodium', pct(odds.p_podium));

@@ -214,6 +214,13 @@ def candidates_from_plan(plan: rs.StrategyPlan | None) -> list[Candidate]:
     return [Candidate.from_option(o) for o in options]
 
 
+def stay_out(compound: str | None) -> Candidate:
+    """Run to the flag on the current set. Used when the planner has nothing left to plan (the
+    final lap), so the odds still follow the race instead of freezing on an older run."""
+    current = rs.normalise_compound(compound) or 'MEDIUM'
+    return Candidate(plan_label(0, [current]), 0, [current], [])
+
+
 # ──────────────────────────────────────────────
 # Outputs
 # ──────────────────────────────────────────────
@@ -839,6 +846,22 @@ def simulate(state: RaceState, candidates: Sequence[Candidate], reference: int |
     return RaceSimulator(state, **kwargs).evaluate(candidates, reference)
 
 
+def settled_result(position: int, cars: int, lap: int, compound: str | None = None) -> SimResult:
+    """The odds once we have taken the chequered flag: the result is known, so they are certain."""
+    cars = max(int(cars), int(position), 1)
+    position = max(int(position), 1)
+    current = rs.normalise_compound(compound) or 'MEDIUM'
+    probs = [1.0 if i + 1 == position else 0.0 for i in range(cars)]
+    outcome = StrategyOutcome('Finished', 0, [current], [], 1.0, float(position == 1), float(position <= 3),
+                              float(position <= 10), float(position), [position] * 3, probs, [0.0, 0.0, 0.0],
+                              True)
+    result = SimResult(runs=0, lap=lap, laps_to_go=0, outcomes=[outcome], field=[], p_safety_car=0.0,
+                       p_vsc=0.0, p_rain=0.0, pit_loss_s=[0.0, 0.0, 0.0], overtaking=0,
+                       inputs={'settled': True})
+    result.radio = f'Chequered flag. We finished P{position}.'
+    return result
+
+
 # ──────────────────────────────────────────────
 # Live field tracking (fed from the Lap Data packet every frame)
 # ──────────────────────────────────────────────
@@ -992,6 +1015,11 @@ class SimRunner:
             self.latest = None
             self.latest_key = None
             self.result_key = None
+
+    def settle(self, key, result: SimResult):
+        """Store a known result (the race is over) in place of a simulated one."""
+        with self._lock:
+            self.latest, self.latest_key, self.result_key, self.error = result, key, key, None
 
     def submit(self, key, state: RaceState, candidates: list, **kwargs) -> bool:
         if not self.enabled or not candidates or key == self.latest_key:

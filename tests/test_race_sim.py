@@ -404,5 +404,91 @@ class AnalysisIntegrationTests(unittest.TestCase):
         self.assertEqual(match_command('is it going to rain'), 'weather')
 
 
+class FinalLapOddsTests(unittest.TestCase):
+    """Regression: leading on the final lap showed "win 0%".
+
+    On the last lap the planner has nothing left to plan, so the simulator never re-ran and the
+    HUD kept quoting an older run (one where the planner still wanted a stop). The odds must
+    follow track position to the flag, and be certain once the flag is out.
+    """
+
+    def setUp(self):
+        self.engine = AnalysisEngine(SilentVoice(), race_simulation='sync', sim_runs=200)
+        self.engine.update_session(RACE, 1, 0)
+
+    def drive_to(self, lap_num, gap_s=1.5, cars=6, compounds=(MEDIUM,)):
+        """Field in track order (player = car 0, leading), crossing into ``lap_num`` gap_s apart."""
+        e = self.engine
+        for c in compounds:
+            e.update_car_status(status(12, c), [status(12, c) for _ in range(cars)])
+        t = 1000.0
+        e.update_field([lap(i + 1, lap_num - 1) for i in range(cars)], 0, t)
+        for k in range(cars):
+            laps = [lap(i + 1, lap_num if i <= k else lap_num - 1) for i in range(cars)]
+            e.update_field(laps, 0, t + 90.0 + gap_s * k)
+        e.latest_lap = laps[0]
+        e.update_race_simulation()
+        return e.strategy_odds()
+
+    def test_leader_on_the_final_lap_is_favourite_without_a_stop_made(self):
+        odds = self.drive_to(52)
+        self.assertIsNotNone(odds)
+        self.assertEqual(odds['lap'], 52)
+        self.assertEqual(odds['laps_to_go'], 1)
+        self.assertGreater(odds['p_win'], 0.6)
+        self.assertEqual(odds['plans'][0]['pit_laps'], [])
+
+    def test_leader_on_the_final_lap_after_a_stop(self):
+        odds = self.drive_to(52, compounds=(MEDIUM, 18))       # ran mediums, now on hards
+        self.assertGreater(odds['p_win'], 0.6)
+        self.assertGreater(odds['p_podium'], 0.95)
+
+    def test_final_lap_replaces_the_previous_laps_run(self):
+        self.drive_to(51)
+        odds = self.drive_to(52)
+        self.assertEqual(odds['lap'], 52)
+        self.assertGreater(odds['p_win'], 0.6)
+        self.assertEqual(self.engine.odds_history[-1]['lap'], 52)
+
+    def test_bigger_lead_is_safer(self):
+        close = self.drive_to(52, gap_s=0.3)['p_win']
+        self.setUp()
+        clear = self.drive_to(52, gap_s=5.0)['p_win']
+        self.assertGreaterEqual(clear, close)
+        self.assertGreater(clear, 0.95)
+
+    def test_odds_are_certain_after_the_flag(self):
+        self.drive_to(52)
+        e = self.engine
+        e.latest_lap = replace(e.latest_lap, result_status=3)
+        e.update_race_simulation()
+        odds = e.strategy_odds()
+        self.assertEqual(odds['p_win'], 1.0)
+        self.assertEqual(odds['runs'], 0)
+        self.assertEqual(odds['laps_to_go'], 0)
+        self.assertEqual(odds['position_probs'][0], 1.0)
+        text = format_context(e.build_context())
+        self.assertNotIn('Monte Carlo', text)
+
+    def test_finished_p3_is_no_win_but_a_podium(self):
+        r = sim.settled_result(3, 20, 52, 'Hard')
+        self.assertEqual((r.outcomes[0].p_win, r.outcomes[0].p_podium, r.outcomes[0].p_points), (0.0, 1.0, 1.0))
+        self.assertIn('P3', r.radio)
+
+    def test_session_history_counts_sets_run_before_the_engineer_started(self):
+        e = self.engine
+        e.update_car_status(status(12, 18), [status(12, 18)])          # only ever seen on hards
+        history = SimpleNamespace(car_index=0, num_laps=30, best_lap_num=0, best_sector_lap_nums=(0, 0, 0),
+                                  laps=[], stints=[SimpleNamespace(compound_name='Medium'),
+                                                   SimpleNamespace(compound_name='Hard')])
+        e.session_log.update_history = lambda h: None
+        e.update_session_history(history)
+        self.assertEqual(e.compounds_used, {'MEDIUM', 'HARD'})
+
+    def test_stay_out_candidate(self):
+        c = sim.stay_out('Soft')
+        self.assertEqual((c.stops, c.compounds, c.pit_laps), (0, ['SOFT'], []))
+
+
 if __name__ == '__main__':
     unittest.main()
