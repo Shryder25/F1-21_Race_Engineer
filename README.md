@@ -106,6 +106,8 @@ Simulated races (the golden sessions plus two longer races generated into `recor
 * **Race Report Table:** A lap-by-lap table (lap time, sector 1/2/3, speed trap, tyre compound) on its own HUD tab, built from the same per-lap stats the learning engine already records plus the game's Speed Trap ('SPTP') event packets.
 * **Comprehensive Setup Advisor:** Includes a track database (`track_data.py`) covering all 24 circuits in F1 2021[cite: 1]. Suggests aerodynamic, transmission, and suspension setups customized to specific tracks.
 * **F1-TV Style Web HUD:** A professional, dark-mode web dashboard (`web_hud.py`) displaying live timing towers, color-coded sector deltas, tire wear percentages, and individual tire temperatures[cite: 1].
+* **Pit Wall Tab:** A full-field timing tower (gap to leader, interval, last/best lap, tyre and age, stops, in-pit flag), a gap-to-leader race chart lap by lap, a tyre stint chart for every car with our planned stints dashed in, and the race simulator's odds (win / podium / points, which plan comes out best, finishing-position spread, SC/VSC/rain chances, and how the odds moved over the race). Gaps are measured at timing loops every ~100 m like real F1 timing (`pit_wall.py`).
+* **Live Push:** The HUD gets its data over a WebSocket (`ws://localhost:5000/ws`): the server sends only what changed, up to 30 times a second, instead of the browser polling every 150 ms. If the socket drops, the HUD falls back to polling `/api/telemetry` and reconnects on its own.
 
 ---
 

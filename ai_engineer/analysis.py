@@ -33,6 +33,7 @@ import rival_strategy
 import fitted_models
 import race_sim
 import track_maps
+import pit_wall
 from session_history import SessionLog, lap_rows, stint_rows
 
 
@@ -233,6 +234,14 @@ class AnalysisEngine:
         self.field_cars: list = []
         self._sent_map_revision = -1
 
+        # Pit wall: full-field timing tower, gap-to-leader history, tyre stints, sim odds
+        self.pit_wall = pit_wall.PitWall()
+        self._sent_pit_wall = (-1, -1)
+        self._odds_result = None
+        self._odds = None
+        self.odds_history: list[dict] = []
+        self._sent_best_trace, self._sent_best_len = None, -1
+
     # ──────────────────────────────────────────
     # Session Handling
     # ──────────────────────────────────────────
@@ -298,6 +307,11 @@ class AnalysisEngine:
             self.field_cars = []
             self.map_lap_has_pit = False
             self.map_rewind_pending = False
+            self.pit_wall.reset(session.track_length,
+                                race=session_modes.session_mode(session.session_type) == session_modes.RACE)
+            self._sent_pit_wall = (self.pit_wall.history_revision, self.pit_wall.stint_revision)
+            self._odds_result = self._odds = None
+            self.odds_history = []
             self._load_track_map(session)
             self.radio.set_driver_names({})
             if hasattr(self.voice, 'clear'):
@@ -315,6 +329,7 @@ class AnalysisEngine:
                 'tyre_surface_temps': [0] * 4, 'tyre_inner_temps': [0] * 4,
                 'tyre_pressures': [0] * 4, 'engine_temp': 0,
                 'personal_sectors_ms': self.best_sector_times,
+                'timing_tower': [], 'gap_history': [], 'tyre_stints': [], 'strategy_odds': None,
             })
             self.radio.reset(session)
             self.race_control.reset(session)
@@ -988,6 +1003,9 @@ class AnalysisEngine:
         clean-lap pace for the race simulator."""
         self.rivals.update_laps(laps, player_index)
         self.field_laps, self.player_index = laps, player_index
+        self.pit_wall.update(laps, session_time, player_index, self.all_status,
+                             names=self.radio.driver_names, teams=self.car_teams,
+                             histories=self.session_log.histories)
         if self.session is None or self.session_mode != session_modes.RACE:
             return
         self.field_tracker.update(laps, session_time, self.all_status,
@@ -1588,6 +1606,44 @@ class AnalysisEngine:
             return None
         return result.summary()
 
+    def strategy_odds(self) -> dict | None:
+        """The latest race simulation as win/podium/points odds and plan odds for the HUD,
+        with how the odds moved over the race (one point per simulated lap)."""
+        if self.race_simulation() is None:
+            return None
+        result = self.sim_runner.latest
+        if result is not self._odds_result:
+            self._odds_result = result
+            top = result.outcomes[0] if result.outcomes else None
+            if top is not None:
+                point = {'lap': result.lap, 'p_win': top.p_win, 'p_podium': top.p_podium,
+                         'p_points': top.p_points}
+                self.odds_history = [p for p in self.odds_history if p['lap'] < result.lap] + [point]
+            self._odds = pit_wall.strategy_odds(result, self.odds_history)
+        return self._odds
+
+    def _best_trace_update(self) -> dict:
+        """The reference lap's speed trace, only when it was replaced (it is a new list each
+        time; holding the sent one keeps its identity from being reused)."""
+        trace = self.delta.best_lap_speeds
+        if trace is self._sent_best_trace and len(trace) == self._sent_best_len:
+            return {}
+        self._sent_best_trace, self._sent_best_len = trace, len(trace)
+        return {'speed_trace_best': trace}
+
+    def pit_wall_update(self) -> dict:
+        """Timing tower every frame; gap chart and stints only when they changed."""
+        names, wall = self.radio.driver_names, self.pit_wall
+        update = {'timing_tower': wall.rows, 'strategy_odds': self.strategy_odds()}
+        revisions = (wall.history_revision, wall.stint_revision)
+        if revisions != self._sent_pit_wall:
+            if revisions[0] != self._sent_pit_wall[0]:
+                update['gap_history'] = wall.gap_chart(names, self.car_teams, self.player_index)
+            if revisions[1] != self._sent_pit_wall[1]:
+                update['tyre_stints'] = wall.stints()
+            self._sent_pit_wall = revisions
+        return update
+
     def strategy_summary(self) -> dict | None:
         """Plan plus the latest undercut/overcut call, for the HUD and the AI prompt."""
         plan = self.strategy_plan()
@@ -1816,7 +1872,6 @@ class AnalysisEngine:
             "weather": WEATHER_NAMES.get(self.session.weather, "Clear") if self.session else "Clear",
             "corner_analysis": self.corner_diagnostics,
             "speed_trace_current": self.delta.current_lap_speeds[-120:],
-            "speed_trace_best": self.delta.best_lap_speeds,
             "car_x": car_x,
             "car_z": car_z,
             "car_yaw": car_yaw,
@@ -1825,4 +1880,6 @@ class AnalysisEngine:
             "pit_status": lap.pit_status,
             "cars": self.field_cars,
             **map_update,
+            **self._best_trace_update(),
+            **self.pit_wall_update(),
         })

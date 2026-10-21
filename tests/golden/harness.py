@@ -126,9 +126,7 @@ def simulated_time(clock: SimClock):
     finally:
         for module, original in saved:
             module.time = original
-        with web_hud.state_lock:
-            web_hud.dashboard_state.clear()
-            web_hud.dashboard_state.update(saved_state)
+        web_hud.replace_web_state(saved_state)
 
 
 # ──────────────────────────────────────────────
