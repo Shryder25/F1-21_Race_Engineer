@@ -424,6 +424,49 @@ def build_from_recording(recording, out_dir, compression='zstd'):
 # Reading
 # ──────────────────────────────────────────────
 
+def find_session_file(path='channels'):
+    """Turn what the user typed into one channel file, or raise ValueError saying what is there.
+
+    A folder means its newest .parquet file; a name without '.parquet' gets it added.
+    """
+    path = Path(path)
+    if path.is_dir():
+        files = sorted(path.glob('*.parquet'), key=lambda f: f.stat().st_mtime)
+        if not files:
+            raise ValueError(f'No .parquet files in {path}. Log a session first with '
+                             f'--log-channels {path}, and stop the engineer with Ctrl+C so the file is saved.')
+        return files[-1]
+    if not path.exists() and path.suffix != '.parquet' and path.with_suffix('.parquet').exists():
+        return path.with_suffix('.parquet')
+    if not path.exists() and not path.suffix:
+        raise ValueError(f'There is no folder called {path} here, so nothing has been logged to it '
+                         f'yet. Start the engineer with --log-channels {path}, drive, then stop it '
+                         'with Ctrl+C.')
+    if not path.exists():
+        folder = path.parent if str(path.parent) else Path('.')
+        nearby = sorted(folder.glob('*.parquet'), key=lambda f: f.stat().st_mtime)[-5:] \
+            if folder.is_dir() else []
+        hint = ('Files in that folder: ' + ', '.join(f.name for f in reversed(nearby))
+                + f'. Or give just the folder ({folder}) to use the newest one.') if nearby else \
+            (f'The folder {folder} has no .parquet files.' if folder.is_dir()
+             else f'The folder {folder} does not exist.')
+        raise ValueError(f'No file at {path}. {hint}')
+    return path
+
+
+def _check_finished(path):
+    with open(path, 'rb') as f:
+        f.seek(0, 2)
+        size = f.tell()
+        f.seek(max(0, size - 4))
+        tail = f.read(4)
+    if tail != b'PAR1':
+        raise ValueError(f'{path} was never finished, so it cannot be read. This happens when the '
+                         'engineer is closed with the window X or crashes instead of stopping with '
+                         'Ctrl+C. If you also recorded the session (--record), rebuild it with: '
+                         'python tools/channels.py build <recording>')
+
+
 def read_session(path, columns=None):
     """Load a channel file as ({column: numpy array}, metadata).
 
@@ -432,6 +475,8 @@ def read_session(path, columns=None):
     become NaN. session_time and total_distance are float64, everything else float32.
     """
     _, pq = _require_pyarrow()
+    path = find_session_file(path)
+    _check_finished(path)
     pf = pq.ParquetFile(path)
     raw_meta = pf.metadata.metadata or {}
     meta = json.loads(raw_meta.get(b'f1_session', b'{}'))

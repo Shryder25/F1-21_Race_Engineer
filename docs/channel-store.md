@@ -19,7 +19,7 @@ Code: `ai_engineer/channel_store.py` (logger, reader, lap alignment) and
 ## Logging
 
 ```bash
-python main.py --log-channels channels/                    # live, while you drive
+python main.py --log-channels                              # live, while you drive (default folder channels/)
 python main.py --replay race.f1rec.gz --replay-speed max --log-channels channels/
 python tools/channels.py build recordings/*.f1rec.gz --out channels/   # offline, no engineer
 ```
@@ -93,7 +93,8 @@ for a spreadsheet.
 ## MoTeC i2 export
 
 ```bash
-python main.py --export-motec channels/x.parquet               # x.ld + x.ldx, then exit
+python main.py --export-motec                                  # newest file in channels/ -> .ld + .ldx
+python main.py --export-motec channels/x.parquet               # a specific file
 python tools/channels.py motec channels/x.parquet --rate 60    # same, choose the rate
 python tools/channels.py motec channels/x.parquet --format csv # MoTeC-style CSV instead
 ```

@@ -10,7 +10,7 @@ Usage:
     python main.py --replay race.f1rec.gz [--replay-speed 1|10|max]   # run from a recording
     python main.py --find-ptt-button             # pick the wheel/controller radio button once
     python main.py --log-channels channels/      # log every sample per channel to Parquet
-    python main.py --export-motec channels/X.parquet   # write X.ld + X.ldx for MoTeC i2, then exit
+    python main.py --export-motec                # newest file in channels/ -> .ld + .ldx for MoTeC i2
 
 Game Setup (F1 2021 Settings → Telemetry):
     UDP Telemetry:  ON
@@ -247,11 +247,14 @@ def main():
     rec.add_argument('--replay-speed', type=parse_speed, default=1.0, metavar='SPEED',
                      help='Replay speed: 1 (real time, default), 10, or max (as fast as possible)')
     ch = parser.add_argument_group('channel data store and MoTeC export (docs/channel-store.md)')
-    ch.add_argument('--log-channels', type=Path, default=None, metavar='DIR',
-                    help='Log every telemetry sample to DIR/<session>.parquet, keyed by lap '
-                         'distance (needs pyarrow). Works live and with --replay')
-    ch.add_argument('--export-motec', type=Path, default=None, metavar='PARQUET',
-                    help='Export a channel file to MoTeC i2 (.ld + .ldx) and exit')
+    ch.add_argument('--log-channels', type=Path, default=None, metavar='DIR', nargs='?',
+                    const=Path('channels'),
+                    help='Log every telemetry sample to DIR/<session>.parquet (default channels/), keyed '
+                         'by lap distance (needs pyarrow). Works live and with --replay')
+    ch.add_argument('--export-motec', type=Path, default=None, metavar='FILE_OR_DIR', nargs='?',
+                    const=Path('channels'),
+                    help='Export a channel file to MoTeC i2 (.ld + .ldx) and exit. Given a folder, '
+                         'or nothing, it uses the newest file in that folder (default channels/)')
     ch.add_argument('--motec-out', type=Path, default=None, metavar='FILE',
                     help='Output path for --export-motec (default: next to the Parquet file)')
     ch.add_argument('--motec-format', choices=('ld', 'csv'), default='ld',
