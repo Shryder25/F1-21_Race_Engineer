@@ -1090,6 +1090,13 @@ class AnalysisEngine:
     def update_session_history(self, history):
         """One car's Session History packet: log its laps and tyre stints."""
         self._sync_session_log_capture()
+        if history.car_index == self.player_index:
+            # Every set we have run this race, even before the engineer started: the planner's
+            # two-compound rule must not demand a stop we already made.
+            for stint in history.stints:
+                compound = race_strategy.normalise_compound(stint.compound_name)
+                if compound:
+                    self.compounds_used.add(compound)
         changed = self.session_log.update_history(history)
         if changed is None or not (self.history and self.capture_id):
             return
@@ -1645,6 +1652,9 @@ class AnalysisEngine:
         status, lap, session = self.latest_status, self.latest_lap, self.session
         if status is None or lap is None or session is None:
             return
+        if lap.result_status == 3 or (session.total_laps > 0 and lap.current_lap_num > session.total_laps):
+            self._settle_race_odds(lap, status, session)
+            return
         replanner = self.replanner
         families = None
         if self.all_status:
@@ -1668,25 +1678,33 @@ class AnalysisEngine:
         if event_only and now - self._last_event_submit < strategy_replan.MIN_EVENT_INTERVAL_S:
             return                          # only an event changed, and one re-ran a moment ago
         plan = self.strategy_plan()
-        if plan is None:
+        laps_remaining = session.total_laps - lap.current_lap_num + 1
+        if plan is None and laps_remaining <= 0:
             return
-        replanner.sync_plan_a(plan, lap.current_lap_num, lap.num_pit_stops, status.compound_name,
-                              plan.laps_remaining)
-        last_lap = session.total_laps - 1
-        trajectory = self.wetness.trajectory(max(plan.laps_remaining, 1)) if self.wetness.wetness is not None else None
-        if trajectory is not None and max(trajectory) < 0.02 and not wet:
-            trajectory = None               # dry and staying dry: no tyre-type options needed
-        candidates = replanner.candidates(plan, lap.current_lap_num, session.safety_car_status in (1, 2),
-                                          wet, status.compound_name, trajectory, last_lap)
+        if plan is not None:
+            replanner.sync_plan_a(plan, lap.current_lap_num, lap.num_pit_stops, status.compound_name,
+                                  plan.laps_remaining)
+            last_lap = session.total_laps - 1
+            trajectory = (self.wetness.trajectory(max(plan.laps_remaining, 1))
+                          if self.wetness.wetness is not None else None)
+            if trajectory is not None and max(trajectory) < 0.02 and not wet:
+                trajectory = None           # dry and staying dry: no tyre-type options needed
+            candidates = replanner.candidates(plan, lap.current_lap_num, session.safety_car_status in (1, 2),
+                                              wet, status.compound_name, trajectory, last_lap)
+        else:
+            candidates = []
         if not candidates:
-            return
+            # Nothing left to plan (the final lap): still run the race to the flag on this set, so
+            # the odds follow track position instead of freezing on an older lap's run.
+            candidates = [race_sim.stay_out(status.compound_name)]
+            plan = None
         state = self.race_sim_state()
         if state is None:
             return
         deg_scale, life_scale = self.strategy_scales()
         seed = (lap.current_lap_num * 1009 + session.safety_car_status * 101 + lap.num_pit_stops
                 + replanner.events * 7919) & 0xFFFFFFFF
-        reference = 0 if replanner.plan_a is not None else None
+        reference = 0 if replanner.plan_a is not None and plan is not None else None
         if self.sim_runner.submit(key, state, candidates, reference=reference, models=self.fitted, seed=seed,
                                   pit_loss_mean=race_strategy.pit_loss_s(session.track_id),
                                   player_deg_scale=deg_scale, player_life_scale=life_scale,
@@ -1697,6 +1715,20 @@ class AnalysisEngine:
             if reference is not None:
                 replanner.note_submitted(key)
             self._consider_plan_b()         # 'sync' mode: the result is already in
+
+    def _settle_race_odds(self, lap, status, session):
+        """After the chequered flag the result is known: the odds become certain."""
+        position = lap.car_position
+        if position <= 0:
+            return
+        laps = self.field_laps or []
+        cars = sum(1 for l in laps if l.car_position > 0) or position
+        key = ('finished', position, cars)
+        if self.sim_runner.latest_key == key:
+            return
+        self.sim_runner.settle(key, race_sim.settled_result(position, cars, min(lap.current_lap_num,
+                                                                             session.total_laps),
+                                                            status.compound_name))
 
     def _consider_plan_b(self):
         """Call Plan B when the latest re-run says it beats Plan A by the set margin."""
