@@ -19,6 +19,8 @@ from pipeline import ingest, laps, outputs, radio, strategy
 from pipeline.config import DEFAULT_PROACTIVE_KEYS, EngineConfig
 from pipeline.ingest import IngestStage
 from pipeline.state import (
+    ERS_MODE_NAMES,
+    ERS_STORE_MAX_J,
     SILVERSTONE_CORNERS,
     WEATHER_NAMES,
     WHEEL_CODES,
@@ -61,6 +63,8 @@ __all__ = [
     'EngineConfig',
     'PROACTIVE_KEYS',
     'SILVERSTONE_CORNERS',
+    'ERS_MODE_NAMES',
+    'ERS_STORE_MAX_J',
     'WEATHER_NAMES',
     'WHEEL_CODES',
     'WHEEL_NAMES',

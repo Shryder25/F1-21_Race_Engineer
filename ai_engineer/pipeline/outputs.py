@@ -22,7 +22,7 @@ import track_status
 import web_hud
 from log_setup import get_logger
 from packets import ACTUAL_COMPOUNDS, SESSION_TYPES, CarTelemetryData, LapData, SessionData
-from pipeline.state import JSON, WEATHER_NAMES, WHEEL_CODES
+from pipeline.state import ERS_MODE_NAMES, ERS_STORE_MAX_J, JSON, WEATHER_NAMES, WHEEL_CODES
 from pipeline.track_map import TrackMapStage
 from session_history import lap_rows, stint_rows
 
@@ -319,6 +319,83 @@ class OutputsStage(TrackMapStage):
 
     # ── AI prompt ──
 
+    def standings_summary(self, limit: int = 22) -> list[JSON] | None:
+        """The running order from the timing tower, compact enough for the AI prompt."""
+        rows: list[JSON] | None = getattr(self.pit_wall, 'rows', None)
+        if not rows:
+            return None
+        keys = (
+            'position',
+            'name',
+            'gap_s',
+            'interval_s',
+            'laps_down',
+            'last_lap_ms',
+            'best_lap_ms',
+            'compound',
+            'tyre_age',
+            'stops',
+            'pit',
+            'penalties_s',
+            'status',
+            'is_player',
+            'fastest_lap',
+        )
+        return [{k: row.get(k) for k in keys} for row in rows[:limit]]
+
+    @staticmethod
+    def _car_context(lap: Any, t: Any, dmg: Any, st: Any) -> JSON:
+        """Car health, current lap and penalties for the AI (fields missing on a packet are skipped)."""
+
+        def get(obj: Any, name: str) -> Any:
+            return getattr(obj, name, None) if obj is not None else None
+
+        out: JSON = {}
+        if lap is not None and get(lap, 'current_lap_time_ms') is not None:
+            out['current_lap'] = {
+                'time_ms': lap.current_lap_time_ms or None,
+                'sector': (get(lap, 'sector') or 0) + 1,
+                'invalid': bool(get(lap, 'current_lap_invalid')),
+            }
+        if lap is not None and get(lap, 'penalties') is not None:
+            out['penalties'] = {
+                'time_penalty_s': lap.penalties,
+                'warnings': get(lap, 'warnings') or 0,
+                'unserved_drive_through': get(lap, 'num_unserved_drive_through') or 0,
+                'unserved_stop_go': get(lap, 'num_unserved_stop_go') or 0,
+                'pit_stops_done': get(lap, 'num_pit_stops') or 0,
+                'grid_position': get(lap, 'grid_position'),
+            }
+        if get(t, 'brakes_temperature') is not None:
+            out['brake_temps_c'] = dict(zip(WHEEL_CODES, t.brakes_temperature, strict=False))
+        if get(t, 'tyres_pressure') is not None:
+            out['tyre_pressures_psi'] = {
+                c: round(p, 1) for c, p in zip(WHEEL_CODES, t.tyres_pressure, strict=False)
+            }
+        if get(t, 'engine_temperature') is not None:
+            out['engine_temp_c'] = t.engine_temperature
+        if get(t, 'drs') is not None:
+            out['drs_open'] = bool(t.drs)
+        if get(dmg, 'front_left_wing') is not None:
+            tyre_damage = get(dmg, 'tyres_damage') or ()
+            out['damage_pct'] = {
+                'front left wing': dmg.front_left_wing,
+                'front right wing': get(dmg, 'front_right_wing'),
+                'rear wing': get(dmg, 'rear_wing'),
+                'floor': get(dmg, 'floor'),
+                'gearbox wear': get(dmg, 'gearbox'),
+                'engine wear': get(dmg, 'engine'),
+                'tyre damage': max(tyre_damage) if tyre_damage else 0,
+            }
+        if get(st, 'ers_store_energy') is not None:
+            mode = get(st, 'ers_deploy_mode')
+            out['ers'] = {
+                'battery_pct': round(st.ers_store_energy / ERS_STORE_MAX_J * 100),
+                'deploy_mode': ERS_MODE_NAMES.get(mode, str(mode)),
+                'used_this_lap_pct': round((get(st, 'ers_deployed_this_lap') or 0) / ERS_STORE_MAX_J * 100),
+            }
+        return out
+
     def build_context(self) -> JSON:
         """Snapshot of live telemetry plus ML predictions, for the AI prompt and fallbacks."""
         t, lap, s, st, dmg = (
@@ -352,6 +429,7 @@ class OutputsStage(TrackMapStage):
                 car_behind_name=self.radio.driver_name(self.radio.car_behind_index),
                 game_pit_window=self.radio.pit_window,
             )
+        ctx.update(self._car_context(lap, t, dmg, st))
         if t:
             ctx['tyre_surface_c'] = dict(zip(WHEEL_CODES, t.tyres_surface_temperature, strict=False))
             ctx['tyre_inner_c'] = dict(zip(WHEEL_CODES, t.tyres_inner_temperature, strict=False))
@@ -359,6 +437,7 @@ class OutputsStage(TrackMapStage):
             ctx['tyre_wear_pct'] = {c: round(w, 1) for c, w in zip(WHEEL_CODES, dmg.tyres_wear, strict=False)}
         if st:
             ctx.update(compound=st.compound_name, tyre_age_laps=st.tyres_age_laps)
+        ctx['standings'] = self.standings_summary()
         prediction = self.pit_prediction()
         ctx['pit_prediction'] = prediction.as_dict() if prediction else None
         ctx['fuel'] = self.fuel_prediction()

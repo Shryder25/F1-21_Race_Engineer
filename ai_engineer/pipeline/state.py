@@ -32,6 +32,8 @@ JSON = dict[str, Any]
 
 WHEEL_NAMES = ('Rear Left', 'Rear Right', 'Front Left', 'Front Right')
 WHEEL_CODES = ('RL', 'RR', 'FL', 'FR')  # same order as the telemetry tuples
+ERS_STORE_MAX_J = 4_000_000.0  # a full ERS battery (4 MJ)
+ERS_MODE_NAMES = {0: 'none', 1: 'medium', 2: 'hotlap', 3: 'overtake'}
 
 WEATHER_NAMES = {0: 'clear', 1: 'light cloud', 2: 'overcast', 3: 'light rain', 4: 'heavy rain', 5: 'storm'}
 

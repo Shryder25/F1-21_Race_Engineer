@@ -70,6 +70,13 @@ def model_installed(names, model: str) -> bool:
     return any(name == model or name == wanted for name in names)
 
 
+def _lower_priority():
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+
+
 class LocalAILauncher:
     def __init__(
         self,
@@ -82,6 +89,8 @@ class LocalAILauncher:
         popen=subprocess.Popen,
         start_wait_s: float = START_WAIT_S,
         ping_every_s: float = PING_EVERY_S,
+        load_options: dict | None = None,
+        low_priority: bool = True,
     ):
         self.root = ollama_root(base_url)
         self.model = model
@@ -91,6 +100,9 @@ class LocalAILauncher:
         self._popen = popen
         self._start_wait_s = start_wait_s
         self._ping_every_s = ping_every_s
+        # Must match the options the AI client sends, or each question reloads the model.
+        self.load_options = dict(load_options or {})
+        self.low_priority = low_priority
         self._process = None
         self._stop = threading.Event()
         self._thread = None
@@ -138,9 +150,13 @@ class LocalAILauncher:
             )
             return False
         self._say('Starting Ollama...')
-        flags = 0
+        flags, extra = 0, {}
         if sys.platform == 'win32':
             flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            if self.low_priority:  # the game's frames come first when both want the CPU
+                flags |= getattr(subprocess, 'BELOW_NORMAL_PRIORITY_CLASS', 0)
+        elif self.low_priority and hasattr(os, 'nice'):
+            extra['preexec_fn'] = _lower_priority
         env = dict(os.environ)
         env.setdefault('OLLAMA_KEEP_ALIVE', KEEP_ALIVE)
         try:
@@ -150,6 +166,7 @@ class LocalAILauncher:
                 stderr=subprocess.DEVNULL,
                 env=env,
                 creationflags=flags,
+                **extra,
             )
         except OSError as error:
             self._say(f'Could not start Ollama: {error}')
@@ -191,11 +208,10 @@ class LocalAILauncher:
     def _load(self, timeout=180.0):
         """Load the model into memory (an empty prompt loads without generating)."""
         try:
-            with self._request(
-                '/api/generate',
-                {'model': self.model, 'prompt': '', 'keep_alive': KEEP_ALIVE, 'stream': False},
-                timeout=timeout,
-            ) as response:
+            body = {'model': self.model, 'prompt': '', 'keep_alive': KEEP_ALIVE, 'stream': False}
+            if self.load_options:
+                body['options'] = self.load_options
+            with self._request('/api/generate', body, timeout=timeout) as response:
                 response.read()
             return True
         except (urllib.error.URLError, OSError) as error:

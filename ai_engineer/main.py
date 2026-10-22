@@ -45,7 +45,7 @@ import webbrowser
 import auto_refit
 import push_to_talk
 import strategy_replan
-from ai_client import AIClient
+from ai_client import AIClient, ollama_options
 from ai_launcher import LocalAILauncher
 from analysis import AnalysisEngine
 from engineer_brain import EngineerBrain
@@ -323,6 +323,14 @@ def build_parser() -> argparse.ArgumentParser:
         help='Kokoro speaking speed (default: 1.1, a touch brisk like real radio)',
     )
     tts.add_argument(
+        '--tts-threads',
+        type=int,
+        default=None,
+        metavar='N',
+        help='CPU threads Kokoro may use (default: a quarter of your CPU threads, 1-4). '
+        'Lower = fewer frame drops while it speaks, higher = voice ready sooner',
+    )
+    tts.add_argument(
         '--no-radio-fx',
         action='store_true',
         help='Kokoro only: clean studio voice instead of the team-radio effect',
@@ -345,6 +353,52 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help='Seconds to wait for the model before answering from rules (default: 30; '
         'DeepSeek R1 thinks before it answers)',
+    )
+    ai.add_argument(
+        '--ai-for-commands',
+        action='store_true',
+        help='Send the 9 fixed questions (gap ahead, tyre temps...) to the AI too. By default '
+        'they are answered instantly from the live data and the AI handles everything else',
+    )
+    ai.add_argument(
+        '--ai-full-context',
+        action='store_true',
+        help='Send the AI all the data for every question instead of just what the question '
+        'is about (slower)',
+    )
+    ai.add_argument(
+        '--ai-context',
+        type=int,
+        default=4096,
+        metavar='TOKENS',
+        help='Context window asked of local Ollama (default: 4096, enough for a full race; '
+        'bigger uses more graphics memory)',
+    )
+    ai.add_argument(
+        '--ai-gpu-layers',
+        type=int,
+        default=None,
+        metavar='N',
+        help='Local Ollama: how many model layers go on the graphics card (default: Ollama '
+        'decides, usually all). Fewer leaves more of the GPU to the game',
+    )
+    ai.add_argument(
+        '--ai-cpu',
+        action='store_true',
+        help='Local Ollama: run the model on the CPU only (same as --ai-gpu-layers 0). '
+        'No frame drops from the AI, but slower answers',
+    )
+    ai.add_argument(
+        '--ai-threads',
+        type=int,
+        default=None,
+        metavar='N',
+        help='Local Ollama: CPU threads for the model (default: Ollama decides)',
+    )
+    ai.add_argument(
+        '--ai-normal-priority',
+        action='store_true',
+        help="Start Ollama at normal priority (by default it runs below the game's)",
     )
     ai.add_argument(
         '--no-ai-autostart',
@@ -494,6 +548,7 @@ def main():
             cfg.voice.kokoro_voice,
             cfg.voice.kokoro_speed,
             radio_effect=cfg.voice.radio_fx,
+            threads=args.tts_threads,
         )
         if driver_factory:
             log.info(f'Engineer voice: Kokoro ({cfg.voice.kokoro_voice})')
@@ -545,12 +600,21 @@ def main():
     voice.set_silence_filter(analysis.is_driver_busy)
 
     # ─── AI brain + on-demand voice commands ───
+    load_options = ollama_options(args.ai_context, 0 if args.ai_cpu else args.ai_gpu_layers, args.ai_threads)
     client = (
         None
         if args.no_ai
-        else AIClient(cfg.ai.base_url or None, cfg.ai.model or None, args.ai_api_key, cfg.ai.timeout_s)
+        else AIClient(
+            cfg.ai.base_url or None,
+            cfg.ai.model or None,
+            args.ai_api_key,
+            cfg.ai.timeout_s,
+            load_options=load_options,
+        )
     )
-    brain = EngineerBrain(analysis.build_context, client)
+    brain = EngineerBrain(
+        analysis.build_context, client, rules_first=not args.ai_for_commands, focused=not args.ai_full_context
+    )
     dispatcher = CommandDispatcher(voice, brain, on_log=add_voice_log)
     # Typed HUD questions are deliberate, so they may be free-form like the radio button.
     set_command_handler(lambda text: dispatcher.handle_text(text, free_form=True))
@@ -583,6 +647,8 @@ def main():
             launcher = LocalAILauncher(
                 client.base_url,
                 client.model,
+                load_options=load_options,
+                low_priority=not args.ai_normal_priority,
                 on_ready=lambda: voice.say(
                     'Pit wall is connected. Ask me anything.', Priority.LOW, key='ai_ready', ttl=15
                 ),

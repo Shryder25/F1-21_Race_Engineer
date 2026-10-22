@@ -13,6 +13,7 @@ That's all: on the first start the engineer downloads the two model files (~350 
 
 from __future__ import annotations
 
+import os
 import threading
 import urllib.error
 import urllib.request
@@ -114,11 +115,21 @@ class SoundDevicePlayer:
         self._sd.stop()
 
 
+def default_tts_threads() -> int:
+    """CPU threads for Kokoro: a quarter of the PC's threads (1 to 4).
+
+    By default ONNX Runtime uses every core for each line it speaks, and that burst steals
+    CPU from the game for a moment: a frame drop every time the engineer talks.
+    """
+    return max(1, min(4, (os.cpu_count() or 4) // 4))
+
+
 def kokoro_synthesizer(
     model_dir: Path = DEFAULT_KOKORO_DIR,
     voice: str = DEFAULT_KOKORO_VOICE,
     speed: float = 1.1,
     lang: str = 'en-gb',
+    threads: int | None = None,
 ):
     """Return ``text -> (samples, sample_rate)`` backed by Kokoro. Raises if unavailable."""
     from kokoro_onnx import Kokoro
@@ -129,7 +140,23 @@ def kokoro_synthesizer(
         raise FileNotFoundError(
             f'Kokoro model files not found in {model_dir} (need {KOKORO_MODEL_FILE} and {KOKORO_VOICES_FILE})'
         )
-    kokoro = Kokoro(str(model), str(voices))
+    threads = threads or default_tts_threads()
+    kokoro = None
+    if hasattr(Kokoro, 'from_session'):
+        try:
+            import onnxruntime
+
+            options = onnxruntime.SessionOptions()
+            options.intra_op_num_threads = threads
+            options.inter_op_num_threads = 1
+            session = onnxruntime.InferenceSession(
+                str(model), sess_options=options, providers=['CPUExecutionProvider']
+            )
+            kokoro = Kokoro.from_session(session, str(voices))
+        except Exception as exc:  # older kokoro-onnx: fall back to its own defaults
+            log.warning(f'Could not limit Kokoro to {threads} threads ({exc}).')
+    if kokoro is None:
+        kokoro = Kokoro(str(model), str(voices))
 
     def synthesize(text):
         return kokoro.create(text, voice=voice, speed=speed, lang=lang)
@@ -244,7 +271,12 @@ class NeuralSpeechDriver:
 
 
 def build_kokoro_driver_factory(
-    model_dir=DEFAULT_KOKORO_DIR, voice=DEFAULT_KOKORO_VOICE, speed=1.1, radio_effect=True, download=True
+    model_dir=DEFAULT_KOKORO_DIR,
+    voice=DEFAULT_KOKORO_VOICE,
+    speed=1.1,
+    radio_effect=True,
+    download=True,
+    threads=None,
 ):
     """Check Kokoro can load now, and return a factory for VoiceEngine; None if it can't.
 
@@ -261,7 +293,7 @@ def build_kokoro_driver_factory(
         log.info(f'Using the system voice until the Kokoro files are in {model_dir}.')
         return None
     try:
-        synthesize = kokoro_synthesizer(model_dir, voice, speed)
+        synthesize = kokoro_synthesizer(model_dir, voice, speed, threads=threads)
         player = SoundDevicePlayer()
     except Exception as exc:
         log.warning(f'Kokoro unavailable ({exc}). Using the system voice instead.')
