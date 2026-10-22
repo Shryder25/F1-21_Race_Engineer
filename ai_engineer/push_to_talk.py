@@ -9,6 +9,9 @@ voice commands.
 Pieces (each can be swapped out in tests):
   * ``ButtonWatcher``  reads the wheel/controller with pygame in its own thread and
                        turns button presses into start/stop of the radio.
+  * ``GameButtonWatcher`` does the same from the game's own Buttons ('BUTN') UDP event,
+                       so a wheel button works without pygame (``--ptt-game-button r1``,
+                       or ``python main.py --find-game-button`` to pick one).
   * ``MicRecorder``    keeps the microphone open with a short pre-roll buffer, so the
                        first word is not clipped when you press and talk straight away.
   * ``PushToTalk``     glues them together: record, transcribe, dispatch.
@@ -30,6 +33,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+import game_buttons
 from voice_engine import Priority
 
 HOLD, TOGGLE = 'hold', 'toggle'
@@ -89,21 +93,48 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict | None:
         data = json.loads(Path(path).read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict) or 'button' not in data:
+    if not isinstance(data, dict) or not ('button' in data or 'game_button' in data):
         return None
+    if 'game_button' in data:
+        try:
+            game_buttons.parse_game_button(data['game_button'])
+        except ValueError:
+            print(f'[PTT] Ignoring bad game button {data.get("game_button")!r} in {path}')
+            data.pop('game_button')
+    if 'button' in data:
+        try:
+            parse_binding(data['button'])
+        except ValueError:
+            print(f'[PTT] Ignoring {path}: bad button {data.get("button")!r}')
+            data.pop('button')
+    return data if ('button' in data or 'game_button' in data) else None
+
+
+def _read_raw(path) -> dict:
     try:
-        parse_binding(data['button'])
-    except ValueError:
-        print(f'[PTT] Ignoring {path}: bad button {data.get("button")!r}')
-        return None
-    return data
+        data = json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def save_config(binding: Binding, device: str | None, mode: str = HOLD,
                 path: Path = DEFAULT_CONFIG_PATH) -> Path:
     path = Path(path)
-    path.write_text(json.dumps({'button': binding.label, 'device': device, 'mode': mode},
-                               indent=2) + '\n', encoding='utf-8')
+    data = {'button': binding.label, 'device': device, 'mode': mode}
+    if 'game_button' in (old := _read_raw(path)):
+        data['game_button'] = old['game_button']   # keep a saved game button as well
+    path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+    return path
+
+
+def save_game_button(mask: int, mode: str = HOLD, path: Path = DEFAULT_CONFIG_PATH) -> Path:
+    """Save the game (BUTN) radio button, keeping any wheel/controller button already saved."""
+    path = Path(path)
+    data = _read_raw(path)
+    data['game_button'] = game_buttons.button_label(mask)
+    data['mode'] = mode
+    path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
     return path
 
 
@@ -304,6 +335,57 @@ class ButtonWatcher:
             self._thread.join(timeout=1)
 
 
+class GameButtonWatcher(ButtonWatcher):
+    """The radio button read from the game's Buttons ('BUTN') UDP event instead of pygame.
+
+    The game sends the button mask only when it changes, so ``handle_status`` feeds each
+    event into the same hold/toggle state machine, and a small ticker re-feeds the last
+    state so the 15 s safety close and contact-bounce recovery still happen between events
+    (a lost release packet can't leave the radio open forever).
+    """
+
+    def __init__(self, mask: int, on_start, on_stop, *, mode: str = HOLD, tick_s: float = 0.1,
+                 clock=time.monotonic, **options):
+        super().__init__(None, on_start, on_stop, mode=mode, backend_factory=None, **options)
+        self.mask = mask
+        self.label = game_buttons.button_label(mask)
+        self.tick_s = tick_s
+        self.clock = clock
+        self.device_name = 'F1 2021 (game buttons)'
+        self.events_seen = 0
+        self._raw = False
+        self._feed_lock = threading.Lock()
+
+    def handle_status(self, status):
+        """One Buttons event: ``status`` is the mask of every button held right now."""
+        if status is None:
+            return
+        self.events_seen += 1
+        with self._feed_lock:
+            self._raw = bool(status & self.mask)
+            self.feed(self._raw, self.clock())
+
+    def tick(self):
+        with self._feed_lock:
+            self.feed(self._raw, self.clock())
+
+    def _run(self):
+        self._ready.set()
+        try:
+            while not self._stop.wait(self.tick_s):
+                self.tick()
+        finally:
+            with self._feed_lock:
+                if self.is_open:
+                    self._close()
+
+    def start(self, timeout: float = 5.0) -> bool:
+        self._thread = threading.Thread(target=self._run, name='PushToTalkGameButton', daemon=True)
+        self._thread.start()
+        self._ready.wait(timeout)
+        return True
+
+
 # ──────────────────────────────────────────────
 # Microphone recorder
 # ──────────────────────────────────────────────
@@ -427,11 +509,15 @@ class PushToTalk:
 
     def on_start(self):
         self.last_active = time.monotonic()
+        if self.recorder.recording:
+            return                      # the other radio button already opened it
         self.recorder.begin()
         print('[PTT] Radio open, listening...')
 
     def on_stop(self):
         self.last_active = time.monotonic()
+        if not self.recorder.recording:
+            return
         audio = self.recorder.end()
         if audio is None:
             print('[PTT] Radio closed (too short, ignored).')
@@ -469,67 +555,98 @@ class PushToTalk:
 
 @dataclass
 class Settings:
-    binding: Binding
+    binding: Binding | None
     device: str | None = None
     mode: str = HOLD
+    game_button: int | None = None          # BUTN mask (game_buttons.BUTTON_FLAGS)
 
 
 def resolve_settings(button=None, device=None, mode=None,
-                     config_path: Path = DEFAULT_CONFIG_PATH) -> Settings | None:
-    """Command-line values win over the saved push_to_talk.json. None when no button is set."""
+                     config_path: Path = DEFAULT_CONFIG_PATH, game_button=None) -> Settings | None:
+    """Command-line values win over the saved push_to_talk.json. None when no button is set.
+
+    ``button`` is a pygame wheel/controller button; ``game_button`` is a button read from the
+    game's own Buttons event. Either or both can be set.
+    """
     saved = load_config(config_path) or {}
     button = button if button is not None else saved.get('button')
-    if button is None:
+    game_button = game_button if game_button is not None else saved.get('game_button')
+    if button is None and game_button is None:
         return None
-    binding = parse_binding(button)
-    same_as_saved = 'button' in saved and parse_binding(saved['button']) == binding
+    binding = parse_binding(button) if button is not None else None
+    mask = game_buttons.parse_game_button(game_button) if game_button is not None else None
+    same_as_saved = (binding is not None and 'button' in saved
+                     and parse_binding(saved['button']) == binding)
     saved_device = saved.get('device') if same_as_saved else None  # a new button may be on any device
     mode = mode or saved.get('mode') or HOLD
     if mode not in MODES:
         mode = HOLD
-    return Settings(binding, device if device is not None else saved_device, mode)
+    return Settings(binding, device if device is not None else saved_device, mode, mask)
 
 
 class RadioButton:
-    """What ``start`` returns: the running watcher, recorder and glue."""
+    """What ``start`` returns: the running watcher(s), recorder and glue."""
 
-    def __init__(self, watcher, recorder, ptt):
+    def __init__(self, watcher, recorder, ptt, game_watcher=None):
         self.watcher, self.recorder, self.ptt = watcher, recorder, ptt
+        self.game_watcher = game_watcher
+
+    def on_game_buttons(self, status):
+        """Feed a Buttons ('BUTN') event mask from the telemetry stream."""
+        if self.game_watcher is not None:
+            self.game_watcher.handle_status(status)
 
     def recently_active(self, window_s: float = 3.0) -> bool:
         return self.ptt.recently_active(window_s)
 
     def stop(self):
-        self.watcher.stop()
+        for watcher in (self.watcher, self.game_watcher):
+            if watcher is not None:
+                watcher.stop()
         self.recorder.stop()
         self.ptt.shutdown()
 
 
 def start(settings: Settings, dispatcher, *, voice=None, engine: str = 'google',
           mic_index: int | None = None, language: str = 'en-GB', on_log=None,
-          backend_factory=PygameJoysticks, recorder=None, recognizer=None) -> RadioButton | None:
-    """Start the radio button. None (with a console message) if the mic or controller is unavailable."""
-    from voice_commands import transcribe
+          backend_factory=PygameJoysticks, recorder=None, recognizer=None,
+          transcriber=None) -> RadioButton | None:
+    """Start the radio button(s). None (with a console message) if the mic or controller is unavailable.
+
+    ``transcriber`` (callable(audio) -> text) overrides ``engine``; main.py passes the shared
+    speech-to-text so offline Whisper is loaded once for both microphones.
+    """
     recorder = recorder or MicRecorder(mic_index)
     if not recorder.start():
         return None
-    if recognizer is None:
-        import speech_recognition as sr
-        recognizer = sr.Recognizer()
-    ptt = PushToTalk(dispatcher, recorder,
-                     lambda audio: transcribe(recognizer, audio, engine, language),
-                     voice=voice, on_log=on_log)
-    watcher = ButtonWatcher(settings.binding, ptt.on_start, ptt.on_stop, device=settings.device,
-                            mode=settings.mode, backend_factory=backend_factory)
-    if not watcher.start():
+    if transcriber is None:
+        from voice_commands import transcribe
+        if recognizer is None:
+            import speech_recognition as sr
+            recognizer = sr.Recognizer()
+        transcriber = lambda audio: transcribe(recognizer, audio, engine, language)  # noqa: E731
+    ptt = PushToTalk(dispatcher, recorder, transcriber, voice=voice, on_log=on_log)
+    action = 'Hold' if settings.mode == HOLD else 'Press'
+    watcher = game_watcher = None
+    if settings.binding is not None:
+        watcher = ButtonWatcher(settings.binding, ptt.on_start, ptt.on_stop, device=settings.device,
+                                mode=settings.mode, backend_factory=backend_factory)
+        if not watcher.start():
+            watcher = None
+        else:
+            where = f' on "{settings.device}"' if settings.device else ''
+            print(f'[PTT] {action} button {settings.binding.label}{where} to talk to the engineer. '
+                  'Ask anything.')
+    if settings.game_button:
+        game_watcher = GameButtonWatcher(settings.game_button, ptt.on_start, ptt.on_stop,
+                                         mode=settings.mode)
+        game_watcher.start()
+        print(f'[PTT] {action} {game_watcher.label.upper()} (read from the game) to talk to the engineer.')
+    if watcher is None and game_watcher is None:
         recorder.stop()
         ptt.shutdown()
         return None
-    where = f' on "{settings.device}"' if settings.device else ''
-    action = 'Hold' if settings.mode == HOLD else 'Press'
-    print(f'[PTT] {action} button {settings.binding.label}{where} to talk to the engineer. '
-          'Ask anything.')
-    return RadioButton(watcher, recorder, ptt)
+    return RadioButton(watcher, recorder, ptt, game_watcher)
 
 
 # ──────────────────────────────────────────────
@@ -605,6 +722,42 @@ def run_button_finder(mode: str = HOLD, config_path: Path = DEFAULT_CONFIG_PATH,
     print(f'\nRadio button: {binding.label} on "{name}" ({mode} to talk).')
     print(f'Saved to {path}. Start the engineer as usual (python main.py) and it will use it.')
     print(f'Or pass it by hand: python main.py --ptt-button {binding.label} --ptt-device "{name}"')
+    return 0
+
+
+def run_game_button_finder(port: int, mode: str = HOLD, config_path: Path = DEFAULT_CONFIG_PATH,
+                           socket_factory=None, timeout_s: float = 30.0) -> int:
+    """CLI entry for ``python main.py --find-game-button``: listen to the game's UDP Buttons event."""
+    import socket
+    from packets import parse_buttons_event
+    try:
+        sock = socket_factory() if socket_factory else socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        if socket_factory is None:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(('0.0.0.0', port))
+        sock.settimeout(0.5)
+    except OSError as error:
+        print(f'Cannot listen on UDP port {port}: {error}. Close the engineer if it is running.')
+        return 1
+
+    def receive():
+        try:
+            return sock.recvfrom(2048)[0]
+        except (socket.timeout, TimeoutError, ConnectionResetError):
+            return None
+
+    try:
+        mask = game_buttons.find_game_button(receive, parse_buttons_event, timeout_s=timeout_s)
+    finally:
+        sock.close()
+    if not mask:
+        return 1
+    label = game_buttons.button_label(mask)
+    path = save_game_button(mask, mode, config_path)
+    print(f'\nRadio button: {label.upper()} from the game ({mode} to talk).')
+    print(f'Saved to {path}. Start the engineer as usual (python main.py) and it will use it.')
+    print(f'Or pass it by hand: python main.py --ptt-game-button {label}')
+    print('Tip: unbind that button in the game controls (or pick a spare one) so it does nothing else.')
     return 0
 
 

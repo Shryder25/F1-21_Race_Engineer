@@ -60,6 +60,18 @@ def parse_speed_trap_event(data: bytes) -> SpeedTrapEvent | None:
     return SpeedTrapEvent(values[0], values[1], bool(values[2]), bool(values[3]), values[4], values[5])
 
 
+# Buttons ('BUTN'): the controller buttons held right now, as a uint32 bit mask
+# (game_buttons.BUTTON_FLAGS). Sent whenever the button state changes.
+BUTTONS_FORMAT = "<I"
+
+
+def parse_buttons_event(data: bytes) -> int | None:
+    """The button mask of a Buttons ('BUTN') event, or None if it isn't one."""
+    if data[HEADER_SIZE:HEADER_SIZE + 4] != b'BUTN' or len(data) < HEADER_SIZE + 8:
+        return None
+    return struct.unpack_from(BUTTONS_FORMAT, data, HEADER_SIZE + 4)[0]
+
+
 # Every other Event ('EVNT') sub-type the race engineer reacts to. Body layouts follow the
 # F1 2021 spec's EventDataDetails union; all fields are uint8 except FTLP's float lap time.
 RACE_EVENT_BODY_FORMATS = {

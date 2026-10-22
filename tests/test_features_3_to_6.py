@@ -114,14 +114,16 @@ class Feature4RealisticF1RadioProtocolTests(unittest.TestCase):
         dummy_telem.brake = 0.6
         self.assertTrue(engine.is_driver_busy())
         dummy_telem.brake = 0.0
+        self.assertFalse(engine.is_driver_busy())
 
-        # High steering: busy
+        # Steering through a slow or medium-load corner: the engineer may talk
         dummy_telem.steer = 0.35
-        self.assertTrue(engine.is_driver_busy())
-        dummy_telem.steer = 0.0
-
-        # High lateral G: busy
         engine.latest_motion = parse_player_motion(build_motion_packet(1.0, 1, 0, 0, lat_g=2.1), 0)
+        self.assertFalse(engine.is_driver_busy())
+
+        # High-load corner (fast, high lateral G): busy
+        dummy_telem.speed = 260
+        engine.latest_motion = parse_player_motion(build_motion_packet(1.0, 1, 0, 0, lat_g=4.2), 0)
         self.assertTrue(engine.is_driver_busy())
 
     def test_priority_interrupts_break_silence(self):
