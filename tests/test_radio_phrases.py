@@ -1,10 +1,10 @@
 import unittest
 from dataclasses import replace
 
-from test_analysis import SilentVoice   # also puts ai_engineer/ on the import path
 import radio_phrases as say
 from packets import SessionData, parse_player_lap_data
 from simulate_telemetry import build_lap_packet
+from test_analysis import SilentVoice  # also puts ai_engineer/ on the import path
 from voice_engine import Priority
 
 

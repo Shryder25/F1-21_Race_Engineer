@@ -48,7 +48,7 @@ import sys
 import tempfile
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,18 +57,25 @@ for _path in (ROOT / 'ai_engineer', GOLDEN):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-import race_strategy                                # noqa: E402
-import rival_strategy                               # noqa: E402
-import harness                                      # noqa: E402
-import recording                                    # noqa: E402
-import session_history                              # noqa: E402
-import telemetry_stream as stream_module            # noqa: E402
-import web_hud                                      # noqa: E402
-from analysis import AnalysisEngine                 # noqa: E402
-from history import TelemetryHistory                # noqa: E402
-from packets import (HEADER_SIZE, TRACK_NAMES, PacketHeader, parse_all_car_status,  # noqa: E402
-                     parse_all_lap_data, parse_player_car_damage, parse_session_data)
-from telemetry_stream import PACKET_SIZES, TelemetryStream   # noqa: E402
+import harness  # noqa: E402
+import race_strategy  # noqa: E402
+import recording  # noqa: E402
+import rival_strategy  # noqa: E402
+import session_history  # noqa: E402
+import telemetry_stream as stream_module  # noqa: E402
+import web_hud  # noqa: E402
+from analysis import AnalysisEngine  # noqa: E402
+from history import TelemetryHistory  # noqa: E402
+from packets import (  # noqa: E402
+    HEADER_SIZE,
+    TRACK_NAMES,
+    PacketHeader,
+    parse_all_car_status,
+    parse_all_lap_data,
+    parse_player_car_damage,
+    parse_session_data,
+)
+from telemetry_stream import PACKET_SIZES, TelemetryStream  # noqa: E402
 
 RACE_SESSION_TYPES = (10, 11, 12)
 # Predictions are written down this far into each lap, once the car status for the new lap
@@ -718,7 +725,7 @@ def backtest(paths) -> dict:
         races.extend(found)
     samples = [s for race in races for s in race['samples']]
     return {
-        'generated_at': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'),
+        'generated_at': datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC'),
         'races': races, 'skipped': skipped,
         'aggregate': {'summary': summary_rows(samples),
                       'pit_outcomes': merge_outcomes(r['pit_outcomes'] for r in races)},
@@ -838,8 +845,8 @@ SIMULATED_DIR = ROOT / 'recordings' / 'simulated'
 
 def backtest_scenarios():
     """Longer simulated races than the golden sessions, so wear and pit predictions have room."""
-    from synth import Car, Scenario
     from scenarios import FIELD, NUMBERS
+    from synth import Car, Scenario
 
     def field_of(first_stint, pit_laps, start_index=1):
         cars = []
@@ -877,8 +884,9 @@ def wear_driven_race(seed: int = 21):
     scripted races, the right answer is in the data the rival stop model sees.
     """
     import random
-    from synth import COMPOUNDS, Car, Scenario
+
     from scenarios import FIELD, NUMBERS
+    from synth import COMPOUNDS, Car, Scenario
 
     rng = random.Random(seed)
     total, wear_scale = 32, 1.15

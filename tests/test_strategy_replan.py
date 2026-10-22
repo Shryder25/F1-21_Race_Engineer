@@ -17,7 +17,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_enginee
 import race_sim as sim
 import race_strategy as rs
 import strategy_replan as rp
-from analysis import AnalysisEngine, PROACTIVE_KEYS
+from analysis import PROACTIVE_KEYS, AnalysisEngine
 from engineer_brain import format_context, rule_based_answer
 from test_analysis import SilentVoice
 from test_race_sim import RACE, SILVERSTONE, candidates, field, lap, status

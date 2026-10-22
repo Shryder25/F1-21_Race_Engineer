@@ -16,13 +16,18 @@ from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 
-from analysis import AnalysisEngine, TYRE_TEMP_CRITICAL
-from packets import (parse_player_lap_data, parse_player_telemetry, parse_player_motion,
-                     parse_speed_trap_event, SessionData, CarStatusData)
-from simulate_telemetry import (build_lap_packet, build_telemetry_packet, build_header,
-                                build_session_packet)
-from test_analysis import SilentVoice
 import web_hud
+from analysis import TYRE_TEMP_CRITICAL, AnalysisEngine
+from packets import (
+    CarStatusData,
+    SessionData,
+    parse_player_lap_data,
+    parse_player_motion,
+    parse_player_telemetry,
+    parse_speed_trap_event,
+)
+from simulate_telemetry import build_header, build_lap_packet, build_telemetry_packet
+from test_analysis import SilentVoice
 
 
 def build_motion_packet(session_time, frame_id, x, z, g_lat=0.0):
@@ -80,7 +85,7 @@ class TrackMapContinuousRecordingTests(unittest.TestCase):
     def test_map_has_points_before_any_lap_completes(self):
         # Lap 1 is still in progress (current_lap_num stays 1 throughout) — no lap has
         # completed yet, so only the old "best lap" trail would be empty.
-        for i, distance in enumerate(range(0, 200, 10)):
+        for distance in range(0, 200, 10):
             self.feed_motion_and_telemetry(distance, x=float(distance), z=float(distance) * 2)
         state = web_hud.get_web_state(now=0)
         self.assertGreater(len(state['track_map']), 0,
@@ -303,6 +308,7 @@ class HistorySpeedTrapColumnTests(unittest.TestCase):
     def test_record_and_read_back_speed_trap(self):
         import tempfile
         from pathlib import Path
+
         from history import TelemetryHistory
 
         with tempfile.TemporaryDirectory() as tmp:

@@ -22,10 +22,9 @@ import session_modes
 import strategy_replan
 import track_wetness
 from packets import CarStatusData, LapData, SessionData
-from voice_engine import Priority
-
 from pipeline.models import ModelsStage
 from pipeline.state import JSON
+from voice_engine import Priority
 
 
 class StrategyStage(ModelsStage):

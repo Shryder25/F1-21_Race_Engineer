@@ -7,15 +7,15 @@ import unittest
 from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
-import fitted_models                                        # noqa: E402
-import race_strategy as rs                                  # noqa: E402
-import rival_strategy as rv                                 # noqa: E402
-from analysis import AnalysisEngine                         # noqa: E402
-from engineer_brain import format_context, rule_based_answer   # noqa: E402
-from packets import CarDamageData, CarStatusData, SessionData, parse_player_lap_data   # noqa: E402
-from simulate_telemetry import build_lap_packet             # noqa: E402
-from test_analysis import SilentVoice                       # noqa: E402
-from voice_commands import match_command                    # noqa: E402
+import fitted_models  # noqa: E402
+import race_strategy as rs  # noqa: E402
+import rival_strategy as rv  # noqa: E402
+from analysis import AnalysisEngine  # noqa: E402
+from engineer_brain import format_context, rule_based_answer  # noqa: E402
+from packets import CarDamageData, CarStatusData, SessionData, parse_player_lap_data  # noqa: E402
+from simulate_telemetry import build_lap_packet  # noqa: E402
+from test_analysis import SilentVoice  # noqa: E402
+from voice_commands import match_command  # noqa: E402
 
 SOFT, MEDIUM, HARD, INTER = 16, 17, 18, 7
 ACTUAL = {SOFT: 17, MEDIUM: 18, HARD: 19, INTER: 7}           # C4, C3, C2, inter
@@ -179,7 +179,7 @@ class PredictionTests(unittest.TestCase):
         p = rv.predict_rival(state('MEDIUM', 5, 6), ctx())
         laps = [rv.sample_stop_lap(p, rng) for _ in range(300)]
         self.assertTrue(all(lap is None or 6 <= lap <= 40 for lap in laps))
-        self.assertAlmostEqual(sum(l for l in laps if l) / len([l for l in laps if l]), p.stop_lap_mean, delta=1.0)
+        self.assertAlmostEqual(sum(lap for lap in laps if lap) / len([lap for lap in laps if lap]), p.stop_lap_mean, delta=1.0)
         sets = {rv.sample_next_compound(p, rng) for _ in range(200)}
         self.assertTrue(sets <= set(p.next_compound_probs))
         done = rv.predict_rival(state('HARD', 2, 36, compounds_used=('MEDIUM', 'HARD')), ctx())

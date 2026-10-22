@@ -263,8 +263,8 @@ def _blend(estimates: list[tuple[float, float]]) -> tuple[float, float]:
     """Precision-weighted mean; the spread grows when the estimates disagree."""
     weights = [1.0 / (sd * sd) for _m, sd in estimates]
     total = sum(weights)
-    mean = sum(w * m for w, (m, _sd) in zip(weights, estimates)) / total
-    spread = sum(w * (m - mean) ** 2 for w, (m, _sd) in zip(weights, estimates)) / total
+    mean = sum(w * m for w, (m, _sd) in zip(weights, estimates, strict=False)) / total
+    spread = sum(w * (m - mean) ** 2 for w, (m, _sd) in zip(weights, estimates, strict=False)) / total
     return mean, max(MIN_SD, math.sqrt(1.0 / total + spread))
 
 
@@ -668,7 +668,7 @@ class RivalTracker:
         stint = car.stint
         laps = sorted(stint.observations)
         ages, incs = [], []
-        for a, b in zip(laps, laps[1:]):
+        for a, b in zip(laps, laps[1:], strict=False):
             (age_a, wear_a), (_age_b, wear_b) = stint.observations[a], stint.observations[b]
             if b == a + 1 and wear_a is not None and wear_b is not None and wear_b >= wear_a:
                 ages.append(age_a)

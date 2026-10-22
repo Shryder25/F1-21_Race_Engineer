@@ -1,26 +1,30 @@
-import json
 import pathlib
 import struct
 import sys
-import time
 import unittest
 from unittest.mock import MagicMock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 
-from packets import (
-    HEADER_FORMAT, PacketHeader, CarMotionData, CAR_MOTION_FORMAT, CAR_MOTION_SIZE,
-    parse_player_motion, SessionData, CarTelemetryData, LapData, CarDamageData, CarStatusData
-)
-from track_data import (
-    TRACK_DATABASE, get_all_tracks, get_track_setup, get_braking_points,
-    build_setup_advisor_prompt, generate_ai_setup_recommendation
-)
-from voice_engine import VoiceEngine, Priority
-from race_radio import RaceRadio
 from analysis import AnalysisEngine
-from web_hud import TelemetryHUDHandler, update_web_state, get_web_state
-from simulate_telemetry import build_header
+from packets import (
+    CAR_MOTION_FORMAT,
+    CAR_MOTION_SIZE,
+    HEADER_FORMAT,
+    CarTelemetryData,
+    LapData,
+    SessionData,
+    parse_player_motion,
+)
+from race_radio import RaceRadio
+from track_data import (
+    TRACK_DATABASE,
+    build_setup_advisor_prompt,
+    generate_ai_setup_recommendation,
+    get_all_tracks,
+)
+from voice_engine import Priority
+from web_hud import get_web_state, update_web_state
 
 
 def build_motion_packet(session_time: float, frame_id: int, x: float, z: float,
@@ -168,7 +172,7 @@ class Feature5TrackDatabaseAndSetupAdvisorTests(unittest.TestCase):
             self.assertIn(circuit, all_names, f"Missing required circuit: {circuit}")
 
     def test_setup_components_present_for_every_track(self):
-        for tid, t in TRACK_DATABASE.items():
+        for t in TRACK_DATABASE.values():
             setup = t["setup"]
             # 1. Aerodynamics
             self.assertIn("front_wing", setup["aerodynamics"])

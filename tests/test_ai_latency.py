@@ -4,9 +4,9 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 from ai_client import AIClient, AITimeout
 from engineer_brain import EngineerBrain
+from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 
 
 class FakeServer(BaseHTTPRequestHandler):

@@ -12,7 +12,6 @@ The per-frame telemetry handler, ``update_telemetry``, is the orchestrator in an
 from __future__ import annotations
 
 import time
-from typing import Any
 
 import race_strategy
 import session_modes
@@ -32,12 +31,11 @@ from packets import (
     SessionData,
     SessionHistoryData,
 )
+from pipeline.laps import LapsStage
+from pipeline.state import SILVERSTONE_CORNERS, DeltaTracker, TyreState
 from session_history import SessionLog
 from track_data import corner_zones, get_braking_points, resolve_track_id
 from voice_engine import Priority
-
-from pipeline.laps import LapsStage
-from pipeline.state import SILVERSTONE_CORNERS, DeltaTracker, TyreState
 
 
 class IngestStage(LapsStage):

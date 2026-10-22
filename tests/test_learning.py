@@ -2,13 +2,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 import auto_refit
 import driver_profile
 import fitted_models as fm
 from engineer_brain import format_context
 from history import TelemetryHistory
 from packets import SessionData
+from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 
 SILVERSTONE = SessionData(0, 30, 20, 20, 5891, 10, 7, 0)
 

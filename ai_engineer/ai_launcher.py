@@ -23,6 +23,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
+
 from log_setup import get_logger
 
 log = get_logger('ai')

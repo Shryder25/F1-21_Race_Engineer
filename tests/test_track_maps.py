@@ -11,13 +11,13 @@ from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 
-from analysis import AnalysisEngine
-from packets import parse_player_lap_data, parse_player_telemetry, parse_player_motion, SessionData
-from simulate_telemetry import build_lap_packet, build_telemetry_packet, build_session_packet
-from test_analysis import SilentVoice
-from test_track_map_tyre_and_report import build_motion_packet
 import track_maps
 import web_hud
+from analysis import AnalysisEngine
+from packets import SessionData, parse_player_lap_data, parse_player_motion, parse_player_telemetry
+from simulate_telemetry import build_lap_packet, build_session_packet, build_telemetry_packet
+from test_analysis import SilentVoice
+from test_track_map_tyre_and_report import build_motion_packet
 
 TRACK_LENGTH = 1000
 SESSION = SessionData(0, 30, 20, 20, TRACK_LENGTH, 10, 11, 0)

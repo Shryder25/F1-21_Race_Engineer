@@ -9,8 +9,15 @@ from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 from analysis import AnalysisEngine
-from packets import (SessionData, CarStatusData, RaceEvent, parse_race_event, parse_participants,
-                     parse_player_lap_data, PARTICIPANT_FORMAT, HEADER_SIZE)
+from packets import (
+    PARTICIPANT_FORMAT,
+    CarStatusData,
+    RaceEvent,
+    SessionData,
+    parse_participants,
+    parse_player_lap_data,
+    parse_race_event,
+)
 from race_events import RaceControl
 from simulate_telemetry import build_header, build_lap_packet, build_session_packet
 from test_analysis import SilentVoice

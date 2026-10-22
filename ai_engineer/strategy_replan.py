@@ -22,7 +22,7 @@ the game; analysis.py wires it to the live telemetry and the radio.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import race_sim
@@ -100,7 +100,7 @@ def same_plan(a: race_sim.Candidate, b: race_sim.Candidate, lap_num: int) -> boo
         return False
     if a.pit_laps and (a.pit_laps[0] == lap_num) != (b.pit_laps[0] == lap_num):
         return False
-    return all(abs(x - y) <= SAME_PLAN_LAPS for x, y in zip(a.pit_laps, b.pit_laps))
+    return all(abs(x - y) <= SAME_PLAN_LAPS for x, y in zip(a.pit_laps, b.pit_laps, strict=False))
 
 
 def _candidate(compounds, pit_laps, suffix: str = '') -> race_sim.Candidate:

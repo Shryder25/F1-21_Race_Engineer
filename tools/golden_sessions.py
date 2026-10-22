@@ -24,8 +24,8 @@ from pathlib import Path
 GOLDEN = Path(__file__).resolve().parents[1] / 'tests' / 'golden'
 sys.path.insert(0, str(GOLDEN))
 
-import harness      # noqa: E402
-import recording    # noqa: E402
+import harness  # noqa: E402
+import recording  # noqa: E402
 
 # Lap data, car telemetry and motion arrive every frame; these are thinned by --every.
 PER_FRAME_PACKETS = (0, 2, 6)
@@ -147,8 +147,8 @@ def cmd_add(args):
         info['note'] = args.note
     harness.save_manifest(manifest)
     cmd_bless(argparse.Namespace(names=[args.name]))
-    print('Now read tests/golden/sessions/%s/expected.json (or run `show`) and check every '
-          'call is one a real engineer should make, before committing.' % args.name)
+    print(f'Now read tests/golden/sessions/{args.name}/expected.json (or run `show`) and check every '
+          'call is one a real engineer should make, before committing.')
 
 
 def cmd_show(args):

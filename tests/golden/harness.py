@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import json
 import difflib
+import json
 import math
 import struct
 import sys
@@ -34,17 +34,16 @@ for _path in (ROOT / 'ai_engineer', Path(__file__).resolve().parent):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-import analysis as analysis_module          # noqa: E402
-import race_radio as race_radio_module      # noqa: E402
-import telemetry_stream as stream_module    # noqa: E402
-import web_hud                              # noqa: E402
-from analysis import AnalysisEngine, PROACTIVE_KEYS   # noqa: E402
-from engineer_brain import rule_based_answer          # noqa: E402
-from history import TelemetryHistory                  # noqa: E402
-from telemetry_stream import TelemetryStream          # noqa: E402
-from voice_commands import COMMANDS                   # noqa: E402
-
-import recording                                       # noqa: E402
+import analysis as analysis_module  # noqa: E402
+import race_radio as race_radio_module  # noqa: E402
+import recording  # noqa: E402
+import telemetry_stream as stream_module  # noqa: E402
+import web_hud  # noqa: E402
+from analysis import PROACTIVE_KEYS, AnalysisEngine  # noqa: E402
+from engineer_brain import rule_based_answer  # noqa: E402
+from history import TelemetryHistory  # noqa: E402
+from telemetry_stream import TelemetryStream  # noqa: E402
+from voice_commands import COMMANDS  # noqa: E402
 
 TRANSCRIPT_VERSION = 1
 # Fixed origins for the simulated clocks: far from zero, like a real PC, so "seconds since
@@ -191,7 +190,6 @@ def replay(path, checkpoints_every_lap=True) -> dict:
             engine = AnalysisEngine(voice, history=history, on_demand=False)
             stream = TelemetryStream(engine)
             laps: list[dict] = []
-            mid_answers = None
             last_lap = None
             datagrams = accepted = 0
             for record in recording.read_records(path):
@@ -237,7 +235,7 @@ def _numbers_equal(a, b, tol) -> bool:
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return abs(a - b) <= max(tol['number_abs'], tol['number_rel'] * max(abs(a), abs(b)))
     if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(_numbers_equal(x, y, tol) for x, y in zip(a, b))
+        return len(a) == len(b) and all(_numbers_equal(x, y, tol) for x, y in zip(a, b, strict=False))
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(_numbers_equal(a[k], b[k], tol) for k in a)
     return a == b
@@ -260,7 +258,7 @@ def compare(expected: dict, actual: dict, tolerances: dict | None = None, limit=
                                          lineterm='', n=1))
         problems.append('Radio calls changed:\n  ' + '\n  '.join(diff[:limit * 2]))
     else:
-        for e, a in zip(exp_calls, act_calls):
+        for e, a in zip(exp_calls, act_calls, strict=False):
             if abs(e['t'] - a['t']) > tol['time_s']:
                 problems.append(f"Call timing moved: expected {_fmt_call(e)}  got t={a['t']:.2f}")
                 if len(problems) >= limit:
@@ -284,7 +282,7 @@ def compare(expected: dict, actual: dict, tolerances: dict | None = None, limit=
                 problems.append(f"{label} answer to '{command}' changed:\n    expected: {exp.get(command)!r}"
                                 f"\n    got:      {act.get(command)!r}")
 
-    for e, a in zip(exp_laps, act_laps):
+    for e, a in zip(exp_laps, act_laps, strict=False):
         label = f"After lap {e.get('lap_completed')}:"
         e2 = {k: v for k, v in e.items() if k not in ('t', 'answers')}
         a2 = {k: v for k, v in a.items() if k not in ('t', 'answers')}

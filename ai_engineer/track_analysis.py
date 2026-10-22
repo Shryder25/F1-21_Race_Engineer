@@ -26,7 +26,7 @@ import copy
 import threading
 import time
 from itertools import combinations_with_replacement
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from track_data import TRACK_DATABASE, resolve_track_id
 from track_profiles import get_profile
@@ -48,7 +48,7 @@ WET_LEVELS = ((0.050, 'Low'), (0.062, 'Medium'))                     # on interm
 DEG_LEVELS = ('Low', 'Medium', 'High', 'Very High')
 
 # F1 2021 setup ranges: (min, max, decimals)
-SETUP_RANGES: Dict[str, Dict[str, Tuple[float, float, int]]] = {
+SETUP_RANGES: dict[str, dict[str, tuple[float, float, int]]] = {
     'aerodynamics': {'front_wing': (1, 11, 0), 'rear_wing': (1, 11, 0)},
     'transmission': {'diff_on_throttle': (50, 100, 0), 'diff_off_throttle': (50, 100, 0)},
     'suspension_geometry': {'front_camber': (-3.50, -2.50, 2), 'rear_camber': (-2.00, -1.00, 2),
@@ -68,7 +68,7 @@ def is_wet(weather: str) -> bool:
     return any(word in text for word in ('wet', 'rain', 'storm', 'inter'))
 
 
-def normalize_session(session: Optional[str]) -> str:
+def normalize_session(session: str | None) -> str:
     """'qualifying' for any qualifying-type session name, otherwise 'race'."""
     text = (session or '').strip().lower()
     if text.startswith('q') or 'quali' in text or 'one shot' in text or 'one-shot' in text:
@@ -80,7 +80,7 @@ def normalize_session(session: Optional[str]) -> str:
 # Tyre model
 # ──────────────────────────────────────────────
 
-def demand_factor(profile: Dict[str, Any]) -> float:
+def demand_factor(profile: dict[str, Any]) -> float:
     """Track abrasion/energy multiplier on tyre degradation (about 0.5 smooth to 1.6 brutal).
 
     Weighted from the surface roughness, cornering load, traction and overall tyre stress,
@@ -96,7 +96,7 @@ def demand_factor(profile: Dict[str, Any]) -> float:
     return round(max(0.4, min(1.8, factor * thermal)), 3)
 
 
-def degradation_rates(profile: Dict[str, Any]) -> Dict[str, float]:
+def degradation_rates(profile: dict[str, Any]) -> dict[str, float]:
     """Seconds lost per lap of tyre age for every compound at this circuit."""
     factor = demand_factor(profile)
     wet_factor = 0.6 + 0.4 * factor                         # standing water cools and lubricates
@@ -112,7 +112,7 @@ def degradation_rates(profile: Dict[str, Any]) -> Dict[str, float]:
     return rates
 
 
-def degradation_level(rates: Dict[str, float], wet: bool) -> str:
+def degradation_level(rates: dict[str, float], wet: bool) -> str:
     value, levels = (rates['INTERMEDIATE'], WET_LEVELS) if wet else (rates['MEDIUM'], DRY_LEVELS)
     for limit, label in levels:
         if value < limit:
@@ -120,7 +120,7 @@ def degradation_level(rates: Dict[str, float], wet: bool) -> str:
     return 'High' if wet else 'Very High'
 
 
-def compound_life(profile: Dict[str, Any], length_m: float) -> Dict[str, int]:
+def compound_life(profile: dict[str, Any], length_m: float) -> dict[str, int]:
     """Laps each compound lasts before falling off the cliff."""
     factor = demand_factor(profile)
     wet_factor = 0.6 + 0.4 * factor
@@ -136,17 +136,17 @@ def compound_life(profile: Dict[str, Any], length_m: float) -> Dict[str, int]:
     return life
 
 
-def _stint_cost(compound: str, laps: int, rates: Dict[str, float]) -> float:
+def _stint_cost(compound: str, laps: int, rates: dict[str, float]) -> float:
     return PACE_OFFSET[compound] * laps + rates[compound] * laps * (laps - 1) / 2.0
 
 
-def _optimise_stints(sequence: Tuple[str, ...], total_laps: int, rates: Dict[str, float],
-                     life: Dict[str, int]) -> Optional[Tuple[float, List[int]]]:
+def _optimise_stints(sequence: tuple[str, ...], total_laps: int, rates: dict[str, float],
+                     life: dict[str, int]) -> tuple[float, list[int]] | None:
     """Cheapest split of the race into len(sequence) stints (dynamic programming)."""
-    best: Dict[int, Tuple[float, List[int]]] = {0: (0.0, [])}
+    best: dict[int, tuple[float, list[int]]] = {0: (0.0, [])}
     for index, compound in enumerate(sequence):
         remaining_stints = len(sequence) - index - 1
-        nxt: Dict[int, Tuple[float, List[int]]] = {}
+        nxt: dict[int, tuple[float, list[int]]] = {}
         for done, (cost, stints) in best.items():
             for laps in range(1, life[compound] + 1):
                 covered = done + laps
@@ -163,8 +163,8 @@ def _optimise_stints(sequence: Tuple[str, ...], total_laps: int, rates: Dict[str
     return best.get(total_laps)
 
 
-def plan_strategy(profile: Dict[str, Any], length_m: float, rates: Dict[str, float],
-                  life: Dict[str, int], wet: bool, race_fraction: float = 1.0) -> Dict[str, Any]:
+def plan_strategy(profile: dict[str, Any], length_m: float, rates: dict[str, float],
+                  life: dict[str, int], wet: bool, race_fraction: float = 1.0) -> dict[str, Any]:
     """Fastest stop strategy for the race distance, plus the best plan with a different stop count."""
     total_laps = max(3, int(round(profile['race_laps'] * race_fraction)))
     pit_loss = float(profile['pit_loss_s'])
@@ -184,7 +184,7 @@ def plan_strategy(profile: Dict[str, Any], length_m: float, rates: Dict[str, flo
         stops = len(seq) - 1
         plans.append({
             'stops': stops,
-            'stints': [{'compound': c, 'laps': n} for c, n in zip(seq, stints)],
+            'stints': [{'compound': c, 'laps': n} for c, n in zip(seq, stints, strict=False)],
             'label': '-'.join(COMPOUND_SHORT[c] for c in seq),
             'time_loss_s': round(cost + stops * (pit_loss + position_cost), 1),
         })
@@ -212,8 +212,8 @@ def plan_strategy(profile: Dict[str, Any], length_m: float, rates: Dict[str, flo
 # Setup model
 # ──────────────────────────────────────────────
 
-def clamp_setup(setup: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
+def clamp_setup(setup: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
     for category, fields in SETUP_RANGES.items():
         values = setup.get(category) or {}
         out[category] = {}
@@ -231,7 +231,7 @@ def _wing_step(value: int) -> int:
     return 3 if value <= 4 else 2 if value <= 8 else 1
 
 
-def wet_setup(dry: Dict[str, Any], wet_adjustments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def wet_setup(dry: dict[str, Any], wet_adjustments: dict[str, Any] | None = None) -> dict[str, Any]:
     """Convert a dry setup into a wet one, numerically.
 
     More wing (most where the dry car is trimmed out), a more open on-throttle diff for
@@ -279,7 +279,7 @@ HANDLING_TWEAKS = {
 }
 
 
-def apply_handling(setup: Dict[str, Any], handling: str) -> Tuple[Dict[str, Any], Optional[str]]:
+def apply_handling(setup: dict[str, Any], handling: str) -> tuple[dict[str, Any], str | None]:
     tweak = HANDLING_TWEAKS.get(handling)
     if not tweak:
         return setup, None
@@ -294,12 +294,12 @@ def apply_handling(setup: Dict[str, Any], handling: str) -> Tuple[Dict[str, Any]
 # Qualifying model
 # ──────────────────────────────────────────────
 
-def _bump(setup: Dict[str, Any], path: str, delta: float) -> None:
+def _bump(setup: dict[str, Any], path: str, delta: float) -> None:
     category, name = path.split('.')
     setup[category][name] += delta
 
 
-def qualifying_setup(race: Dict[str, Any], profile: Dict[str, Any], wet: bool) -> Dict[str, Any]:
+def qualifying_setup(race: dict[str, Any], profile: dict[str, Any], wet: bool) -> dict[str, Any]:
     """Turn this circuit's race setup into a one-lap qualifying setup, numerically.
 
     A race setup gives up pace to protect tyres over a stint, carry a full fuel load and
@@ -361,8 +361,8 @@ def qualifying_setup(race: Dict[str, Any], profile: Dict[str, Any], wet: bool) -
     return clamp_setup(s)
 
 
-def qualifying_plan(profile: Dict[str, Any], rates: Dict[str, float], life: Dict[str, int],
-                    level: str, wet: bool, track_name: str) -> Dict[str, Any]:
+def qualifying_plan(profile: dict[str, Any], rates: dict[str, float], life: dict[str, int],
+                    level: str, wet: bool, track_name: str) -> dict[str, Any]:
     """How to run qualifying at this circuit: tyre, out-lap, timing and push laps per set."""
     temp = profile.get('track_temp_c', 35)
     axle = 'front' if profile['limiting'] == 'front' else 'rear'
@@ -430,7 +430,7 @@ def _deg_reasoning(profile, rates, level, wet, track_name) -> str:
 
 
 def model_analysis(track_id: int, weather: str = 'dry', handling: str = 'balanced',
-                   race_fraction: float = 1.0, session: str = 'race') -> Dict[str, Any]:
+                   race_fraction: float = 1.0, session: str = 'race') -> dict[str, Any]:
     """Instant, data-driven analysis of a circuit for the given conditions (no AI needed).
 
     ``session`` is 'race' (stint setup and pit strategy) or 'qualifying' (one-lap setup
@@ -569,7 +569,7 @@ F1 2021 ranges: wings 1-11, diffs 50-100%, front camber -3.50 to -2.50, rear cam
 Start from the qualifying baseline and change values only where the track, conditions or driver preference justify it."""
 
 
-def build_analysis_prompt(model: Dict[str, Any]) -> Tuple[str, str]:
+def build_analysis_prompt(model: dict[str, Any]) -> tuple[str, str]:
     if model.get('session') == 'qualifying':
         return build_qualifying_prompt(model)
     profile_lines = ', '.join(f'{k} {v}/5' for k, v in model['demands'].items())
@@ -578,7 +578,9 @@ def build_analysis_prompt(model: Dict[str, Any]) -> Tuple[str, str]:
     strat = model['strategy']
     best = strat['best'] or {}
     alt = strat['alternative'] or {}
-    fmt = lambda plan: ', '.join(f"{s['compound']} {s['laps']}" for s in plan.get('stints', [])) or 'n/a'
+    def fmt(plan):
+        return ', '.join(f"{s['compound']} {s['laps']}" for s in plan.get('stints', [])) or 'n/a'
+
     calibration = (f"Calibrated from real races: {', '.join(model['calibration'])}"
                    if model.get('calibration') else 'Ratings from Pirelli circuit data and real race history')
     handling = _HANDLING_TEXT
@@ -610,7 +612,7 @@ _HANDLING_TEXT = {'balanced': 'balanced', 'oversteer_fix': 'car is oversteering 
                   'understeer_fix': 'car is understeering', 'top_speed': 'wants maximum straight-line speed'}
 
 
-def build_qualifying_prompt(model: Dict[str, Any]) -> Tuple[str, str]:
+def build_qualifying_prompt(model: dict[str, Any]) -> tuple[str, str]:
     profile_lines = ', '.join(f'{k} {v}/5' for k, v in model['demands'].items())
     facts = model['race_facts']
     plan = model['qualifying'] or {}
@@ -633,11 +635,11 @@ def build_qualifying_prompt(model: Dict[str, Any]) -> Tuple[str, str]:
     return QUALIFYING_SYSTEM_PROMPT, user
 
 
-def _setup_compact(setup: Dict[str, Any]) -> Dict[str, Any]:
+def _setup_compact(setup: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in setup.items() if k in SETUP_CATEGORIES}
 
 
-def merge_ai_analysis(model: Dict[str, Any], reply: Dict[str, Any]) -> Dict[str, Any]:
+def merge_ai_analysis(model: dict[str, Any], reply: dict[str, Any]) -> dict[str, Any]:
     """Validate DeepSeek's JSON and lay it over the model analysis (model fills any gaps)."""
     if not isinstance(reply, dict):
         raise ValueError('reply is not an object')
@@ -703,9 +705,9 @@ class TrackAnalyst:
     def __init__(self, ai_client=None, timeout: float = 90.0):
         self.ai_client = None
         self.timeout = timeout
-        self._cache: Dict[tuple, Dict[str, Any]] = {}
-        self._failures: Dict[tuple, Tuple[float, str]] = {}
-        self._inflight: Dict[tuple, threading.Event] = {}
+        self._cache: dict[tuple, dict[str, Any]] = {}
+        self._failures: dict[tuple, tuple[float, str]] = {}
+        self._inflight: dict[tuple, threading.Event] = {}
         self._lock = threading.Lock()
         self.set_client(ai_client)
 
@@ -728,12 +730,12 @@ class TrackAnalyst:
                 fraction, session)
 
     def cached(self, track_id, weather='dry', handling='balanced', race_fraction=1.0,
-               session='race') -> Optional[Dict[str, Any]]:
+               session='race') -> dict[str, Any] | None:
         with self._lock:
             return self._cache.get(self._key(track_id, weather, handling, race_fraction, session))
 
     def analyze(self, track_id: int, weather: str = 'dry', handling: str = 'balanced',
-                race_fraction: float = 1.0, session: str = 'race', force: bool = False) -> Dict[str, Any]:
+                race_fraction: float = 1.0, session: str = 'race', force: bool = False) -> dict[str, Any]:
         """DeepSeek analysis for these settings, falling back to the model analysis."""
         key = self._key(track_id, weather, handling, race_fraction, session)
         model = model_analysis(track_id, weather, handling, race_fraction, session)

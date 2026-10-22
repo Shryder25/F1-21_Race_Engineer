@@ -24,9 +24,7 @@ Packet IDs:
 
 import math
 import struct
-from dataclasses import dataclass, field
-from typing import Optional
-
+from dataclasses import dataclass
 
 # ──────────────────────────────────────────────
 # Packet Header (24 bytes)

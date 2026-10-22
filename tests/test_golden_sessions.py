@@ -18,8 +18,8 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / 'golden'))
 
-import harness      # noqa: E402
-import recording    # noqa: E402
+import harness  # noqa: E402
+import recording  # noqa: E402
 
 MANIFEST = harness.load_manifest()
 
@@ -59,7 +59,7 @@ class StoreTests(unittest.TestCase):
         self.assertTrue({'race', 'qualifying', 'wet', 'safety_car'} <= kinds, kinds)
 
     def test_recordings_carry_metadata(self):
-        for name, info in MANIFEST['sessions'].items():
+        for name in MANIFEST['sessions']:
             rec, _ = harness.session_paths(name)
             if rec.exists():
                 self.assertIsInstance(recording.read_metadata(rec), dict, name)

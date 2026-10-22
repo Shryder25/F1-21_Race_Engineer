@@ -25,11 +25,24 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from packets import (ACTUAL_COMPOUNDS, CAR_SETUPS_PACKET_SIZE, FINAL_CLASSIFICATION_PACKET_SIZE,
-                     HEADER_SIZE, PARTICIPANTS_PACKET_SIZE, SECTOR_VALID,
-                     SESSION_HISTORY_PACKET_SIZE, VISUAL_COMPOUNDS, CarSetupData,
-                     FinalClassificationData, PacketHeader, SessionHistoryData, parse_car_setups,
-                     parse_final_classification, parse_participants, parse_session_history)
+from packets import (
+    ACTUAL_COMPOUNDS,
+    CAR_SETUPS_PACKET_SIZE,
+    FINAL_CLASSIFICATION_PACKET_SIZE,
+    HEADER_SIZE,
+    PARTICIPANTS_PACKET_SIZE,
+    SECTOR_VALID,
+    SESSION_HISTORY_PACKET_SIZE,
+    VISUAL_COMPOUNDS,
+    CarSetupData,
+    FinalClassificationData,
+    PacketHeader,
+    SessionHistoryData,
+    parse_car_setups,
+    parse_final_classification,
+    parse_participants,
+    parse_session_history,
+)
 
 RESULT_STATUS = {0: 'invalid', 1: 'inactive', 2: 'active', 3: 'finished', 4: 'disqualified',
                  5: 'not classified', 6: 'retired'}
@@ -89,7 +102,7 @@ def classification_row(c: FinalClassificationData) -> dict:
             'tyre_stints_actual': list(c.tyre_stints_actual),
             'tyre_stints_visual': list(c.tyre_stints_visual),
             'tyre_stints': [VISUAL_COMPOUNDS.get(v, ACTUAL_COMPOUNDS.get(a, 'Unknown'))
-                            for a, v in zip(c.tyre_stints_actual, c.tyre_stints_visual)]}
+                            for a, v in zip(c.tyre_stints_actual, c.tyre_stints_visual, strict=False)]}
 
 
 @dataclass

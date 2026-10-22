@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 CALIBRATION_PATH = Path(__file__).resolve().parent / 'data' / 'real_race_calibration.json'
 
@@ -41,7 +41,7 @@ CALIBRATION_PATH = Path(__file__).resolve().parent / 'data' / 'real_race_calibra
 #   rain_probability (share of races affected by rain), track_temp_c (typical race),
 #   overtaking (1 easy - 5 very hard), limiting (axle that limits the tyre),
 #   fastf1_names (event names FastF1 uses, for the calibration script)
-BASELINE_PROFILES: Dict[int, Dict[str, Any]] = {
+BASELINE_PROFILES: dict[int, dict[str, Any]] = {
     0: dict(abrasion=2, grip=3, traction=3, braking=3, lateral=3, tyre_stress=3, downforce=4, evolution=4,
             race_laps=58, pit_loss_s=19.0, sc_probability=0.6, rain_probability=0.10, track_temp_c=32,
             overtaking=3, limiting='rear', fastf1_names=['Australian Grand Prix']),
@@ -116,10 +116,10 @@ BASELINE_PROFILES: Dict[int, Dict[str, Any]] = {
              overtaking=2, limiting='front', fastf1_names=['Saudi Arabian Grand Prix']),
 }
 
-_calibration_cache: Optional[Dict[str, Any]] = None
+_calibration_cache: dict[str, Any] | None = None
 
 
-def load_calibration(path: Optional[Path] = None, *, reload: bool = False) -> Dict[str, Any]:
+def load_calibration(path: Path | None = None, *, reload: bool = False) -> dict[str, Any]:
     """Measured real-race values from the calibration file ({} when it does not exist)."""
     global _calibration_cache
     if path is not None:
@@ -135,7 +135,7 @@ def load_calibration(path: Optional[Path] = None, *, reload: bool = False) -> Di
     return _calibration_cache
 
 
-def get_profile(track_id: int, calibration: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def get_profile(track_id: int, calibration: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Baseline profile for a circuit with any measured real-race values layered on top.
 
     The result carries ``source`` ('pirelli_baseline' or 'fastf1') and, when calibrated,

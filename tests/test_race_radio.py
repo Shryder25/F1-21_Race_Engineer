@@ -1,10 +1,11 @@
 import struct
 import unittest
-import test_analysis
 from dataclasses import replace
-from test_analysis import SilentVoice
-from packets import SessionData, parse_session_data, parse_player_lap_data
+
+import test_analysis
+from packets import SessionData, parse_player_lap_data, parse_session_data
 from simulate_telemetry import build_lap_packet
+from test_analysis import SilentVoice
 
 
 class RaceRadioTests(unittest.TestCase):

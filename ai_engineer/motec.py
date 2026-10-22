@@ -29,7 +29,6 @@ for integer channels.
 """
 
 import datetime
-import math
 import struct
 from collections import namedtuple
 from pathlib import Path
@@ -37,8 +36,7 @@ from xml.sax.saxutils import quoteattr
 
 import numpy as np
 
-from channel_store import (CHANNELS, CHANNELS_BY_NAME, find_session_file, lap_summary,
-                           read_session, resample)
+from channel_store import CHANNELS, find_session_file, lap_summary, read_session, resample
 
 HEADER_FMT = '<I4xII20xI24xHHHI8sHHI4x16s16x16s16x64s64s64x64s64x1024xI66x64s126x'
 EVENT_FMT = '<64s64s1024sH'
@@ -134,7 +132,7 @@ def read_ld(path):
     with open(path, 'rb') as f:
         blob = f.read()
     h = struct.unpack_from(HEADER_FMT, blob, 0)
-    marker, meta_ptr, data_ptr, event_ptr, n = h[0], h[1], h[2], h[3], h[11]
+    marker, meta_ptr, _data_ptr, event_ptr, n = h[0], h[1], h[2], h[3], h[11]
     head = {'marker': marker, 'channels': n, 'date': s(h[12]), 'time': s(h[13]),
             'driver': s(h[14]), 'vehicle': s(h[15]), 'venue': s(h[16]), 'short_comment': s(h[18])}
     if event_ptr:
@@ -247,8 +245,8 @@ def export_session(parquet_path, out_path=None, rate_hz=None, fmt='ld'):
     grid, resampled = resample_session(cols, rate_hz)
     marks = beacons(cols, grid[0])
     laps = lap_summary(cols)
-    timed = [l for l in laps if l['lap_time'] and not l['invalid']]
-    fastest = min(timed, key=lambda l: l['lap_time']) if timed else None
+    timed = [lap for lap in laps if lap['lap_time'] and not lap['invalid']]
+    fastest = min(timed, key=lambda lap: lap['lap_time']) if timed else None
     start = datetime.datetime.fromtimestamp(meta['start_unix']) if meta.get('start_unix') else None
     labels = {
         'driver': meta.get('driver', ''), 'vehicle': f"{meta.get('team', 'F1')} F1 2021".strip(),

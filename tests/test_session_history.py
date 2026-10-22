@@ -13,20 +13,28 @@ for path in (ROOT / 'tools', ROOT / 'tests' / 'golden', ROOT / 'ai_engineer'):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import fitted_models as fm                       # noqa: E402
-import recording                                 # noqa: E402
-import session_history as sh                     # noqa: E402
-import synth                                     # noqa: E402
-import udp_recording                             # noqa: E402
-from analysis import AnalysisEngine              # noqa: E402
-from history import TelemetryHistory             # noqa: E402
-from packets import (CAR_SETUP_FORMAT, CAR_SETUPS_PACKET_SIZE, FINAL_CLASSIFICATION_FORMAT,  # noqa: E402
-                     FINAL_CLASSIFICATION_PACKET_SIZE, LAP_HISTORY_FORMAT,
-                     SESSION_HISTORY_PACKET_SIZE, TYRE_STINT_HISTORY_FORMAT, parse_car_setups,
-                     parse_final_classification, parse_session_history)
-from synth import Car, Scenario, header          # noqa: E402
-from telemetry_stream import PACKET_SIZES, TelemetryStream   # noqa: E402
-from test_analysis import SilentVoice            # noqa: E402
+import fitted_models as fm  # noqa: E402
+import recording  # noqa: E402
+import session_history as sh  # noqa: E402
+import synth  # noqa: E402
+import udp_recording  # noqa: E402
+from analysis import AnalysisEngine  # noqa: E402
+from history import TelemetryHistory  # noqa: E402
+from packets import (  # noqa: E402
+    CAR_SETUP_FORMAT,
+    CAR_SETUPS_PACKET_SIZE,
+    FINAL_CLASSIFICATION_FORMAT,
+    FINAL_CLASSIFICATION_PACKET_SIZE,
+    LAP_HISTORY_FORMAT,
+    SESSION_HISTORY_PACKET_SIZE,
+    TYRE_STINT_HISTORY_FORMAT,
+    parse_car_setups,
+    parse_final_classification,
+    parse_session_history,
+)
+from synth import Car, Scenario, header  # noqa: E402
+from telemetry_stream import PACKET_SIZES, TelemetryStream  # noqa: E402
+from test_analysis import SilentVoice  # noqa: E402
 
 SOFT, MEDIUM, HARD = (17, 16), (18, 17), (19, 18)     # (actual, visual)
 
@@ -71,7 +79,7 @@ class PacketParsingTests(unittest.TestCase):
         self.assertEqual(len(data), 1155)
         h = parse_session_history(data)
         self.assertEqual((h.car_index, h.num_laps, h.best_lap_num), (5, 4, 2))
-        self.assertEqual([l.lap_time_ms for l in h.completed_laps()], [80000, 79000, 85000])
+        self.assertEqual([lap.lap_time_ms for lap in h.completed_laps()], [80000, 79000, 85000])
         self.assertTrue(h.laps[0].valid)
         self.assertFalse(h.laps[2].valid)
         self.assertEqual(h.laps[3].sector_ms, (26000, 0, 0))

@@ -1,7 +1,6 @@
 """Tests for race strategy: stop-count/compound planning, undercut and overcut, rival pit reactions."""
 
 import pathlib
-import struct
 import sys
 import unittest
 from dataclasses import replace
@@ -96,7 +95,7 @@ class PlanRaceTests(unittest.TestCase):
     def test_stints_never_exceed_the_tyre_age_limit(self):
         plan = rs.plan_race(60, 'Soft', 0, current_lap=1, pit_loss=21.0)
         for option in [plan.best, *plan.alternatives]:
-            for compound, laps in zip(option.compounds, option.stint_laps):
+            for compound, laps in zip(option.compounds, option.stint_laps, strict=False):
                 self.assertLessEqual(laps, rs.tyre_curve(compound).max_age)
 
     def test_longer_pit_loss_never_adds_stops(self):

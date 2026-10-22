@@ -16,6 +16,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
+
 from log_setup import get_logger
 
 log = get_logger('track_maps')
@@ -35,12 +36,12 @@ def build_outline(dists: list[float], points: list[list[float]], track_length: f
     full lap: it must start at the line, reach the end, and have no hole in it."""
     if track_length <= 0 or len(dists) != len(points) or len(points) < 10:
         return None
-    pairs = sorted((d, p) for d, p in zip(dists, points) if 0 <= d <= track_length + 5)
+    pairs = sorted((d, p) for d, p in zip(dists, points, strict=False) if 0 <= d <= track_length + 5)
     if not pairs:
         return None
     if pairs[0][0] > START_TOLERANCE_M or pairs[-1][0] < track_length - END_TOLERANCE_M:
         return None
-    if any(b[0] - a[0] > MAX_LINE_GAP_M for a, b in zip(pairs, pairs[1:])):
+    if any(b[0] - a[0] > MAX_LINE_GAP_M for a, b in zip(pairs, pairs[1:], strict=False)):
         return None
     outline, last_bin = [], None
     for dist, (x, z) in pairs:
@@ -164,7 +165,7 @@ class FieldMapper:
             return None
         indexes = sorted(self.bins)
         wrap_gap = indexes[0] + self.total_bins - indexes[-1]
-        gaps = [b - a for a, b in zip(indexes, indexes[1:])] + [wrap_gap]
+        gaps = [b - a for a, b in zip(indexes, indexes[1:], strict=False)] + [wrap_gap]
         if max(gaps) > FIELD_MAX_MISSING_BINS + 1:
             return None
         return [self._points(i) for i in indexes]

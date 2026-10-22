@@ -9,13 +9,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 from ai_client import AIClient, AIUnavailable, strip_reasoning
-from analysis import AnalysisEngine, PROACTIVE_KEYS
-from engineer_brain import (EngineerBrain, build_prompt, clean_radio_text, format_context,
-                            rule_based_answer)
+from analysis import PROACTIVE_KEYS, AnalysisEngine
+from engineer_brain import EngineerBrain, build_prompt, clean_radio_text, format_context, rule_based_answer
 from history import TelemetryHistory
 from packets import SessionData, parse_player_car_damage, parse_player_car_status
-from simulate_telemetry import (build_car_damage_packet, build_car_status_packet,
-                                build_session_packet)
+from simulate_telemetry import build_car_damage_packet, build_car_status_packet, build_session_packet
 from test_analysis import SilentVoice
 from voice_commands import ACK_TEXT, CommandDispatcher, VoiceCommandListener, match_command
 from voice_engine import Priority
@@ -221,7 +219,7 @@ class BrainTests(unittest.TestCase):
         self.assertEqual(brain.last_source, 'fallback')
 
     def test_long_answers_are_trimmed_to_radio_length(self):
-        text = ' '.join(['Sentence number %d is fairly long indeed.' % i for i in range(20)])
+        text = ' '.join([f'Sentence number {i} is fairly long indeed.' for i in range(20)])
         trimmed = clean_radio_text(text, max_words=20)
         self.assertLessEqual(len(trimmed.split()), 20)
         self.assertTrue(trimmed.endswith('.'))
@@ -408,6 +406,7 @@ class SetupConsultTests(unittest.TestCase):
 
     def test_hud_server_handles_requests_concurrently(self):
         import socketserver
+
         import web_hud
         server = web_hud.start_web_hud_server(port=0)
         self.assertIsNotNone(server)

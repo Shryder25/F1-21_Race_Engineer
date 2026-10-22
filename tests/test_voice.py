@@ -143,9 +143,9 @@ class VoiceTests(unittest.TestCase):
                 urgent = f'urgent {rank}'
                 self.driver.held.add(message)
                 self.voice.say(message, Priority.LOW)
-                self.wait_for(lambda: message in self.spoken)
+                self.wait_for(lambda m=message: m in self.spoken)
                 self.voice.say(urgent, rank)
-                self.wait_for(lambda: urgent in self.spoken)
+                self.wait_for(lambda u=urgent: u in self.spoken)
                 self.assertIn(message, self.driver.stopped)
         self.assertEqual(len(self.driver.threads), 1)
         self.assertNotIn(threading.get_ident(), self.driver.threads)

@@ -22,10 +22,9 @@ import track_status
 import web_hud
 from log_setup import get_logger
 from packets import ACTUAL_COMPOUNDS, SESSION_TYPES, CarTelemetryData, LapData, SessionData
-from session_history import lap_rows, stint_rows
-
 from pipeline.state import JSON, WEATHER_NAMES, WHEEL_CODES
 from pipeline.track_map import TrackMapStage
+from session_history import lap_rows, stint_rows
 
 log = get_logger('history')
 

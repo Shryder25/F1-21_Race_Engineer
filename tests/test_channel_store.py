@@ -15,11 +15,16 @@ sys.path.insert(0, str(ROOT / 'ai_engineer'))
 sys.path.insert(0, str(ROOT / 'tools'))
 
 import motec  # noqa: E402
-from packets import (CAR_MOTION_SIZE, HEADER_SIZE, MOTION_EX_FORMAT,  # noqa: E402
-                     parse_player_motion_extra)
-from simulate_telemetry import (build_car_damage_packet, build_car_status_packet,  # noqa: E402
-                                build_header, build_lap_packet, build_participants_packet,
-                                build_session_packet, build_telemetry_packet)
+from packets import CAR_MOTION_SIZE, HEADER_SIZE, MOTION_EX_FORMAT, parse_player_motion_extra  # noqa: E402
+from simulate_telemetry import (  # noqa: E402
+    build_car_damage_packet,
+    build_car_status_packet,
+    build_header,
+    build_lap_packet,
+    build_participants_packet,
+    build_session_packet,
+    build_telemetry_packet,
+)
 
 try:
     import pyarrow  # noqa: F401
@@ -431,13 +436,13 @@ class RecordedReplayExportTest(unittest.TestCase):
         self.assertEqual(len(self.files), 1)
         self.assertEqual(self.meta['track'], 'Red Bull Ring')
         laps = lap_summary(self.cols)
-        self.assertEqual([l['lap'] for l in laps], list(range(1, 9)))
+        self.assertEqual([lap['lap'] for lap in laps], list(range(1, 9)))
         self.assertTrue(all(np.diff(self.cols['session_time']) > 0))
-        self.assertTrue(any(l['pit'] for l in laps))
-        clean = [l for l in laps if l['clean']]
+        self.assertTrue(any(lap['pit'] for lap in laps))
+        clean = [lap for lap in laps if lap['clean']]
         self.assertGreaterEqual(len(clean), 4)
-        for l in clean:
-            self.assertTrue(60 < l['lap_time'] < 80, l)
+        for lap in clean:
+            self.assertTrue(60 < lap['lap_time'] < 80, lap)
 
     def test_ld_export_matches_the_store(self):
         out = self.dir / 'race.ld'

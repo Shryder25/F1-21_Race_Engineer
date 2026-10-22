@@ -19,20 +19,30 @@ import copy
 import math
 import random
 import struct
-from dataclasses import dataclass, field
-
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _AI = Path(__file__).resolve().parents[2] / 'ai_engineer'
 if str(_AI) not in sys.path:
     sys.path.insert(0, str(_AI))
 
-from packets import (HEADER_FORMAT, CAR_TELEMETRY_FORMAT, LAP_DATA_FORMAT, CAR_STATUS_FORMAT,
-                     CAR_DAMAGE_FORMAT, CAR_MOTION_FORMAT, PARTICIPANT_FORMAT, SPEED_TRAP_FORMAT,
-                     CAR_SETUP_FORMAT, FINAL_CLASSIFICATION_FORMAT, LAP_HISTORY_FORMAT,
-                     SESSION_HISTORY_MAX_LAPS, SESSION_HISTORY_MAX_STINTS,
-                     TYRE_STINT_HISTORY_FORMAT)
+from packets import (
+    CAR_DAMAGE_FORMAT,
+    CAR_MOTION_FORMAT,
+    CAR_SETUP_FORMAT,
+    CAR_STATUS_FORMAT,
+    CAR_TELEMETRY_FORMAT,
+    FINAL_CLASSIFICATION_FORMAT,
+    HEADER_FORMAT,
+    LAP_DATA_FORMAT,
+    LAP_HISTORY_FORMAT,
+    PARTICIPANT_FORMAT,
+    SESSION_HISTORY_MAX_LAPS,
+    SESSION_HISTORY_MAX_STINTS,
+    SPEED_TRAP_FORMAT,
+    TYRE_STINT_HISTORY_FORMAT,
+)
 from track_data import get_braking_points
 
 # ── Compounds: visual id, actual id, pace offset (s), deg (s per lap of age), wear (% per lap)
@@ -378,7 +388,7 @@ class SessionSimulator:
         # quicker (an overtake), else it sits in the dirty air just behind.
         running = sorted((c for c in self.cars if c.result == 2 and not c.pit_status and c.total > 0),
                          key=lambda c: -c.total)
-        for ahead, car in zip(running, running[1:]):
+        for ahead, car in zip(running, running[1:], strict=False):
             if self.safety_car:
                 limit = SC_FOLLOW_M
             elif self.target_lap_s(ahead) - self.target_lap_s(car) >= OVERTAKE_DELTA_S:

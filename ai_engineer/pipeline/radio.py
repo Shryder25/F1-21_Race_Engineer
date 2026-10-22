@@ -18,9 +18,8 @@ from typing import Any
 import radio_phrases as say
 import web_hud
 from packets import CarTelemetryData, LapData
-from voice_engine import Priority
-
 from pipeline.state import EngineState, wheel_group
+from voice_engine import Priority
 
 
 class RadioStage(EngineState):

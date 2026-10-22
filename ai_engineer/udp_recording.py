@@ -318,7 +318,7 @@ def record_socket(sock, writer, duration=None, should_stop=None, on_progress=Non
                 on_progress(writer)
             try:
                 data, _ = sock.recvfrom(MAX_DATAGRAM)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except ConnectionResetError:  # Windows reports ICMP errors on UDP sockets
                 continue

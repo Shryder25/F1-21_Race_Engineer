@@ -16,10 +16,9 @@ from dataclasses import replace
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 
 import pit_wall
-import race_sim as sim
 import web_hud
 from analysis import AnalysisEngine
-from packets import CarStatusData, SessionData, TyreStint, SessionHistoryData, parse_player_lap_data
+from packets import CarStatusData, SessionData, SessionHistoryData, TyreStint, parse_player_lap_data
 from simulate_telemetry import build_lap_packet
 from test_analysis import SilentVoice
 
@@ -44,7 +43,7 @@ def run_field(wall, speeds, offsets, until, step=0.25, statuses=None):
     """Drive cars at constant speeds (m/s); offsets are seconds behind the start."""
     t = 0.0
     while t <= until + 1e-9:
-        dists = [v * (t - o) for v, o in zip(speeds, offsets)]
+        dists = [v * (t - o) for v, o in zip(speeds, offsets, strict=False)]
         order = sorted(range(len(dists)), key=lambda i: -dists[i])
         laps = [None] * len(dists)
         for pos, i in enumerate(order, start=1):

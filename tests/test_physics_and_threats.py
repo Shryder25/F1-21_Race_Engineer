@@ -13,13 +13,15 @@ import physics_models as pm
 from ai_client import AIClient, AIUnavailable
 from analysis import AnalysisEngine
 from engineer_brain import EngineerBrain, rule_based_answer
-from packets import SessionData, parse_all_car_status, parse_all_car_damage, parse_player_car_status
+from packets import SessionData, parse_all_car_damage, parse_all_car_status, parse_player_car_status
 from race_radio import RaceRadio
-from simulate_telemetry import (build_car_damage_packet, build_car_status_packet,
-                                build_lap_packet, build_session_packet)
+from simulate_telemetry import (
+    build_car_damage_packet,
+    build_car_status_packet,
+    build_lap_packet,
+)
 from test_analysis import SilentVoice
 from voice_commands import match_command
-from voice_engine import Priority
 
 
 class TireModelTests(unittest.TestCase):
@@ -125,7 +127,6 @@ class RaceRadioThreatTests(unittest.TestCase):
         the player's distance (what RaceRadio's crossing-time lookup requires), the same
         pattern test_race_radio.py's own gap test uses.
         """
-        from simulate_telemetry import build_lap_packet
         from packets import parse_player_lap_data
         base = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 2), 0)
         last_laps_ms = last_laps_ms or {}

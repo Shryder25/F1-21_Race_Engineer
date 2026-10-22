@@ -39,20 +39,27 @@ import math
 import statistics
 import struct
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import NormalDist
-from typing import Iterable, Sequence
 
 import numpy as np
 
-from packets import (ACTUAL_COMPOUNDS, HEADER_SIZE, VISUAL_COMPOUNDS, PacketHeader,
-                     parse_player_car_damage, parse_player_car_status, parse_player_lap_data,
-                     parse_session_data)
+from log_setup import get_logger
+from packets import (
+    ACTUAL_COMPOUNDS,
+    HEADER_SIZE,
+    VISUAL_COMPOUNDS,
+    PacketHeader,
+    parse_player_car_damage,
+    parse_player_car_status,
+    parse_player_lap_data,
+    parse_session_data,
+)
 from physics_models import _compound_params
 from track_data import get_track_info, resolve_track_id
-from log_setup import get_logger
 
 log = get_logger('models')
 
@@ -218,7 +225,7 @@ def records_from_lap_rows(rows: Sequence[dict], *, source: str, session: str, tr
 
     def wear_records(stint, compound, lap):
         recs = []
-        for (a, w0), (b, w1) in zip(points, points[1:]):
+        for (a, w0), (b, w1) in zip(points, points[1:], strict=False):
             if b - a not in (1, 2):
                 continue
             share = (w1 - w0) / (b - a)
@@ -550,7 +557,7 @@ def _rival_records_from_history(history, excluded, track_id, player_laps) -> lis
 # Models
 # ──────────────────────────────────────────────
 
-def _prior_wear(compound: str, track_id: int | None) -> 'WearModel':
+def _prior_wear(compound: str, track_id: int | None) -> WearModel:
     rate = WEAR_PRIOR_PCT.get(compound, 2.5) * track_severity(track_id)
     sigma = WEAR_SIGMA0[0] + WEAR_SIGMA0[1] * rate
     return WearModel(compound, track_id, [rate, 0.0],
@@ -579,7 +586,7 @@ class WearModel:
         var = float(g @ np.array(self.cov) @ g) + self.tau2
         return _normal_range(float(g @ np.array(self.mean)), var, level)
 
-    def scaled(self, factor: float, extra_rel_sd: float = 0.0, track_id=None, basis=None) -> 'WearModel':
+    def scaled(self, factor: float, extra_rel_sd: float = 0.0, track_id=None, basis=None) -> WearModel:
         m = [self.mean[0] * factor, self.mean[1] * factor]
         cov = (np.array(self.cov) * factor * factor)
         cov[0][0] += (extra_rel_sd * m[0]) ** 2
@@ -587,7 +594,7 @@ class WearModel:
                          self.tau2 * factor * factor, self.n_laps, self.n_stints,
                          basis or self.basis, self.simulated, list(self.race_laps))
 
-    def condition(self, ages: Sequence[float], increments: Sequence[float]) -> 'StintWear':
+    def condition(self, ages: Sequence[float], increments: Sequence[float]) -> StintWear:
         """Combine the model with the laps already done on this set of tyres."""
         m = np.array([self.mean[0], self.mean[1], 0.0])
         V = np.zeros((3, 3))
@@ -660,7 +667,7 @@ class StintWear:
         return NormalDist(wear_now + mean, sd).cdf(threshold)
 
 
-def _prior_deg(compound: str) -> 'DegModel':
+def _prior_deg(compound: str) -> DegModel:
     params = _compound_params({'INTER': 'INTERMEDIATE'}.get(compound, compound))
     return DegModel(compound, None, params.alpha + params.beta * 10.0, DEG_PRIOR_SD ** 2,
                     DEG_SIGMA0 ** 2, DEG_TAU0 ** 2, basis='prior')
@@ -699,7 +706,7 @@ class DegModel:
         return _normal_range(mean, var, level)
 
 
-def _prior_fuel(track_id: int | None, track_length: int | None) -> 'FuelModel':
+def _prior_fuel(track_id: int | None, track_length: int | None) -> FuelModel:
     km = (track_length or 5000) / 1000.0
     mu = FUEL_PRIOR_KG_PER_KM * km
     return FuelModel(track_id, track_length or 0, mu, (FUEL_PRIOR_REL_SD * mu) ** 2,
@@ -725,14 +732,14 @@ class FuelModel:
         return _normal_range(self.mean, self.var + self.tau2, level)
 
     def scaled(self, factor: float, extra_rel_sd: float = 0.0, track_id=None, track_length=0,
-               basis=None) -> 'FuelModel':
+               basis=None) -> FuelModel:
         mean = self.mean * factor
         return FuelModel(track_id, track_length, mean,
                          self.var * factor * factor + (extra_rel_sd * mean) ** 2,
                          self.sigma2 * factor * factor, self.tau2 * factor * factor, self.n_laps,
                          self.n_sessions, basis or self.basis, self.simulated, list(self.race_laps))
 
-    def condition(self, used: Sequence[float]) -> 'SessionFuel':
+    def condition(self, used: Sequence[float]) -> SessionFuel:
         mean, var = self.mean, self.var + self.tau2
         used = list(used)
         if len(used) >= 3:          # drop laps far off this session's own typical burn
@@ -972,11 +979,11 @@ class ModelStore:
     # ── fitting ──
     @classmethod
     def fit(cls, records: Sequence[LapRecord], sources: list[dict] | None = None,
-            consumed_captures: Iterable[str] = ()) -> 'ModelStore':
+            consumed_captures: Iterable[str] = ()) -> ModelStore:
         store = cls()
         store.sources = list(sources or [])
         store.consumed_captures = set(consumed_captures)
-        store.created = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        store.created = datetime.now(UTC).isoformat(timespec='seconds')
         by_compound = defaultdict(list)
         for r in records:
             by_compound[r.compound].append(r)
@@ -1038,7 +1045,7 @@ class ModelStore:
         tmp.replace(path)
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'ModelStore':
+    def from_dict(cls, data: dict) -> ModelStore:
         if data.get('version', 0) > STORE_VERSION:
             raise ValueError(f"fitted model file version {data.get('version')} is newer than this code")
         store = cls()
@@ -1051,14 +1058,14 @@ class ModelStore:
         return store
 
     @classmethod
-    def load(cls, path) -> 'ModelStore':
+    def load(cls, path) -> ModelStore:
         path = Path(path)
         opener = gzip.open if path.suffix == '.gz' else open
         with opener(path, 'rt', encoding='utf-8') as f:
             return cls.from_dict(json.load(f))
 
     @classmethod
-    def load_or_empty(cls, path) -> 'ModelStore':
+    def load_or_empty(cls, path) -> ModelStore:
         """The saved fits, or an empty store (built-in priors) if there are none or they are unreadable."""
         try:
             return cls.load(path)

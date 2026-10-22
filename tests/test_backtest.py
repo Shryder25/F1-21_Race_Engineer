@@ -10,10 +10,10 @@ for path in (ROOT / 'tools', ROOT / 'tests' / 'golden', ROOT / 'ai_engineer'):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import backtest                     # noqa: E402
-import recording                    # noqa: E402
-from packets import SessionData     # noqa: E402
-from synth import Car, Scenario     # noqa: E402
+import backtest  # noqa: E402
+import recording  # noqa: E402
+from packets import SessionData  # noqa: E402
+from synth import Car, Scenario  # noqa: E402
 
 
 def snapshot(lap, **overrides):

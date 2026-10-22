@@ -10,7 +10,7 @@ import unittest
 from urllib.request import urlopen
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
-from simulate_telemetry import build_session_packet, build_lap_packet, build_telemetry_packet
+from simulate_telemetry import build_lap_packet, build_session_packet, build_telemetry_packet
 
 
 class ListenerTests(unittest.TestCase):

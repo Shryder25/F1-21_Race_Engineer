@@ -4,12 +4,9 @@ import io
 import json
 import logging
 import pathlib
-import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
-
-from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 
 import log_setup
 import main as app
@@ -19,6 +16,7 @@ from analysis import PROACTIVE_KEYS, TYRE_TEMP_CRITICAL, AnalysisEngine
 from packets import parse_player_telemetry
 from pipeline import config as cfg
 from simulate_telemetry import build_telemetry_packet
+from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 

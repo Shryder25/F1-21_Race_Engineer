@@ -4,13 +4,25 @@ import math
 import struct
 import time
 
-from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
-                     parse_player_telemetry, parse_all_car_damage,
-                     parse_player_motion, parse_all_positions, parse_speed_trap_event, parse_all_car_status,
-                     parse_race_event, race_event_body_size, parse_participants,
-                     parse_car_setups, parse_final_classification, parse_session_history)
+from packets import (
+    PacketHeader,
+    parse_all_car_damage,
+    parse_all_car_status,
+    parse_all_lap_data,
+    parse_all_positions,
+    parse_car_setups,
+    parse_final_classification,
+    parse_participants,
+    parse_player_motion,
+    parse_player_telemetry,
+    parse_race_event,
+    parse_session_data,
+    parse_session_history,
+    parse_speed_trap_event,
+    race_event_body_size,
+)
 from session_history import valid_history
-from web_hud import update_web_state, TELEMETRY_TIMEOUT
+from web_hud import TELEMETRY_TIMEOUT, update_web_state
 
 PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 4: 1257, 5: 1102, 6: 1347, 7: 1058, 8: 839, 10: 882,
                 11: 1155}

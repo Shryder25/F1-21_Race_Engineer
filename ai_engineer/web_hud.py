@@ -12,18 +12,18 @@ Provides:
 import base64
 import hashlib
 import http.server
+import json
 import socketserver
 import struct
 import threading
-import json
 import time
 import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from track_data import get_all_tracks
-from track_analysis import TrackAnalyst, model_analysis, normalize_session
 from log_setup import get_logger
+from track_analysis import TrackAnalyst, model_analysis, normalize_session
+from track_data import get_all_tracks
 
 log = get_logger('hud')
 

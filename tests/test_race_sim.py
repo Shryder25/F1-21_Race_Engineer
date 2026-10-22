@@ -260,7 +260,9 @@ class StrategyChoiceTests(unittest.TestCase):
         cands = candidates(42)
         normal = sim.simulate(state, cands, runs=150, seed=2)
         fragile = sim.simulate(state, cands, runs=150, seed=2, player_deg_scale=3.0, player_life_scale=0.6)
-        stops = lambda r: sum(o.p_best * o.stops for o in r.outcomes)
+        def stops(r):
+            return sum(o.p_best * o.stops for o in r.outcomes)
+
         self.assertGreater(stops(fragile), stops(normal))
 
     def test_fitted_models_feed_the_tyre_inputs(self):

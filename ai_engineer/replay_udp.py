@@ -18,7 +18,7 @@ import argparse
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,12 +30,12 @@ def speed_arg(text):
     try:
         return parse_speed(text)
     except ValueError as e:
-        raise argparse.ArgumentTypeError(str(e))
+        raise argparse.ArgumentTypeError(str(e)) from e
 
 
 def print_info(path):
     info = summarize(path)
-    started = datetime.fromtimestamp(info['start_unix_ns'] / 1e9, tz=timezone.utc).astimezone()
+    started = datetime.fromtimestamp(info['start_unix_ns'] / 1e9, tz=UTC).astimezone()
     print(f"File:        {info['path']}  (format v{info['format_version']}, "
           f"{'gzip' if info['compressed'] else 'uncompressed'})")
     print(f"Recorded:    {started:%Y-%m-%d %H:%M:%S %Z}")

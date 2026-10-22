@@ -17,8 +17,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from voice_engine import Priority
 from log_setup import get_logger
+from voice_engine import Priority
 
 log = get_logger('voice')
 

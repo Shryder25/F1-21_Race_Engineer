@@ -4,11 +4,11 @@ Sends simulated UDP telemetry packets to 127.0.0.1:20777
 Use this to test the AI Engineer without having the game open!
 """
 
+import os
 import socket
 import struct
-import time
 import sys
-import os
+import time
 
 # Safe UTF-8 / replacement handling on Windows CMD
 if hasattr(sys.stdout, "reconfigure"):
@@ -22,20 +22,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 TARGET_HOST = "127.0.0.1"
 TARGET_PORT = 20777
 
-# Format definitions matching packets.py
-HEADER_FORMAT = "<HBBBBQfIBB"  # 24 bytes
-CAR_TELEMETRY_FORMAT = "<HfffBbHBBH4H4B4BH4f4B"  # 60 bytes
-LAP_DATA_FORMAT = "<IIf ff f BBBBBB BBBB BB BHHB"  # 43 bytes
-# Let's use exact LAP_DATA struct from packets.py:
-# "<IIHHfffBBBBBBBBBBBBBHHB" -> wait, let's verify exact format from packets.py
-from packets import (
-    HEADER_FORMAT, HEADER_SIZE,
-    CAR_TELEMETRY_FORMAT, CAR_TELEMETRY_SIZE,
-    LAP_DATA_FORMAT, LAP_DATA_SIZE,
-    SESSION_PARTIAL_FORMAT,
-    CAR_STATUS_FORMAT, CAR_STATUS_SIZE, CAR_DAMAGE_FORMAT, CAR_DAMAGE_SIZE,
-    PARTICIPANT_FORMAT, PARTICIPANT_SIZE,
+# Packet formats come from packets.py, so the simulator always matches the parser.
+from packets import (  # noqa: E402
+    CAR_DAMAGE_FORMAT,
+    CAR_DAMAGE_SIZE,
+    CAR_STATUS_FORMAT,
+    CAR_STATUS_SIZE,
+    CAR_TELEMETRY_FORMAT,
+    CAR_TELEMETRY_SIZE,
+    HEADER_FORMAT,
+    LAP_DATA_FORMAT,
+    LAP_DATA_SIZE,
+    PARTICIPANT_FORMAT,
 )
+
 
 def build_header(packet_id: int, session_time: float, frame_id: int, player_idx: int = 0) -> bytes:
     return struct.pack(

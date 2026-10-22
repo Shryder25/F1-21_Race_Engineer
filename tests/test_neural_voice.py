@@ -4,9 +4,9 @@ import unittest
 
 import numpy as np
 
-from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 from neural_voice import NeuralSpeechDriver
 from radio_fx import radio_filter
+from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 from voice_engine import Priority, VoiceEngine
 
 
@@ -124,6 +124,7 @@ class KokoroDownloadTests(unittest.TestCase):
         import io
         import tempfile
         from pathlib import Path
+
         import neural_voice
 
         fetched = []
@@ -146,6 +147,7 @@ class KokoroDownloadTests(unittest.TestCase):
         import tempfile
         import urllib.error
         from pathlib import Path
+
         import neural_voice
 
         def opener(url, timeout):

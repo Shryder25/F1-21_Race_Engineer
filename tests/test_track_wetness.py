@@ -8,7 +8,6 @@ import struct
 import sys
 import unittest
 from dataclasses import replace
-from types import SimpleNamespace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 import race_sim as sim
@@ -16,7 +15,7 @@ import strategy_replan as rp
 import track_wetness as tw
 from analysis import AnalysisEngine
 from engineer_brain import format_context, rule_based_answer
-from packets import (HEADER_SIZE, WEATHER_SAMPLE_FORMAT, WeatherSample, parse_session_data)
+from packets import HEADER_SIZE, WEATHER_SAMPLE_FORMAT, WeatherSample, parse_session_data
 from simulate_telemetry import build_session_packet
 from test_analysis import SilentVoice
 from test_race_sim import RACE, SILVERSTONE, field, lap, status
@@ -277,8 +276,8 @@ class EngineWiringTests(unittest.TestCase):
         self.assertEqual(state.weather, 3)
         e.update_race_simulation()
         labels = [o.label for o in e.sim_runner.latest.outcomes]
-        self.assertTrue(any('box now' in l and o.compounds[1] == 'INTERMEDIATE'
-                            for l, o in zip(labels, e.sim_runner.latest.outcomes)), labels)
+        self.assertTrue(any('box now' in label and o.compounds[1] == 'INTERMEDIATE'
+                            for label, o in zip(labels, e.sim_runner.latest.outcomes, strict=False)), labels)
 
     def test_reset_on_new_session(self):
         e = self.engine

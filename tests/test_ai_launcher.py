@@ -3,9 +3,8 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
-import ai_launcher
 from ai_launcher import LocalAILauncher, model_installed, ollama_root
+from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 
 
 class FakeOllama(BaseHTTPRequestHandler):

@@ -8,6 +8,7 @@ import threading
 import time
 from dataclasses import dataclass
 from enum import IntEnum
+
 from log_setup import get_logger
 
 log = get_logger('voice')

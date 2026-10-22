@@ -7,10 +7,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_enginee
 import session_modes
 import web_hud
 from analysis import AnalysisEngine
-from engineer_brain import EngineerBrain, rule_based_answer
-from packets import TRACK_NAMES, SessionData, parse_session_data
-from simulate_telemetry import build_session_packet, build_lap_packet, build_telemetry_packet
-from packets import parse_player_lap_data, parse_player_telemetry
+from engineer_brain import EngineerBrain
+from packets import (
+    TRACK_NAMES,
+    parse_player_lap_data,
+    parse_player_telemetry,
+    parse_session_data,
+)
+from simulate_telemetry import build_lap_packet, build_session_packet, build_telemetry_packet
 from test_analysis import SilentVoice
 from track_data import TRACK_DATABASE, corner_zones, get_braking_points, get_track_setup, resolve_track_id
 
@@ -42,7 +46,7 @@ class TrackAwarenessTests(unittest.TestCase):
             for zone in zones:
                 self.assertLess(zone['start'], zone['ref_brake'])
                 self.assertLessEqual(zone['end'], info['length_m'])
-            for a, b in zip(zones, zones[1:]):
+            for a, b in zip(zones, zones[1:], strict=False):
                 self.assertLess(a['end'], b['start'], (track_id, a, b))
 
     def test_short_layouts_use_their_parent_setup(self):

@@ -12,10 +12,9 @@ from bisect import bisect_left
 
 import radio_phrases as say
 from packets import CarTelemetryData, LapData
-from voice_engine import Priority
-
 from pipeline.outputs import OutputsStage
 from pipeline.state import JSON
+from voice_engine import Priority
 
 
 class LapsStage(OutputsStage):

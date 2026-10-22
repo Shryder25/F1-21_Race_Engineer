@@ -10,8 +10,15 @@ sys.path.insert(0, str(ROOT / 'ai_engineer'))
 import track_analysis
 from ai_client import AIUnavailable
 from race_calibration import fuel_mass, stint_degradation, summarize_races, theil_sen_slope
-from track_analysis import (SETUP_RANGES, TrackAnalyst, clamp_setup, merge_ai_analysis,
-                            model_analysis, normalize_session, wet_setup)
+from track_analysis import (
+    SETUP_RANGES,
+    TrackAnalyst,
+    clamp_setup,
+    merge_ai_analysis,
+    model_analysis,
+    normalize_session,
+    wet_setup,
+)
 from track_data import TRACK_DATABASE, get_track_setup
 from track_profiles import BASELINE_PROFILES, get_profile
 

@@ -4,8 +4,8 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-from physics_models import evaluate_opponent_threat
 import radio_phrases as say
+from physics_models import evaluate_opponent_threat
 from voice_engine import Priority
 
 # How many cars ahead/behind of the player get a threat score each frame (beyond immediate

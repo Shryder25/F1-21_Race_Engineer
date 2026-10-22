@@ -1,20 +1,23 @@
 """Participants packet decoding and driver names in gap, threat and pace radio calls."""
 
 import pathlib
-import struct
 import sys
 import unittest
 from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
+import web_hud
 from analysis import AnalysisEngine
 from engineer_brain import format_context, rule_based_answer
-from packets import (ParticipantData, parse_participants, parse_player_lap_data,
-                     PARTICIPANTS_PACKET_SIZE, SessionData)
-from simulate_telemetry import (build_participants_packet, build_session_packet,
-                                build_lap_packet)
+from packets import (
+    PARTICIPANTS_PACKET_SIZE,
+    ParticipantData,
+    SessionData,
+    parse_participants,
+    parse_player_lap_data,
+)
+from simulate_telemetry import build_lap_packet, build_participants_packet, build_session_packet
 from test_analysis import SilentVoice
-import web_hud
 
 
 def participant(name):
@@ -93,7 +96,7 @@ class NamedRadioCallTests(unittest.TestCase):
     def field(self, offset, last_laps=(0, 0, 0)):
         return [replace(self.lap, car_position=position, total_distance=distance + offset,
                         result_status=2, last_lap_time_ms=last)
-                for (position, distance), last in zip([(1, 20), (2, 10), (3, 0)], last_laps)]
+                for (position, distance), last in zip([(1, 20), (2, 10), (3, 0)], last_laps, strict=False)]
 
     def drive(self, last_laps=(0, 0, 0)):
         self.radio.update_field(self.field(0, last_laps), 1, 0, now=0)

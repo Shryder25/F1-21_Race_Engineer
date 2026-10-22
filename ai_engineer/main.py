@@ -21,12 +21,12 @@ Game Setup (F1 2021 Settings → Telemetry):
     UDP Format:     2021
 """
 
-import socket
-import sys
-import time
 import argparse
 import atexit
 import os
+import socket
+import sys
+import time
 from pathlib import Path
 
 # Safe UTF-8 / replacement handling on Windows CMD
@@ -40,29 +40,38 @@ if hasattr(sys.stdout, "reconfigure"):
 # Add the ai_engineer directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from packets import (
-    CarTelemetryData, LapData, SessionData, TRACK_NAMES,
-)
-from voice_engine import VoiceEngine, Priority
-from analysis import AnalysisEngine
-from log_setup import FORMATS, LEVELS, configure as configure_logging, get_logger
-from pipeline.config import ConfigError, EngineConfig, apply_overrides, load_config
-from history import TelemetryHistory
-from fitted_models import ModelStore
-from track_maps import TrackMapStore
-from telemetry_stream import TelemetryStream
-from web_hud import (start_web_hud_server, add_voice_log, set_command_handler,
-                     set_setup_ai_client, set_reset_map_handler)
-from ai_launcher import LocalAILauncher
+import webbrowser
+
 import auto_refit
-from ai_client import AIClient
-from engineer_brain import EngineerBrain
-from voice_commands import CommandDispatcher, VoiceCommandListener
 import push_to_talk
 import strategy_replan
-from udp_recording import (MAX_DATAGRAM, RecordingWriter, ReplayFinished, ReplaySource,
-                           parse_speed)
-import webbrowser
+from ai_client import AIClient
+from ai_launcher import LocalAILauncher
+from analysis import AnalysisEngine
+from engineer_brain import EngineerBrain
+from fitted_models import ModelStore
+from history import TelemetryHistory
+from log_setup import FORMATS, LEVELS, get_logger
+from log_setup import configure as configure_logging
+from packets import (
+    TRACK_NAMES,
+    CarTelemetryData,
+    LapData,
+    SessionData,
+)
+from pipeline.config import ConfigError, EngineConfig, apply_overrides, load_config
+from telemetry_stream import TelemetryStream
+from track_maps import TrackMapStore
+from udp_recording import MAX_DATAGRAM, RecordingWriter, ReplayFinished, ReplaySource, parse_speed
+from voice_commands import CommandDispatcher, VoiceCommandListener
+from voice_engine import Priority, VoiceEngine
+from web_hud import (
+    add_voice_log,
+    set_command_handler,
+    set_reset_map_handler,
+    set_setup_ai_client,
+    start_web_hud_server,
+)
 
 log = get_logger('main')
 
@@ -494,7 +503,7 @@ def main():
             except ReplayFinished as done:
                 log.info(f"Replay: {done}")
                 break
-            except socket.timeout:
+            except TimeoutError:
                 stream.check_timeout()
                 if not first_packet_logged:
                     now = time.time()

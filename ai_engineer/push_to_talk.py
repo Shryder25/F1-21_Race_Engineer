@@ -30,8 +30,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from voice_engine import Priority
 from log_setup import get_logger
+from voice_engine import Priority
 
 log = get_logger('ptt')
 

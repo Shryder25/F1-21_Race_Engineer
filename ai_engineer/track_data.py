@@ -17,13 +17,13 @@ Contains:
   • AI Setup Advisor prompt construction & fallback generator
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # ──────────────────────────────────────────────
 # 24 Circuits Database (F1 2021 Game)
 # ──────────────────────────────────────────────
 
-TRACK_DATABASE: Dict[int, Dict[str, Any]] = {
+TRACK_DATABASE: dict[int, dict[str, Any]] = {
     # 0: Albert Park, Melbourne (Australia)
     0: {
         "id": 0,
@@ -1178,7 +1178,7 @@ TRACK_DATABASE: Dict[int, Dict[str, Any]] = {
 # Public Accessors & Compatibility Interfaces
 # ──────────────────────────────────────────────
 
-def get_braking_points(track_id: int) -> List[Tuple[float, str, str]]:
+def get_braking_points(track_id: int) -> list[tuple[float, str, str]]:
     """Retrieve corner braking points for a track ID."""
     circuit = TRACK_DATABASE.get(track_id)
     if circuit and "braking_points" in circuit:
@@ -1186,7 +1186,7 @@ def get_braking_points(track_id: int) -> List[Tuple[float, str, str]]:
     return []
 
 
-def get_setup_advice(track_id: int) -> Dict[str, Any]:
+def get_setup_advice(track_id: int) -> dict[str, Any]:
     """Retrieve setup advice dictionary (backwards-compatible with legacy analysis)."""
     circuit = TRACK_DATABASE.get(track_id)
     if circuit and "setup" in circuit:
@@ -1229,7 +1229,7 @@ def resolve_track_id(track_id: int) -> int:
     return SHORT_LAYOUT_PARENTS.get(track_id, track_id)
 
 
-def corner_zones(track_id: int, track_length: int = 0) -> List[Dict[str, Any]]:
+def corner_zones(track_id: int, track_length: int = 0) -> list[dict[str, Any]]:
     """Corner analysis windows for any circuit, built from its braking points.
 
     Each zone spans from just before the braking point to just after the corner, trimmed so
@@ -1237,7 +1237,7 @@ def corner_zones(track_id: int, track_length: int = 0) -> List[Dict[str, Any]]:
     speeds; the first completed lap becomes the reference and later laps are compared to it.
     """
     points = sorted(get_braking_points(track_id), key=lambda p: p[0])
-    zones: List[Dict[str, Any]] = []
+    zones: list[dict[str, Any]] = []
     for index, (distance, name, _message) in enumerate(points):
         start = max(0.0, distance - 110.0)
         end = distance + 170.0
@@ -1254,12 +1254,12 @@ def corner_zones(track_id: int, track_length: int = 0) -> List[Dict[str, Any]]:
     return zones
 
 
-def get_track_info(track_id: int) -> Optional[Dict[str, Any]]:
+def get_track_info(track_id: int) -> dict[str, Any] | None:
     """Get the full metadata dictionary for a track."""
     return TRACK_DATABASE.get(track_id)
 
 
-def get_all_tracks() -> List[Dict[str, Any]]:
+def get_all_tracks() -> list[dict[str, Any]]:
     """Get list of all 24 tracks with basic info for dropdown menus."""
     tracks = []
     for tid, t in sorted(TRACK_DATABASE.items(), key=lambda x: x[1]["name"]):
@@ -1277,15 +1277,15 @@ def get_all_tracks() -> List[Dict[str, Any]]:
     return tracks
 
 
-def get_track_setup(track_id: int, weather: str = "dry", session: str = "race") -> Dict[str, Any]:
+def get_track_setup(track_id: int, weather: str = "dry", session: str = "race") -> dict[str, Any]:
     """Retrieve full 6-category setup with adjustments for weather and session (race or qualifying)."""
     circuit = TRACK_DATABASE.get(resolve_track_id(track_id), TRACK_DATABASE[7])  # default to Silverstone
     setup = circuit["setup"]
     is_wet = "wet" in weather.lower() or "rain" in weather.lower()
     if is_wet:
-        from track_analysis import wet_setup        # lazy: track_analysis imports this module
+        from track_analysis import wet_setup  # lazy: track_analysis imports this module
         setup = wet_setup(setup, circuit.get("wet_adjustments"))
-    from track_analysis import normalize_session, qualifying_setup, clamp_setup
+    from track_analysis import clamp_setup, normalize_session, qualifying_setup
     from track_profiles import get_profile
     session = normalize_session(session)
     if session == "qualifying":
@@ -1324,10 +1324,10 @@ Explain why this setup works for this specific track's layout and weather in 2-3
 Keep your output structured, technical, and realistic for F1 2021."""
 
 
-def build_setup_advisor_prompt(track_id: int, weather: str = "dry", handling_issue: str = "balanced") -> Tuple[str, str]:
+def build_setup_advisor_prompt(track_id: int, weather: str = "dry", handling_issue: str = "balanced") -> tuple[str, str]:
     """Build system and user prompts for DeepSeek / AI model to advise on setup."""
     circuit = TRACK_DATABASE.get(resolve_track_id(track_id), TRACK_DATABASE[7])
-    from track_analysis import model_analysis       # lazy: track_analysis imports this module
+    from track_analysis import model_analysis  # lazy: track_analysis imports this module
     tyre_deg = model_analysis(circuit["id"], weather)["tyre_degradation"]
     user_prompt = (
         f"Circuit: {circuit['name']} ({circuit['country']})\n"
@@ -1342,7 +1342,7 @@ def build_setup_advisor_prompt(track_id: int, weather: str = "dry", handling_iss
     return SETUP_SYSTEM_PROMPT, user_prompt
 
 
-def generate_ai_setup_recommendation(track_id: int, weather: str = "dry", handling_issue: str = "balanced", ai_client=None) -> Dict[str, Any]:
+def generate_ai_setup_recommendation(track_id: int, weather: str = "dry", handling_issue: str = "balanced", ai_client=None) -> dict[str, Any]:
     """Generate setup recommendation using AI model or fallback engineered baseline."""
     track_info = get_track_setup(track_id, weather)
     if ai_client is not None:

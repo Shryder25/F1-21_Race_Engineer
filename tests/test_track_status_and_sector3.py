@@ -14,13 +14,19 @@ from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 
-from analysis import AnalysisEngine
-from packets import (HEADER_SIZE, parse_player_lap_data, parse_player_telemetry, parse_session_data,
-                     SessionData, CarStatusData)
-from simulate_telemetry import build_lap_packet, build_session_packet, build_telemetry_packet
-from test_analysis import SilentVoice
 import track_status
 import web_hud
+from analysis import AnalysisEngine
+from packets import (
+    HEADER_SIZE,
+    CarStatusData,
+    SessionData,
+    parse_player_lap_data,
+    parse_player_telemetry,
+    parse_session_data,
+)
+from simulate_telemetry import build_lap_packet, build_session_packet, build_telemetry_packet
+from test_analysis import SilentVoice
 
 
 def session_packet(zones=(), safety_car=0):

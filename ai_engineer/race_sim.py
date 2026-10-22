@@ -53,16 +53,16 @@ from __future__ import annotations
 
 import math
 import threading
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Iterable, Sequence
 
 import numpy as np
 
 import fitted_models as fm
 import race_strategy as rs
+import track_wetness as tw
 from physics_models import _compound_params
 from track_profiles import get_profile
-import track_wetness as tw
 
 COMPOUNDS = ('SOFT', 'MEDIUM', 'HARD', 'INTERMEDIATE', 'WET')
 _CI = {c: i for i, c in enumerate(COMPOUNDS)}
@@ -180,7 +180,7 @@ class Candidate:
     pit_laps: list
 
     @classmethod
-    def from_option(cls, option: rs.StrategyOption) -> 'Candidate':
+    def from_option(cls, option: rs.StrategyOption) -> Candidate:
         return cls(plan_label(option.stops, option.compounds), option.stops,
                    list(option.compounds), list(option.pit_laps))
 
@@ -403,7 +403,7 @@ class RaceSimulator:
                 else:
                     stops = [round(s + self.rng.normal(0, RIVAL_STOP_JITTER_LAPS)) for s in stops]
                 prev = first - 1
-                for s_i, (lap, comp) in enumerate(zip(stops, sets)):
+                for s_i, (lap, comp) in enumerate(zip(stops, sets, strict=False)):
                     lap = max(int(lap), prev + (1 if s_i == 0 else 3), first)
                     if lap > last:
                         break
@@ -419,7 +419,9 @@ class RaceSimulator:
         p_sc = float(self.profile.get('sc_probability', 0.4))
         p_vsc = float(self.profile.get('vsc_probability', VSC_SHARE_OF_SC * p_sc))
         # Poisson rates per race so P(at least one) matches the profile; lap 1 weighted up.
-        per_lap = lambda p: -math.log(max(1e-9, 1.0 - min(p, 0.99))) / (total + LAP_ONE_HAZARD_MULT - 1)
+        def per_lap(p):
+            return -math.log(max(1e-9, 1.0 - min(p, 0.99))) / (total + LAP_ONE_HAZARD_MULT - 1)
+
         h_sc, h_vsc = per_lap(p_sc), per_lap(p_vsc)
         status = np.zeros((R, L), dtype=np.int8)
         kind = np.zeros(R, dtype=np.int8)
@@ -578,7 +580,7 @@ class RaceSimulator:
         stop_comp = self.rival_comps.copy()
         p = self.player_slot
         stop_lap[:, p, :] = NEVER
-        for s_i, (lap, comp) in enumerate(zip(candidate.pit_laps, candidate.compounds[1:])):
+        for s_i, (lap, comp) in enumerate(zip(candidate.pit_laps, candidate.compounds[1:], strict=False)):
             if s_i < S:
                 stop_lap[:, p, s_i] = lap
                 stop_comp[:, p, s_i] = _CI.get(comp, 1)
@@ -937,13 +939,13 @@ class FieldTracker:
 
     def gap_to_leader(self, laps) -> dict[int, float]:
         """Race-time gap of each running car to the leader at its most recent line crossing."""
-        running = {i: l for i, l in enumerate(laps) if l.result_status == 2 and l.car_position > 0}
+        running = {i: car for i, car in enumerate(laps) if car.result_status == 2 and car.car_position > 0}
         if not running:
             return {}
         leader = min(running, key=lambda i: running[i].car_position)
         lead_cross = self.crossings.get(leader, {})
         gaps = {}
-        for index, lap in running.items():
+        for index in running:
             mine = self.crossings.get(index, {})
             lap_num = max(mine) if mine else None
             if lap_num is not None and lap_num in lead_cross:

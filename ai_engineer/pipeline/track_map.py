@@ -12,7 +12,6 @@ import math
 import track_maps
 import web_hud
 from packets import LapData, SessionData
-
 from pipeline.state import JSON
 from pipeline.strategy import StrategyStage
 

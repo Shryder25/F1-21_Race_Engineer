@@ -20,15 +20,15 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'ai_engineer'))
 
-from race_calibration import pit_loss, summarize_races          # noqa: E402
-from track_data import TRACK_DATABASE                            # noqa: E402
-from track_profiles import BASELINE_PROFILES, CALIBRATION_PATH   # noqa: E402
+from race_calibration import pit_loss, summarize_races  # noqa: E402
+from track_data import TRACK_DATABASE  # noqa: E402
+from track_profiles import BASELINE_PROFILES, CALIBRATION_PATH  # noqa: E402
 
 NOT_GREEN = set('4567')   # FastF1 TrackStatus: 4 SC, 5 red, 6 VSC, 7 VSC ending
 
@@ -126,7 +126,7 @@ def main() -> int:
             print(f"{TRACK_DATABASE[tid]['short_name']}: {summary['deg_s_per_lap']} from {len(track_races)} races")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps({
-        'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        'generated_at': datetime.now(UTC).isoformat(timespec='seconds'),
         'source': 'FastF1 race timing data (as used by IAmTomShaw/f1-race-replay)',
         'years': args.years,
         'tracks': existing,

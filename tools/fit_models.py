@@ -38,8 +38,8 @@ for _path in (ROOT / 'ai_engineer', GOLDEN):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-import fitted_models as fm                          # noqa: E402
-from packets import TRACK_NAMES                     # noqa: E402
+import fitted_models as fm  # noqa: E402
+from packets import TRACK_NAMES  # noqa: E402
 
 DEFAULT_OUT = ROOT / 'telemetry-history' / 'fitted_models.json'
 SIMULATED_DIR = ROOT / 'recordings' / 'simulated' / 'fit'
@@ -287,8 +287,8 @@ SIM_LAPS = 16
 
 
 def simulated_scenarios():
-    from synth import Car, Scenario
     from scenarios import FIELD, NUMBERS
+    from synth import Car, Scenario
     out = []
     for track_id, length, scale, fuel, races in SIM_TRACKS:
         for n, (compound, pits) in enumerate(races):

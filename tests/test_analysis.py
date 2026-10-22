@@ -5,7 +5,7 @@ from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 from analysis import AnalysisEngine
-from packets import parse_player_lap_data, parse_player_telemetry, SessionData
+from packets import SessionData, parse_player_lap_data, parse_player_telemetry
 from simulate_telemetry import build_lap_packet, build_telemetry_packet
 
 

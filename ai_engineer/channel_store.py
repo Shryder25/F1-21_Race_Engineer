@@ -39,9 +39,18 @@ from pathlib import Path
 
 import numpy as np
 
-from packets import (HEADER_SIZE, PacketHeader, parse_all_car_damage, parse_all_car_status,
-                     parse_all_lap_data, parse_participants, parse_player_motion,
-                     parse_player_motion_extra, parse_player_telemetry, parse_session_data)
+from packets import (
+    HEADER_SIZE,
+    PacketHeader,
+    parse_all_car_damage,
+    parse_all_car_status,
+    parse_all_lap_data,
+    parse_participants,
+    parse_player_motion,
+    parse_player_motion_extra,
+    parse_player_telemetry,
+    parse_session_data,
+)
 from session_modes import mode_label
 from track_data import get_track_info
 
@@ -149,7 +158,7 @@ def arrow_schema():
 
 
 def _wheels(prefix, values):
-    return {f'{prefix}_{w}': v for w, v in zip(WHEELS, values)}
+    return {f'{prefix}_{w}': v for w, v in zip(WHEELS, values, strict=False)}
 
 
 def _clean(row):

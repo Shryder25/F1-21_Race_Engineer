@@ -21,8 +21,8 @@ from pathlib import Path
 
 import numpy as np
 
-from radio_fx import radio_filter
 from log_setup import get_logger
+from radio_fx import radio_filter
 
 log = get_logger('voice')
 

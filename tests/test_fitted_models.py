@@ -18,8 +18,8 @@ for path in (ROOT / 'ai_engineer', ROOT / 'tools', ROOT / 'tests' / 'golden'):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import fitted_models as fm          # noqa: E402
-import strategy_ml                  # noqa: E402
+import fitted_models as fm  # noqa: E402
+import strategy_ml  # noqa: E402
 from analysis import AnalysisEngine  # noqa: E402
 from engineer_brain import format_context, rule_based_answer  # noqa: E402
 from history import TelemetryHistory  # noqa: E402

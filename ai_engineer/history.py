@@ -272,7 +272,7 @@ class TelemetryHistory:
             f'visual_compound,tyre_age_laps,in_lap,out_lap FROM car_laps WHERE capture_id=? {where} '
             f'ORDER BY car_index, lap_num', args)
         names = [d[0] for d in cursor.description]
-        return [dict(zip(names, row)) for row in cursor.fetchall()]
+        return [dict(zip(names, row, strict=False)) for row in cursor.fetchall()]
 
     def car_stints(self, capture_id: str, car_index: int | None = None) -> list[dict]:
         where, args = ('AND car_index=?', (capture_id, car_index)) if car_index is not None else ('', (capture_id,))
@@ -280,7 +280,7 @@ class TelemetryHistory:
             f'SELECT car_index,stint_num,actual_compound,visual_compound,start_lap,end_lap,laps,is_open,driver '
             f'FROM car_stints WHERE capture_id=? {where} ORDER BY car_index, stint_num', args)
         names = [d[0] for d in cursor.description]
-        return [dict(zip(names, row)) for row in cursor.fetchall()]
+        return [dict(zip(names, row, strict=False)) for row in cursor.fetchall()]
 
     def final_classification(self, capture_id: str) -> list[dict]:
         cursor = self.connection.execute(
@@ -291,7 +291,7 @@ class TelemetryHistory:
         names = [d[0] for d in cursor.description]
         out = []
         for row in cursor.fetchall():
-            d = dict(zip(names, row))
+            d = dict(zip(names, row, strict=False))
             d['tyre_stints_actual'] = json.loads(d['tyre_stints_actual'] or '[]')
             d['tyre_stints_visual'] = json.loads(d['tyre_stints_visual'] or '[]')
             out.append(d)

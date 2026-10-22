@@ -15,10 +15,10 @@ Flow for every voice command:
 from __future__ import annotations
 
 import re
-from typing import Callable
+from collections.abc import Callable
 
-from ai_client import AIClient, AITimeout, AIUnavailable
 import session_modes
+from ai_client import AIClient, AITimeout, AIUnavailable
 from log_setup import get_logger
 
 log = get_logger('engineer')
@@ -168,7 +168,7 @@ def format_context(ctx: dict) -> str:
     strategy = ctx.get('strategy')
     if strategy:
         best = strategy['best']
-        stints = ', '.join(f"{c.lower()} {n} laps" for c, n in zip(best['compounds'], best['stint_laps']))
+        stints = ', '.join(f"{c.lower()} {n} laps" for c, n in zip(best['compounds'], best['stint_laps'], strict=False))
         add('Race strategy model', (
             f"best is {best['stops']} stop(s): {stints}; box at end of lap(s) {best['pit_laps'] or 'none'}; "
             f"pit loss {strategy['pit_loss_s']}s")
