@@ -145,6 +145,7 @@ class LapsStage(OutputsStage):
     def _on_new_lap(self, lap: LapData) -> None:
         """Handle lap completion and save best baseline."""
         prev_lap_num = self.delta.current_lap_num
+        self.call_budget.new_lap(lap.current_lap_num)  # a fresh radio budget every lap
         if prev_lap_num > 0:
             self._capture_outline(prev_lap_num, lap.current_lap_num)
         self.delta.current_lap_num = lap.current_lap_num

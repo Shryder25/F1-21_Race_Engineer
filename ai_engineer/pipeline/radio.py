@@ -2,8 +2,9 @@
 
 * ``speak()`` is the one door to the voice. On-demand mode keeps the radio silent except for
   the proactive keys in config (critical events and this-lap strategy calls).
-* ``is_driver_busy()`` is the silence filter: non-urgent calls wait out heavy braking,
-  big steering inputs and high lateral G.
+* A per-lap budget for proactive calls (radio_discipline.CallBudget): urgent ones always pass.
+* ``is_driver_busy()`` is the silence filter: non-urgent calls wait out heavy braking
+  and high-load corners, and land on the next straight.
 * Tyre-temperature and braking-point callouts, which come straight off the telemetry frame.
 
 Gaps, pace, sector times and race-control calls live in race_radio.py / race_events.py;
@@ -28,21 +29,28 @@ class RadioStage(EngineState):
         topic = options.get('key', message)
         if self.on_demand and topic not in self.config.radio.proactive_keys:
             return  # radio silence until the driver asks or critical priority event
+        if not self.call_budget.allows(topic, priority):
+            return  # this lap's proactive calls are used up; urgent calls still get through
         options['key'] = f'{self.capture_id or self.session_context}:{topic}'
         queued = self.voice.say(message, priority, **options)
+        if queued:
+            self.call_budget.spend(topic, priority)
         if not queued and not getattr(self.voice, 'is_running', False):
             web_hud.add_voice_log(message, status='muted')
 
     def is_driver_busy(self) -> bool:
-        """Check if driver is under heavy braking or in a high-G corner (silence filter)."""
-        busy = self.config.radio
-        if self.latest_telemetry is None:
+        """True in a high-load corner or under heavy braking (the voice queue's silence filter).
+
+        Read by the voice thread while a call is waiting. A high-load corner is fast and high
+        lateral G (radio_discipline.LoadThresholds); once in one, the driver counts as busy
+        until the car has been on a straight for a moment, so the call lands there.
+        """
+        telemetry = self.latest_telemetry
+        if telemetry is None:
             return False
-        if self.latest_telemetry.brake > busy.busy_brake:
-            return True
-        if abs(self.latest_telemetry.steer) > busy.busy_steer:
-            return True
-        return bool(self.latest_motion and abs(self.latest_motion.g_force_lateral) > busy.busy_lateral_g)
+        motion = getattr(self, 'latest_motion', None)
+        self.load_gate.update(telemetry.speed, motion.g_force_lateral if motion else 0.0, telemetry.brake)
+        return bool(self.load_gate.busy())
 
     # ── Tyre temperatures ──
 

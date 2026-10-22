@@ -12,6 +12,7 @@ dependencies = [
     "numpy>=1.26",
     "pyttsx3>=2.90",                  # system voice, and the fallback for Kokoro
     "SpeechRecognition>=3.10",        # voice commands
+    "openai-whisper>=20231117",       # offline speech-to-text (default radio engine)
     "PyAudio>=0.2.14",                # microphone (needs PortAudio on Linux/macOS)
     "pygame>=2.5",                    # push-to-talk button on a wheel or controller
     "kokoro-onnx>=0.4",               # natural engineer voice

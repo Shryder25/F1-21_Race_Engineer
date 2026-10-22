@@ -59,9 +59,13 @@ class TyreConfig:
 class RadioConfig:
     on_demand: bool = True  # speak only when asked, except proactive_keys
     proactive_keys: tuple[str, ...] = DEFAULT_PROACTIVE_KEYS
-    busy_brake: float = 0.15  # driver is busy above this brake pressure (0-1)...
-    busy_steer: float = 0.20  # ... or this steering lock (0-1)...
-    busy_lateral_g: float = 1.2  # ... or this lateral G: non-urgent calls wait
+    calls_per_lap: int = 4  # most proactive calls per lap; urgent ones always get through (0 = no limit)
+    # No talking in a high-load corner (radio_discipline.py): at least this fast...
+    corner_speed_kph: float = 200.0
+    corner_g: float = 3.5  # ... with at least this much lateral G,
+    straight_g: float = 1.5  # until lateral G stays below this...
+    straight_s: float = 0.4  # ... for this long; or under heavy braking:
+    busy_brake: float = 0.5  # brake pedal (0-1) counted as heavy braking
     braking_warn_distance_m: float = 220.0  # braking-point call this far before the zone
     delta_report_interval_s: float = 14.0  # seconds between live delta calls
 

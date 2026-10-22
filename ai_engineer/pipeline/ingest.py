@@ -138,6 +138,8 @@ class IngestStage(LapsStage):
         self.last_strategy_call = None
         self.field_tracker.reset()
         self.field_laps = None
+        self.call_budget.reset()
+        self.load_gate.reset()
         self.sim_runner.reset()
         self.replanner.reset()
         self.wetness.reset()

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import log_setup
 import main as app
 import race_sim
+import radio_discipline
 import strategy_replan
 from analysis import PROACTIVE_KEYS, TYRE_TEMP_CRITICAL, AnalysisEngine
 from packets import parse_player_telemetry
@@ -38,6 +39,15 @@ class ConfigFileTests(unittest.TestCase):
         self.assertEqual(defaults.simulation.plan_b_margin_s, strategy_replan.REPLAN_MARGIN_S)
         self.assertEqual(defaults.simulation.plan_b_places, strategy_replan.REPLAN_MARGIN_POSITIONS)
         self.assertEqual(frozenset(defaults.radio.proactive_keys), PROACTIVE_KEYS)
+        self.assertEqual(defaults.radio.calls_per_lap, radio_discipline.DEFAULT_CALLS_PER_LAP)
+        load = radio_discipline.LoadThresholds()
+        self.assertEqual(
+            (defaults.radio.corner_speed_kph, defaults.radio.corner_g, defaults.radio.straight_g),
+            (load.corner_speed_kph, load.corner_g, load.straight_g),
+        )
+        self.assertEqual(
+            (defaults.radio.straight_s, defaults.radio.busy_brake), (load.straight_s, load.brake)
+        )
         self.assertEqual(defaults.tyres.critical_c, TYRE_TEMP_CRITICAL)
 
     def test_missing_default_file_gives_defaults_but_a_named_file_must_exist(self):
@@ -47,16 +57,16 @@ class ConfigFileTests(unittest.TestCase):
             cfg.load_config(missing, required=True)
 
     def test_partial_file_keeps_other_defaults_and_accepts_ints_for_floats(self):
-        loaded = cfg.load_config(write_toml('[radio]\nbusy_lateral_g = 2\n[tyres]\ncritical_c = 115\n'))
-        self.assertEqual(loaded.radio.busy_lateral_g, 2.0)
-        self.assertIsInstance(loaded.radio.busy_lateral_g, float)
+        loaded = cfg.load_config(write_toml('[radio]\ncorner_g = 3\n[tyres]\ncritical_c = 115\n'))
+        self.assertEqual(loaded.radio.corner_g, 3.0)
+        self.assertIsInstance(loaded.radio.corner_g, float)
         self.assertEqual(loaded.tyres.critical_c, 115)
         self.assertEqual(loaded.tyres.high_c, cfg.TyreConfig().high_c)
         self.assertEqual(loaded.network, cfg.NetworkConfig())
 
     def test_typos_and_wrong_types_are_errors(self):
         for text in (
-            '[radio]\nbusy_lateral_gee = 1.0\n',
+            '[radio]\ncorner_gee = 1.0\n',
             '[radios]\n',
             '[tyres]\ncritical_c = "hot"\n',
             '[radio]\non_demand = 1\n',
@@ -98,17 +108,27 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual((settings.ai.timeout_s, settings.voice.tts), (12.0, 'system'))
         self.assertTrue(settings.radio.on_demand)
 
+    def test_radio_discipline_flags_override_the_config_file(self):
+        path = write_toml('[radio]\ncalls_per_lap = 2\ncorner_g = 3.0\n')
+        settings = self.settings('--config', str(path), '--calls-per-lap', '6', '--corner-speed', '180')
+        self.assertEqual(settings.radio.calls_per_lap, 6)
+        self.assertEqual(settings.radio.corner_speed_kph, 180.0)
+        self.assertEqual(settings.radio.corner_g, 3.0)  # from the file
+
     def test_debug_flag_is_a_log_level_shortcut(self):
         self.assertEqual(self.settings('--config', str(write_toml('')), '--debug').logging.level, 'DEBUG')
 
 
 class EngineConfigTests(unittest.TestCase):
-    def test_busy_filter_reads_the_lateral_g_threshold(self):
-        motion = SimpleNamespace(g_force_lateral=1.5)
-        telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 200, 1, 0, 6, 90), 0)
-        for threshold, busy in ((1.2, True), (2.0, False)):
-            config = cfg.apply_overrides(cfg.EngineConfig(), {'radio.busy_lateral_g': threshold})
-            engine = AnalysisEngine(SilentVoice(), config=config)
+    def test_busy_filter_reads_the_corner_g_threshold(self):
+        motion = SimpleNamespace(g_force_lateral=3.0)
+        telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 220, 1, 0, 6, 90), 0)
+        for threshold, busy in ((2.5, True), (3.5, False)):
+            radio = cfg.apply_overrides(cfg.EngineConfig(), {'radio.corner_g': threshold}).radio
+            load = radio_discipline.LoadThresholds(
+                corner_speed_kph=radio.corner_speed_kph, corner_g=radio.corner_g
+            )
+            engine = AnalysisEngine(SilentVoice(), load_thresholds=load)
             engine.latest_telemetry, engine.latest_motion = telemetry, motion
             with self.subTest(threshold=threshold):
                 self.assertEqual(engine.is_driver_busy(), busy)

@@ -4,10 +4,14 @@ When a command is recognised the engineer immediately says "We are checking"
 (a plain TTS string, so it needs no audio file and plays in well under a second),
 while the answer is generated in a background thread and spoken when ready.
 
-Speech recognition uses the optional ``SpeechRecognition`` package (plus
-``PyAudio`` for the microphone). Engines:
-  * ``google`` - online, no setup (default)
-  * ``vosk``   - fully offline; needs ``pip install vosk`` and a model unpacked to ./model
+Speech recognition (speech_to_text.py) uses the optional ``SpeechRecognition`` package
+(plus ``PyAudio`` for the microphone). Engines:
+  * ``whisper`` - offline OpenAI Whisper model (default; ``pip install openai-whisper``),
+                  falls back to ``google`` if it isn't installed
+  * ``google``  - online, no setup
+  * ``vosk``    - fully offline; needs ``pip install vosk`` and a model unpacked to ./model
+
+Commands are recognised by intent scoring (intents.py), not fixed phrases.
 """
 
 from __future__ import annotations
@@ -17,6 +21,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import intents
+from intents import normalise  # noqa: F401  (kept importable from here)
 from log_setup import get_logger
 from voice_engine import Priority
 
@@ -38,54 +44,14 @@ COMMANDS = (
     'rivals',
 )
 
-# "When will Hamilton box?", "what are the others doing?", "rival strategy": questions about
-# other cars' stops. The driver's own stop ("when do we box") stays a pit-window question.
-_RIVAL_WORDS = re.compile(
-    r'\b(rivals?|others|other cars|everyone|the field|opponents?|car ahead|car behind|they|they\'re)\b'
-)
-_STOP_WORDS = re.compile(r'\b(pit|pitting|box|boxing|stop|stopping|strategy|strategies|tyres?|doing)\b')
-_NAMED_STOP = re.compile(
-    r'\b(?:when (?:is|will|does)|is|will) (?!(?:i|we|me|my|us|it|the|there|this|that)\b)[a-z]+ '
-    r'(?:going to )?(?:pit|box|stop)'
-)
-
-_WAKE_WORDS = re.compile(r'^(?:hey |ok |okay )?(?:engineer|race engineer|box box)[, ]+', re.IGNORECASE)
-
-
-def normalise(text: str) -> str:
-    text = text.lower().replace('tire', 'tyre')
-    text = re.sub(r"[^a-z0-9' ]+", ' ', text)
-    return re.sub(r'\s+', ' ', text).strip()
-
 
 def match_command(text: str) -> str | None:
-    """Map a transcript to one of COMMANDS, or None if it is not a known request."""
-    t = _WAKE_WORDS.sub('', normalise(text)) if text else ''
-    t = normalise(t)
-    if not t:
-        return None
-    if (_RIVAL_WORDS.search(t) and _STOP_WORDS.search(t)) or _NAMED_STOP.search(t):
-        return 'rivals'
-    if re.search(r'\b(threat|threats|attacking|pressure|catching|closing)\b', t):
-        return 'threats'
-    if re.search(
-        r'\b(undercut|overcut|strategy|plan|how many stops|one stop|two stop|which tyres?|what tyres?|compound|what are (?:our|the|my) chances|chances of (?:winning|a podium)|odds|win probability)\b',
-        t,
-    ):
-        return 'strategy'
-    if 'behind' in t or 'chasing' in t:
-        return 'gap_behind'
-    if re.search(r'\b(pit|box|stop|window)\b', t):
-        return 'pit_window'
-    if re.search(r'\b(gap|ahead|front)\b', t):
-        return 'gap_ahead'
-    if re.search(r'\b(tyre|tyres|temps|temperature|temperatures)\b', t):
-        return 'tyre_temps'
-    if re.search(r'\b(weather|rain|forecast|raining)\b', t):
-        return 'weather'
-    if re.search(r'\b(pace|lap time|how am i doing|how are we doing)\b', t):
-        return 'pace'
-    return None
+    """Map a transcript to one of COMMANDS, or None if it is not a known request.
+
+    Uses intent scoring (intents.py), not fixed regexes, so natural phrasing works:
+    "how are my tyres holding up?" is ``tyre_temps``, "is Verstappen coming in?" is ``rivals``.
+    """
+    return intents.match(text) if text else None
 
 
 class CommandDispatcher:
@@ -192,8 +158,10 @@ class VoiceCommandListener:
         recognizer_factory=None,
         microphone_factory=None,
         ignore_when=None,
+        transcriber=None,
     ):
         self.dispatcher = dispatcher
+        self.transcriber = transcriber  # callable(audio) -> text; overrides ``engine`` (Whisper)
         self.ignore_when = ignore_when  # callable; True skips a clip (push-to-talk in use)
         self.engine = engine
         self.device_index = device_index
@@ -205,6 +173,12 @@ class VoiceCommandListener:
         self._stop = None
 
     def transcribe(self, audio) -> str | None:
+        if self.transcriber is not None:
+            try:
+                return self.transcriber(audio)
+            except Exception as error:
+                log.warning(f'Speech recognition error: {error}')
+                return None
         return transcribe(self._recognizer, audio, self.engine, self.language)
 
     def _on_audio(self, _recognizer, audio):
@@ -236,7 +210,8 @@ class VoiceCommandListener:
             log.warning(f'Microphone unavailable, voice commands disabled: {error}')
             return False
         log.info(
-            'Listening for commands: weather, tyre temps, pit window, gap ahead, gap behind, pace update.'
+            'Listening for commands: weather, tyre temps, pit window, gap ahead, '
+            'gap behind, pace, threats, strategy, rival stops (any natural wording).'
         )
         return True
 

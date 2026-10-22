@@ -14,6 +14,7 @@ from typing import Any, Protocol
 import fitted_models
 import pit_wall
 import race_sim
+import radio_discipline
 import rival_strategy
 import session_modes
 import strategy_replan
@@ -143,9 +144,16 @@ class EngineState:
         track_store: track_maps.TrackMapStore | None = None,
         replan: strategy_replan.ReplanConfig | None = None,
         config: EngineConfig | None = None,
+        calls_per_lap: int | None = radio_discipline.DEFAULT_CALLS_PER_LAP,
+        load_thresholds: radio_discipline.LoadThresholds | None = None,
     ) -> None:
         self.config = config if config is not None else EngineConfig()
         self.voice = voice
+        # Radio discipline: a per-lap budget for proactive calls, and no talking through
+        # high-load corners or heavy braking (the voice queue holds calls for the straight).
+        # main.py passes config.toml's values; a bare engine uses radio_discipline's defaults.
+        self.call_budget = radio_discipline.CallBudget(calls_per_lap)
+        self.load_gate = radio_discipline.DriverLoadGate(load_thresholds)
         # Saved outline + pit lane per circuit (memory-only unless main.py gives it a file).
         self.track_store = track_store if track_store is not None else track_maps.TrackMapStore()
         # Monte Carlo race simulator (race_sim.py): 'async' live, 'sync' in tests, 'off'.

@@ -44,6 +44,7 @@ import webbrowser
 
 import auto_refit
 import push_to_talk
+import radio_discipline
 import strategy_replan
 from ai_client import AIClient, ollama_options
 from ai_launcher import LocalAILauncher
@@ -60,6 +61,7 @@ from packets import (
     SessionData,
 )
 from pipeline.config import ConfigError, EngineConfig, apply_overrides, load_config
+from speech_to_text import DEFAULT_WHISPER_MODEL, WHISPER_MODELS, build_transcriber
 from telemetry_stream import TelemetryStream
 from track_maps import TrackMapStore
 from udp_recording import MAX_DATAGRAM, RecordingWriter, ReplayFinished, ReplaySource, parse_speed
@@ -202,6 +204,9 @@ def settings_from(args) -> EngineConfig:
             'ai.timeout_s': args.ai_timeout,
             'ai.autostart': False if args.no_ai_autostart else None,
             'radio.on_demand': False if args.chatty else None,
+            'radio.calls_per_lap': args.calls_per_lap,
+            'radio.corner_speed_kph': args.corner_speed,
+            'radio.corner_g': args.corner_g,
             'logging.level': args.log_level or ('DEBUG' if args.debug else None),
             'logging.format': args.log_format,
             'logging.file': args.log_file,
@@ -410,15 +415,46 @@ def build_parser() -> argparse.ArgumentParser:
     cmd.add_argument('--no-mic', action='store_true', help='Disable microphone voice commands')
     cmd.add_argument(
         '--stt-engine',
-        choices=('google', 'vosk'),
-        default='google',
-        help='Speech-to-text engine (default: google; vosk is offline)',
+        choices=('whisper', 'google', 'vosk'),
+        default='whisper',
+        help='Speech-to-text engine (default: whisper, offline; falls back to google '
+        'if openai-whisper is not installed; vosk is also offline)',
+    )
+    cmd.add_argument(
+        '--whisper-model',
+        choices=WHISPER_MODELS,
+        default=DEFAULT_WHISPER_MODEL,
+        help=f'Whisper model size (default: {DEFAULT_WHISPER_MODEL}; tiny.en is quicker, '
+        'small.en more accurate but slower)',
     )
     cmd.add_argument('--mic-index', type=int, default=None, help='Microphone device index')
     cmd.add_argument(
         '--chatty',
         action='store_true',
         help='Keep the old constant callouts instead of speaking only when asked',
+    )
+    disc = parser.add_argument_group('radio discipline (config.toml [radio])')
+    disc.add_argument(
+        '--calls-per-lap',
+        type=int,
+        default=None,
+        metavar='N',
+        help='Most proactive callouts per lap; urgent calls (Safety Car, flags, box, pit window, '
+        f'strategy, DRS attack) always get through (default {defaults.radio.calls_per_lap}, 0 = no limit)',
+    )
+    disc.add_argument(
+        '--corner-speed',
+        type=float,
+        default=None,
+        metavar='KPH',
+        help=f'No talking in corners taken faster than this... (default {defaults.radio.corner_speed_kph:g})',
+    )
+    disc.add_argument(
+        '--corner-g',
+        type=float,
+        default=None,
+        metavar='G',
+        help=f'...with at least this much lateral G (default {defaults.radio.corner_g:g})',
     )
     ptt = parser.add_argument_group('push-to-talk radio button (wheel or controller)')
     ptt.add_argument(
@@ -443,6 +479,19 @@ def build_parser() -> argparse.ArgumentParser:
         choices=push_to_talk.MODES,
         default=None,
         help='hold: talk while held (default). toggle: press to talk, press again to send',
+    )
+    ptt.add_argument(
+        '--find-game-button',
+        action='store_true',
+        help="Press the wheel button you want; reads it from the game's own UDP button "
+        'feed (no pygame needed), saves it to push_to_talk.json and exits',
+    )
+    ptt.add_argument(
+        '--ptt-game-button',
+        default=None,
+        metavar='BUTTON',
+        help="Radio button read from the game's UDP Buttons event: r1, l1, cross, "
+        'dpad_up, r3, ... (default: saved choice)',
     )
     ptt.add_argument('--no-ptt', action='store_true', help='Ignore the saved push-to-talk button')
     ptt.add_argument(
@@ -531,10 +580,16 @@ def main():
         sys.exit(export_motec(args))
     if args.find_ptt_button:
         sys.exit(push_to_talk.run_button_finder(args.ptt_mode or push_to_talk.HOLD))
+    if args.find_game_button:
+        sys.exit(
+            push_to_talk.run_game_button_finder(cfg.network.udp_port, args.ptt_mode or push_to_talk.HOLD)
+        )
     ptt_settings = None
     if not args.no_ptt and not args.no_mic and not args.no_voice:
         try:
-            ptt_settings = push_to_talk.resolve_settings(args.ptt_button, args.ptt_device, args.ptt_mode)
+            ptt_settings = push_to_talk.resolve_settings(
+                args.ptt_button, args.ptt_device, args.ptt_mode, game_button=args.ptt_game_button
+            )
         except ValueError as error:
             parser.error(str(error))
 
@@ -595,6 +650,14 @@ def main():
         replan=strategy_replan.ReplanConfig(margin_s=sim.plan_b_margin_s, margin_positions=sim.plan_b_places),
         track_store=TrackMapStore(args.history_dir / 'track_maps.json'),
         config=cfg,
+        calls_per_lap=cfg.radio.calls_per_lap,
+        load_thresholds=radio_discipline.LoadThresholds(
+            corner_speed_kph=cfg.radio.corner_speed_kph,
+            corner_g=cfg.radio.corner_g,
+            straight_g=cfg.radio.straight_g,
+            straight_s=cfg.radio.straight_s,
+            brake=cfg.radio.busy_brake,
+        ),
     )
     stream = TelemetryStream(analysis)
     voice.set_silence_filter(analysis.is_driver_busy)
@@ -622,6 +685,12 @@ def main():
     set_reset_map_handler(analysis.reset_map)
     listener = None
     radio = None
+    transcriber = None
+    if not args.no_mic and not args.no_voice:
+        # One shared speech-to-text (offline Whisper by default) for both microphones.
+        transcriber = build_transcriber(args.stt_engine, whisper_model=args.whisper_model)
+        if hasattr(transcriber, 'preload'):
+            transcriber.preload()  # load Whisper now, not on the first radio call
     if ptt_settings:
         radio = push_to_talk.start(
             ptt_settings,
@@ -630,7 +699,10 @@ def main():
             engine=args.stt_engine,
             mic_index=args.mic_index,
             on_log=add_voice_log,
+            transcriber=transcriber,
         )
+        if radio is not None:
+            stream.on_buttons = radio.on_game_buttons  # the game's BUTN event drives the radio
     if not args.no_mic and not args.no_voice and (radio is None or args.always_listen):
         listener = VoiceCommandListener(
             dispatcher,
@@ -638,6 +710,7 @@ def main():
             device_index=args.mic_index,
             voice=voice,
             ignore_when=radio.recently_active if radio else None,
+            transcriber=transcriber,
         )
         listener.start()
     if client:

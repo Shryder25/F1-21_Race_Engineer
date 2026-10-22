@@ -4,6 +4,8 @@ pyttsx3>=2.90
 numpy>=1.26
 SpeechRecognition>=3.10
 PyAudio>=0.2.14
+# Offline speech-to-text for the radio (falls back to Google STT if missing; brings PyTorch):
+openai-whisper>=20231117
 # Push-to-talk radio button on a wheel or controller (docs/push-to-talk.md):
 pygame>=2.5
 # Natural engineer voice (Kokoro; falls back to pyttsx3 if these are missing):
