@@ -186,3 +186,21 @@ def load_config(path: Path | None = None, *, required: bool = False) -> EngineCo
         return from_dict(data)
     except ConfigError as error:
         raise ConfigError(f'{target}: {error}') from error
+
+
+def apply_overrides(config: EngineConfig, overrides: dict[str, Any]) -> EngineConfig:
+    """A copy of ``config`` with ``{'section.key': value}`` overrides; None means "not given".
+
+    main.py passes its command-line flags through here, so a flag always beats the file.
+    """
+    sections = {f.name: getattr(config, f.name) for f in dataclasses.fields(config)}
+    for dotted, value in overrides.items():
+        if value is None:
+            continue
+        section, _, key = dotted.partition('.')
+        if section not in sections or key not in {f.name for f in dataclasses.fields(sections[section])}:
+            raise ConfigError(f'unknown setting {dotted!r}')
+        hint = typing.get_type_hints(type(sections[section]))[key]
+        sections[section] = dataclasses.replace(sections[section],
+                                                **{key: _coerce(value, hint, dotted)})
+    return EngineConfig(**sections)

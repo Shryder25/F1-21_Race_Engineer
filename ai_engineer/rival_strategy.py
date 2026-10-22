@@ -589,10 +589,10 @@ class CarTrack:
 class RivalTracker:
     """Per-car stints, wear and stops for every car, built from Lap Data, Status and Damage."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.cars: dict[int, CarTrack] = {}
         self.player_index: int | None = None
         self.track_length: int | None = None
@@ -621,7 +621,7 @@ class RivalTracker:
                     and lap.lap_distance >= SNAPSHOT_DISTANCE_M and lap.current_lap_num not in stint.observations):
                 stint.observations[lap.current_lap_num] = (car.age, None if car.wear_hidden else car.wear)
 
-    def update_status(self, all_status):
+    def update_status(self, all_status: list) -> None:
         for index, status in enumerate(all_status or ()):
             compound = race_strategy.normalise_compound(status.compound_name)
             if compound is None:
@@ -636,7 +636,7 @@ class RivalTracker:
                 self._close_stint(index, car, compound, actual, age)
             car.age = age
 
-    def update_damage(self, all_damage):
+    def update_damage(self, all_damage: list) -> None:
         for index, damage in enumerate(all_damage or ()):
             if not all(math.isfinite(w) and 0.0 <= w <= 100.0 for w in damage.tyres_wear):
                 continue

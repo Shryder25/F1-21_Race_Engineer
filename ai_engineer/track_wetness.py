@@ -125,10 +125,10 @@ class Reading:
 class TrackWetness:
     """Live wetness estimate: physics between readings, field lap times as the readings."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.wetness: float | None = None
         self.sd = 0.05
         self.weather = 0

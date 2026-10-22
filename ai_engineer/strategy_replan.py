@@ -23,6 +23,7 @@ the game; analysis.py wires it to the live telemetry and the radio.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
+from typing import Any
 
 import race_sim
 import race_strategy as rs
@@ -203,7 +204,7 @@ class Replanner:
         self.config = config or ReplanConfig()
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.plan_a: race_sim.Candidate | None = None
         self.stops_done: int | None = None
         self.seen_lap: int | None = None
@@ -345,7 +346,7 @@ class Replanner:
                 add(pit_now(c, lap_num))
         return out
 
-    def note_submitted(self, key):
+    def note_submitted(self, key: Any) -> None:
         """A re-run went off with Plan A first: remember what it was asked."""
         self.submitted[key] = (self.plan_a, list(self.pending), self.rival_name, self.gamble)
         if len(self.submitted) > 8:

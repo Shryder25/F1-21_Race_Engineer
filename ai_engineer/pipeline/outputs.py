@@ -173,10 +173,11 @@ class OutputsStage(TrackMapStage):
         report = []
         for st in self.session_lap_stats:
             sectors = st.get('sectors') or {}
+            compound: Any = st.get('compound')
             report.append({
                 'lap_num': st['lap_num'], 'lap_time_ms': st['lap_time_ms'],
                 'eligible': bool(st.get('eligible')),
-                'compound': ACTUAL_COMPOUNDS.get(st.get('compound'), '--'),
+                'compound': ACTUAL_COMPOUNDS.get(compound, '--'),
                 's1_ms': sectors.get(1), 's2_ms': sectors.get(2), 's3_ms': sectors.get(3),
                 'speed_trap_kph': st.get('speed_trap_kph'),
             })

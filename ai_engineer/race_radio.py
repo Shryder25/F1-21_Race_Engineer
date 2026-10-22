@@ -1,6 +1,8 @@
 import math
 import time
 from collections import deque
+from collections.abc import Callable
+from typing import Any
 
 from physics_models import evaluate_opponent_threat
 import radio_phrases as say
@@ -22,7 +24,7 @@ RACE_PACE_EVERY_LAPS = 3
 class RaceRadio:
     """Authentic F1 race radio protocol with silence enforcement, concise calls, and priority interrupts."""
 
-    def __init__(self, speak):
+    def __init__(self, speak: Callable[..., Any]) -> None:
         self.speak = speak
         self.phrases = say.Phrasebook()
         # Car index -> radio name from the Participants packet. Kept across reset() because a
@@ -37,7 +39,7 @@ class RaceRadio:
         return None if index is None else self.driver_names.get(index)
 
 
-    def reset(self, session):
+    def reset(self, session: Any) -> None:
         self.session = session
         self.trajectories = {}
         self.last_session_time = None
@@ -303,7 +305,7 @@ class RaceRadio:
         events, self.rival_pit_events = self.rival_pit_events, []
         return events
 
-    def report_sector(self, lap_num, sector, milliseconds, personal_ms):
+    def report_sector(self, lap_num: int, sector: int, milliseconds: int, personal_ms: int | None) -> None:
         token = (lap_num, sector)
         if token in self.sectors_reported or milliseconds <= 0:
             return
@@ -325,7 +327,7 @@ class RaceRadio:
                 message = f'{name.capitalize()}, {amount} down.'
         self.speak(message, Priority.TIMING, key=f'sector_{sector}', ttl=8, cooldown=0)
 
-    def completed_lap(self, milliseconds, lap_num, sectors, personal_sectors):
+    def completed_lap(self, milliseconds: int, lap_num: int, sectors: dict, personal_sectors: dict) -> None:
         if 3 in sectors:
             self.report_sector(lap_num, 3, sectors[3], personal_sectors.get(3))
         if not self.session or self.session.session_type not in (10, 11, 12):

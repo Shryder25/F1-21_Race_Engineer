@@ -50,10 +50,10 @@ def compound_letter(name) -> str | None:
 
 
 class PitWall:
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self, track_length: float = 0.0, race: bool = True):
+    def reset(self, track_length: float = 0.0, race: bool = True) -> None:
         self.track_length = float(track_length or 0.0)
         self.race = race
         self.loops_per_lap = max(1, round(self.track_length / LOOP_SPACING_M)) if self.track_length > 0 else 0

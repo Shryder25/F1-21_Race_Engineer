@@ -23,6 +23,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
+from log_setup import get_logger
+
+log = get_logger('ai')
 
 LOCAL_HOSTS = {'localhost', '127.0.0.1', '::1', '0.0.0.0'}
 OLLAMA_PORT = 11434
@@ -72,7 +75,7 @@ class LocalAILauncher:
                  start_wait_s: float = START_WAIT_S, ping_every_s: float = PING_EVERY_S):
         self.root = ollama_root(base_url)
         self.model = model
-        self.on_status = on_status or (lambda text: print(f'[AI] {text}'))
+        self.on_status = on_status or (lambda text: log.info('%s', text))
         self.on_ready = on_ready
         self._find = executable_finder
         self._popen = popen

@@ -31,6 +31,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from voice_engine import Priority
+from log_setup import get_logger
+
+log = get_logger('ptt')
 
 HOLD, TOGGLE = 'hold', 'toggle'
 MODES = (HOLD, TOGGLE)
@@ -94,7 +97,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict | None:
     try:
         parse_binding(data['button'])
     except ValueError:
-        print(f'[PTT] Ignoring {path}: bad button {data.get("button")!r}')
+        log.warning(f'Ignoring {path}: bad button {data.get("button")!r}')
         return None
     return data
 
@@ -247,7 +250,7 @@ class ButtonWatcher:
         try:
             callback()
         except Exception as error:
-            print(f'[PTT] Radio callback failed: {error}')
+            log.warning(f'Radio callback failed: {error}')
 
     def _find(self, backend):
         for index, joystick in enumerate(backend.devices()):
@@ -273,14 +276,14 @@ class ButtonWatcher:
                         found = self._find(backend)
                         if found is not None and found is not joystick:
                             self.device_name = found.get_name()
-                            print(f'[PTT] Radio button {self.binding.label} on {self.device_name}')
+                            log.info(f'Radio button {self.binding.label} on {self.device_name}')
                         elif found is None and joystick is not None:
-                            print('[PTT] Controller disconnected, waiting for it to come back.')
+                            log.info('Controller disconnected, waiting for it to come back.')
                         joystick, next_scan = found, now + self.rescan_s
                     pressed = joystick is not None and self.binding.is_pressed(joystick)
                 except Exception as error:   # unplugged mid-read
                     if joystick is not None:
-                        print(f'[PTT] Lost the controller ({error}).')
+                        log.warning(f'Lost the controller ({error}).')
                     joystick, pressed, next_scan = None, False, now + self.rescan_s
                 self.feed(pressed, now)
                 self._stop.wait(self.poll_interval)
@@ -294,7 +297,7 @@ class ButtonWatcher:
         self._thread.start()
         self._ready.wait(timeout)
         if self._error is not None:
-            print(f'[PTT] Controller input unavailable ({self._error}). pip install pygame')
+            log.warning(f'Controller input unavailable ({self._error}). pip install pygame')
             return False
         return True
 
@@ -338,13 +341,13 @@ class MicRecorder:
         try:
             import speech_recognition as sr
         except ImportError:
-            print('[PTT] Push-to-talk needs: pip install SpeechRecognition PyAudio')
+            log.warning('Push-to-talk needs: pip install SpeechRecognition PyAudio')
             return False
         try:
             self._mic = (self._microphone_factory or sr.Microphone)(device_index=self.device_index)
             source = self._mic.__enter__()
         except Exception as error:      # no microphone / PyAudio missing
-            print(f'[PTT] Microphone unavailable: {error}')
+            log.warning(f'Microphone unavailable: {error}')
             return False
         self._audio_factory = self._audio_factory or sr.AudioData
         self.sample_rate, self.sample_width = source.SAMPLE_RATE, source.SAMPLE_WIDTH
@@ -367,7 +370,7 @@ class MicRecorder:
                         self._frames.append(data)
         except Exception as error:
             if not self._stop.is_set():
-                print(f'[PTT] Microphone stopped: {error}')
+                log.warning(f'Microphone stopped: {error}')
 
     def feed(self, data: bytes):
         """Push one chunk by hand (tests); same path as the read loop."""
@@ -428,22 +431,22 @@ class PushToTalk:
     def on_start(self):
         self.last_active = time.monotonic()
         self.recorder.begin()
-        print('[PTT] Radio open, listening...')
+        log.info('Radio open, listening...')
 
     def on_stop(self):
         self.last_active = time.monotonic()
         audio = self.recorder.end()
         if audio is None:
-            print('[PTT] Radio closed (too short, ignored).')
+            log.info('Radio closed (too short, ignored).')
             return
-        print('[PTT] Radio closed, transcribing...')
+        log.info('Radio closed, transcribing...')
         self._executor.submit(self._process, audio)
 
     def _process(self, audio):
         try:
             text = self.transcriber(audio)
         except Exception as error:
-            print(f'[PTT] Speech recognition failed: {error}')
+            log.warning(f'Speech recognition failed: {error}')
             text = None
         self.last_active = time.monotonic()
         if not text:
@@ -452,7 +455,7 @@ class PushToTalk:
             if self.on_log:
                 self.on_log('(radio unreadable)', status='heard')
             return
-        print(f'[PTT] Driver: "{text}"')
+        log.info(f'Driver: "{text}"')
         if self.on_log:
             self.on_log(f'Driver: {text}', status='heard')
         self.dispatcher.handle_text(text, free_form=True)
@@ -527,7 +530,7 @@ def start(settings: Settings, dispatcher, *, voice=None, engine: str = 'google',
         return None
     where = f' on "{settings.device}"' if settings.device else ''
     action = 'Hold' if settings.mode == HOLD else 'Press'
-    print(f'[PTT] {action} button {settings.binding.label}{where} to talk to the engineer. '
+    log.info(f'{action} button {settings.binding.label}{where} to talk to the engineer. '
           'Ask anything.')
     return RadioButton(watcher, recorder, ptt)
 

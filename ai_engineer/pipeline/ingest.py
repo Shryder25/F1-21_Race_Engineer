@@ -295,5 +295,5 @@ class IngestStage(LapsStage):
     @property
     def player_setup(self) -> CarSetupData | None:
         """The player's latest setup from the Car Setups packet, or None."""
-        setup: Any = self.session_log.setups.get(self.session_log.player_index)
+        setup: CarSetupData | None = self.session_log.setups.get(self.session_log.player_index)
         return setup

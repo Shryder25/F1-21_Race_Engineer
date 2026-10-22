@@ -8,6 +8,9 @@ import threading
 import time
 from dataclasses import dataclass
 from enum import IntEnum
+from log_setup import get_logger
+
+log = get_logger('voice')
 
 try:
     import pyttsx3
@@ -147,7 +150,7 @@ class VoiceEngine:
             try:
                 self._on_spoken(item.message)
             except Exception as exc:
-                print(f'[VoiceEngine] Speech callback error: {exc}')
+                log.warning(f'Speech callback error: {exc}')
 
     def _worker(self):
         engine = None
@@ -156,7 +159,7 @@ class VoiceEngine:
             if self._driver_factory is not None:
                 engine = self._driver_factory()
             elif pyttsx3 is None:
-                print('[VoiceEngine] pyttsx3 unavailable. Voice disabled.')
+                log.warning('pyttsx3 unavailable. Voice disabled.')
                 return
             else:
                 engine = pyttsx3.init()
@@ -205,7 +208,7 @@ class VoiceEngine:
                     if self._active is not None or not self._pending:
                         self._condition.wait(timeout=0.01 if self._active else 0.05)
         except Exception as exc:
-            print(f'[VoiceEngine] Voice disabled: {exc}')
+            log.warning(f'Voice disabled: {exc}')
         finally:
             if engine is not None:
                 try:
@@ -213,7 +216,7 @@ class VoiceEngine:
                     if loop_started:
                         engine.endLoop()
                 except Exception as exc:
-                    print(f'[VoiceEngine] Speech cleanup error: {exc}')
+                    log.warning(f'Speech cleanup error: {exc}')
             with self._condition:
                 self._running = False
                 self._active = None

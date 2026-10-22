@@ -19,6 +19,9 @@ from typing import Callable
 
 from ai_client import AIClient, AITimeout, AIUnavailable
 import session_modes
+from log_setup import get_logger
+
+log = get_logger('engineer')
 
 # Radio lines are under 25 words; with thinking off this leaves plenty of room for the JSON.
 RADIO_MAX_TOKENS = 220
@@ -424,10 +427,10 @@ class EngineerBrain:
                     self.last_advice = str(result.get('advice') or '').strip()
                     return voice
             except AITimeout as error:
-                print(f'[Engineer] AI too slow ({error}); answering from rules.')
+                log.warning(f'AI too slow ({error}); answering from rules.')
                 return None
             except AIUnavailable as error:
-                print(f'[Engineer] AI JSON reply unavailable ({error}); trying plain text.')
+                log.info(f'AI JSON reply unavailable ({error}); trying plain text.')
         try:
             text = clean_radio_text(self.client.chat(system, user, **fast))
             if text:
@@ -435,5 +438,5 @@ class EngineerBrain:
                 self.last_advice = ''
                 return text
         except AIUnavailable as error:
-            print(f'[Engineer] AI unavailable ({error}); answering from rules.')
+            log.warning(f'AI unavailable ({error}); answering from rules.')
         return None

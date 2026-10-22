@@ -22,6 +22,9 @@ from pathlib import Path
 import numpy as np
 
 from radio_fx import radio_filter
+from log_setup import get_logger
+
+log = get_logger('voice')
 
 DEFAULT_KOKORO_DIR = Path(__file__).resolve().parent.parent / 'models' / 'kokoro'
 DEFAULT_KOKORO_VOICE = 'bm_george'      # British male; bm_lewis / bm_daniel / bm_fable also work
@@ -171,7 +174,7 @@ class NeuralSpeechDriver:
             try:
                 self._player.stop()
             except Exception as exc:
-                print(f'[NeuralVoice] Could not stop playback: {exc}')
+                log.warning(f'Could not stop playback: {exc}')
 
     def prewarm(self, texts):
         """Synthesize fixed calls in the background so they play with no delay later."""
@@ -180,7 +183,7 @@ class NeuralSpeechDriver:
                 try:
                     self._audio_for(text)
                 except Exception as exc:
-                    print(f'[NeuralVoice] Prewarm failed for "{text}": {exc}')
+                    log.warning(f'Prewarm failed for "{text}": {exc}')
                     return
         threading.Thread(target=run, name='NeuralPrewarm', daemon=True).start()
 
@@ -215,7 +218,7 @@ class NeuralSpeechDriver:
                 callback(name)
             self._player.play(samples, sample_rate)
         except Exception as exc:
-            print(f'[NeuralVoice] Could not speak "{text}": {exc}')
+            log.warning(f'Could not speak "{text}": {exc}')
         finally:
             with self._lock:
                 if self._current is not None and self._current[0] is token:
@@ -230,17 +233,17 @@ def build_kokoro_driver_factory(model_dir=DEFAULT_KOKORO_DIR, voice=DEFAULT_KOKO
     """
     missing = missing_packages()
     if missing:
-        print(f'[NeuralVoice] Kokoro voice not installed (missing: {", ".join(missing)}). '
+        log.warning(f'Kokoro voice not installed (missing: {", ".join(missing)}). '
               f'Using the system voice. {SETUP_HINT}')
         return None
     if download and not download_model_files(model_dir):
-        print(f'[NeuralVoice] Using the system voice until the Kokoro files are in {model_dir}.')
+        log.info(f'Using the system voice until the Kokoro files are in {model_dir}.')
         return None
     try:
         synthesize = kokoro_synthesizer(model_dir, voice, speed)
         player = SoundDevicePlayer()
     except Exception as exc:
-        print(f'[NeuralVoice] Kokoro unavailable ({exc}). Using the system voice instead.')
+        log.warning(f'Kokoro unavailable ({exc}). Using the system voice instead.')
         return None
 
     def factory():

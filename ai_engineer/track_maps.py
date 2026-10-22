@@ -16,6 +16,9 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from log_setup import get_logger
+
+log = get_logger('track_maps')
 
 OUTLINE_BIN_M = 8.0          # one outline point per 8 m of lap distance
 MAX_LINE_GAP_M = 40.0        # a lap with a bigger hole in it (rewind, glitch) is not used
@@ -69,7 +72,7 @@ class TrackMapStore:
                 if isinstance(data, dict):
                     self.maps = {str(k): v for k, v in data.items() if isinstance(v, dict)}
             except (OSError, ValueError) as error:
-                print(f'[TrackMaps] Could not read {self.path}: {error}')
+                log.warning(f'Could not read {self.path}: {error}')
 
     def get(self, track_id, track_length: float) -> dict:
         """{'outline': [...], 'pit_lane': [...]} for this track ([] where not mapped yet)."""
@@ -95,7 +98,7 @@ class TrackMapStore:
         self.maps[key] = entry
         self._write()
 
-    def forget(self, track_id):
+    def forget(self, track_id: int) -> None:
         if self.maps.pop(str(track_id), None) is not None:
             self._write()
 
@@ -109,7 +112,7 @@ class TrackMapStore:
                 json.dump(self.maps, handle, separators=(',', ':'))
             os.replace(tmp, self.path)
         except OSError as error:
-            print(f'[TrackMaps] Could not save {self.path}: {error}')
+            log.warning(f'Could not save {self.path}: {error}')
 
 
 FIELD_COVERAGE_NEEDED = 0.97   # share of 8 m bins that must be seen before the outline is used

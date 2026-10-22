@@ -5,7 +5,8 @@ UDP telemetry listener that feeds data into the analysis engine
 and delivers feedback through the voice engine.
 
 Usage:
-    python main.py [--port 20777] [--no-voice] [--debug]
+    python main.py [--port 20777] [--no-voice] [--log-level DEBUG] [--log-format json]
+    python main.py --config my-settings.toml     # thresholds etc. (default: ../config.toml)
     python main.py --record race.f1rec.gz        # also save every datagram for replay
     python main.py --replay race.f1rec.gz [--replay-speed 1|10|max]   # run from a recording
     python main.py --find-ptt-button             # pick the wheel/controller radio button once
@@ -44,6 +45,8 @@ from packets import (
 )
 from voice_engine import VoiceEngine, Priority
 from analysis import AnalysisEngine
+from log_setup import FORMATS, LEVELS, configure as configure_logging, get_logger
+from pipeline.config import ConfigError, EngineConfig, apply_overrides, load_config
 from history import TelemetryHistory
 from fitted_models import ModelStore
 from track_maps import TrackMapStore
@@ -61,20 +64,22 @@ from udp_recording import (MAX_DATAGRAM, RecordingWriter, ReplayFinished, Replay
                            parse_speed)
 import webbrowser
 
+log = get_logger('main')
+
 
 # ──────────────────────────────────────────────
 # Console Display
 # ──────────────────────────────────────────────
 
-def print_telemetry_banner():
-    """Print the startup banner."""
+def print_telemetry_banner(port: int = 20777):
+    """Print the startup banner (console UI on stdout, like the live dashboard; not a log)."""
     print("=" * 60)
     print("  === F1 2021 AI RACE ENGINEER ===")
     print("=" * 60)
     print("  Listening for telemetry data...")
     print("  Make sure F1 2021 has UDP Telemetry enabled:")
     print("    Settings -> Telemetry -> UDP Telemetry: ON")
-    print("    UDP IP: 127.0.0.1 | Port: 20777")
+    print(f"    UDP IP: 127.0.0.1 | Port: {port}")
     print("=" * 60)
     print()
 
@@ -154,25 +159,61 @@ def export_motec(args) -> int:
         result = export_session(args.export_motec, args.motec_out, rate_hz=args.motec_rate,
                                 fmt=args.motec_format)
     except (OSError, ValueError, RuntimeError) as e:
-        print(f"[ERROR] MoTeC export failed: {e}")
+        log.error(f"MoTeC export failed: {e}")
         return 1
-    print(f"[MoTeC] Wrote {result['path']} ({result['channels']} channels at {result['rate_hz']} Hz, "
-          f"{result['laps']} laps)")
+    log.info(f"MoTeC: wrote {result['path']} ({result['channels']} channels at {result['rate_hz']} Hz, "
+             f"{result['laps']} laps)")
     if result.get('ldx'):
-        print(f"[MoTeC] Wrote {result['ldx']} (lap markers; keep it next to the .ld)")
+        log.info(f"MoTeC: wrote {result['ldx']} (lap markers; keep it next to the .ld)")
     return 0
 
 
-def main():
-    parser = argparse.ArgumentParser(description="F1 2021 AI Race Engineer")
-    parser.add_argument("--port", type=int, default=20777,
-                        help="UDP port to listen on (default: 20777)")
+def settings_from(args) -> EngineConfig:
+    """config.toml (or --config FILE), with every command-line flag the user gave on top."""
+    config = load_config(args.config, required=args.config is not None)
+    return apply_overrides(config, {
+        'network.udp_port': args.port,
+        'voice.rate_wpm': args.voice_rate,
+        'voice.tts': args.tts,
+        'voice.kokoro_voice': args.kokoro_voice,
+        'voice.kokoro_speed': args.kokoro_speed,
+        'voice.radio_fx': False if args.no_radio_fx else None,
+        'simulation.enabled': False if args.no_race_sim else None,
+        'simulation.runs': args.sim_runs,
+        'simulation.plan_b_margin_s': args.plan_b_margin,
+        'simulation.plan_b_places': args.plan_b_places,
+        'ai.base_url': args.ai_base_url,
+        'ai.model': args.ai_model,
+        'ai.timeout_s': args.ai_timeout,
+        'ai.autostart': False if args.no_ai_autostart else None,
+        'radio.on_demand': False if args.chatty else None,
+        'logging.level': args.log_level or ('DEBUG' if args.debug else None),
+        'logging.format': args.log_format,
+        'logging.file': args.log_file,
+    })
+
+
+def build_parser() -> argparse.ArgumentParser:
+    defaults = EngineConfig()
+    parser = argparse.ArgumentParser(
+        description="F1 2021 AI Race Engineer",
+        epilog='Defaults come from config.toml at the repo root; a flag overrides the file.')
+    parser.add_argument('--config', type=Path, default=None, metavar='FILE',
+                        help='Settings file (default: config.toml at the repo root, if present)')
+    parser.add_argument("--port", type=int, default=None,
+                        help=f"UDP port to listen on (default: {defaults.network.udp_port})")
     parser.add_argument("--no-voice", action="store_true",
                         help="Disable voice output (console only)")
     parser.add_argument("--debug", action="store_true",
-                        help="Enable debug output")
-    parser.add_argument("--voice-rate", type=int, default=175,
-                        help="TTS speech rate in WPM (default: 175)")
+                        help="Debug output (same as --log-level DEBUG)")
+    parser.add_argument('--log-level', type=str.upper, choices=LEVELS, default=None,
+                        help=f'Log detail (default: {defaults.logging.level})')
+    parser.add_argument('--log-format', choices=FORMATS, default=None,
+                        help='text: readable terminal lines (default); json: one JSON object per line')
+    parser.add_argument('--log-file', default=None, metavar='FILE',
+                        help='Also write every log record to FILE as JSON lines')
+    parser.add_argument("--voice-rate", type=int, default=None,
+                        help=f"TTS speech rate in WPM (default: {defaults.voice.rate_wpm})")
     parser.add_argument("--voice-index", type=int, default=0,
                         help="System voice index (default: 0)")
     parser.add_argument('--history-dir', type=Path,
@@ -185,24 +226,24 @@ def main():
                         help="Don't refit the tyre/fuel models from your laps when the engineer closes")
     parser.add_argument('--no-race-sim', action='store_true',
                         help='Turn off the Monte Carlo race simulator (strategy win chances)')
-    parser.add_argument('--sim-runs', type=int, default=300, metavar='N',
-                        help='Races the Monte Carlo simulator runs per update (default 300)')
-    parser.add_argument('--plan-b-margin', type=float, default=strategy_replan.REPLAN_MARGIN_S, metavar='SECONDS',
+    parser.add_argument('--sim-runs', type=int, default=None, metavar='N',
+                        help=f'Races the Monte Carlo simulator runs per update (default {defaults.simulation.runs})')
+    parser.add_argument('--plan-b-margin', type=float, default=None, metavar='SECONDS',
                         help='Only call Plan B when it beats the current plan by this much race time '
-                             f'(default {strategy_replan.REPLAN_MARGIN_S:g})')
-    parser.add_argument('--plan-b-places', type=float, default=strategy_replan.REPLAN_MARGIN_POSITIONS,
+                             f'(default {defaults.simulation.plan_b_margin_s:g})')
+    parser.add_argument('--plan-b-places', type=float, default=None,
                         metavar='PLACES',
                         help='... or by this many finishing places on average '
-                             f'(default {strategy_replan.REPLAN_MARGIN_POSITIONS:g})')
+                             f'(default {defaults.simulation.plan_b_places:g})')
     tts = parser.add_argument_group('engineer voice')
-    tts.add_argument('--tts', choices=('kokoro', 'system'), default='kokoro',
+    tts.add_argument('--tts', choices=('kokoro', 'system'), default=None,
                      help='Voice: kokoro (default; free offline neural voice, falls back to the system '
                           'voice if not installed) or system (pyttsx3)')
     tts.add_argument('--kokoro-dir', type=Path, default=None,
                      help='Folder with kokoro-v1.0.onnx and voices-v1.0.bin (default: ./models/kokoro)')
-    tts.add_argument('--kokoro-voice', default='bm_george',
+    tts.add_argument('--kokoro-voice', default=None,
                      help='Kokoro voice, e.g. bm_george, bm_lewis, bm_daniel (default: bm_george)')
-    tts.add_argument('--kokoro-speed', type=float, default=1.1,
+    tts.add_argument('--kokoro-speed', type=float, default=None,
                      help='Kokoro speaking speed (default: 1.1, a touch brisk like real radio)')
     tts.add_argument('--no-radio-fx', action='store_true',
                      help='Kokoro only: clean studio voice instead of the team-radio effect')
@@ -213,7 +254,7 @@ def main():
                     help='Model name (default: $F1_AI_MODEL or deepseek-r1:8b)')
     ai.add_argument('--ai-api-key', default=None,
                     help='API key for cloud providers such as Groq (default: $F1_AI_API_KEY)')
-    ai.add_argument('--ai-timeout', type=float, default=30.0,
+    ai.add_argument('--ai-timeout', type=float, default=None,
                     help='Seconds to wait for the model before answering from rules (default: 30; '
                          'DeepSeek R1 thinks before it answers)')
     ai.add_argument('--no-ai-autostart', action='store_true',
@@ -261,7 +302,17 @@ def main():
                     help='ld (MoTeC i2 log, default) or csv (MoTeC-style CSV)')
     ch.add_argument('--motec-rate', type=int, default=None, metavar='HZ',
                     help='Sample rate for the export (default: the rate the game sent)')
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
+    try:
+        cfg = settings_from(args)
+        configure_logging(cfg.logging.level, cfg.logging.format, cfg.logging.file or None)
+    except (ConfigError, ValueError, OSError) as error:
+        parser.error(str(error))
     if args.record and args.replay:
         parser.error('--record and --replay cannot be used together')
     if args.export_motec:
@@ -277,18 +328,18 @@ def main():
 
     # ─── Initialize Voice Engine ───
     driver_factory = None
-    if args.tts == 'kokoro' and not args.no_voice:
+    if cfg.voice.tts == 'kokoro' and not args.no_voice:
         from neural_voice import DEFAULT_KOKORO_DIR, build_kokoro_driver_factory
         driver_factory = build_kokoro_driver_factory(
-            args.kokoro_dir or DEFAULT_KOKORO_DIR, args.kokoro_voice, args.kokoro_speed,
-            radio_effect=not args.no_radio_fx)
+            args.kokoro_dir or DEFAULT_KOKORO_DIR, cfg.voice.kokoro_voice, cfg.voice.kokoro_speed,
+            radio_effect=cfg.voice.radio_fx)
         if driver_factory:
-            print(f'[INFO] Engineer voice: Kokoro ({args.kokoro_voice})')
+            log.info(f'Engineer voice: Kokoro ({cfg.voice.kokoro_voice})')
     voice = VoiceEngine(
         driver_factory=driver_factory,
-        rate=args.voice_rate,
+        rate=cfg.voice.rate_wpm,
         volume=0.9,
-        cooldown_seconds=30.0,
+        cooldown_seconds=cfg.voice.cooldown_s,
         voice_index=args.voice_index,
         on_spoken=add_voice_log,
     )
@@ -298,30 +349,32 @@ def main():
         time.sleep(0.5)
         voice.say('Radio check. Engineer standing by, waiting for the car.', Priority.LOW, key='startup', ttl=10)
     else:
-        print("[INFO] Voice output disabled (--no-voice)")
+        log.info("Voice output disabled (--no-voice)")
 
     # ─── Initialize Analysis Engine ───
     history = TelemetryHistory(args.history_dir / 'telemetry.sqlite3')
     models_path = args.models or args.history_dir / 'fitted_models.json'
     fitted = ModelStore.load_or_empty(models_path)
     if fitted.wear or fitted.fuel:
-        print(f"[Models] Loaded {len(fitted.wear)} tyre and {len(fitted.fuel)} fuel fits from {models_path}"
-              + (' (simulator data only)' if fitted.simulated_only else ''))
+        log.info(f"Loaded {len(fitted.wear)} tyre and {len(fitted.fuel)} fuel fits from {models_path}"
+                 + (' (simulator data only)' if fitted.simulated_only else ''))
     else:
-        print('[Models] No fitted tyre/fuel models yet; using built-in estimates. '
-              'Fit them with: python tools/fit_models.py recordings/*.f1rec.gz')
-    analysis = AnalysisEngine(voice, history=history, on_demand=not args.chatty, fitted=fitted,
-                              race_simulation='off' if args.no_race_sim else 'async',
-                              sim_runs=args.sim_runs,
-                              replan=strategy_replan.ReplanConfig(margin_s=args.plan_b_margin,
-                                                                  margin_positions=args.plan_b_places),
-                              track_store=TrackMapStore(args.history_dir / 'track_maps.json'))
+        log.info('No fitted tyre/fuel models yet; using built-in estimates. '
+                 'Fit them with: python tools/fit_models.py recordings/*.f1rec.gz')
+    sim = cfg.simulation
+    analysis = AnalysisEngine(voice, history=history, on_demand=cfg.radio.on_demand, fitted=fitted,
+                              race_simulation='async' if sim.enabled else 'off',
+                              sim_runs=sim.runs,
+                              replan=strategy_replan.ReplanConfig(margin_s=sim.plan_b_margin_s,
+                                                                  margin_positions=sim.plan_b_places),
+                              track_store=TrackMapStore(args.history_dir / 'track_maps.json'),
+                              config=cfg)
     stream = TelemetryStream(analysis)
     voice.set_silence_filter(analysis.is_driver_busy)
 
     # ─── AI brain + on-demand voice commands ───
-    client = None if args.no_ai else AIClient(args.ai_base_url, args.ai_model,
-                                              args.ai_api_key, args.ai_timeout)
+    client = None if args.no_ai else AIClient(cfg.ai.base_url or None, cfg.ai.model or None,
+                                              args.ai_api_key, cfg.ai.timeout_s)
     brain = EngineerBrain(analysis.build_context, client)
     dispatcher = CommandDispatcher(voice, brain, on_log=add_voice_log)
     # Typed HUD questions are deliberate, so they may be free-form like the radio button.
@@ -339,9 +392,9 @@ def main():
                                         ignore_when=radio.recently_active if radio else None)
         listener.start()
     if client:
-        print(f"[AI] Engineer brain: {client.model} @ {client.base_url} "
-              f"(falls back to rules if unreachable)")
-        if not args.no_ai_autostart:
+        log.info(f"Engineer brain: {client.model} @ {client.base_url} "
+                 f"(falls back to rules if unreachable)")
+        if cfg.ai.autostart:
             # Local Ollama: start it, fetch the model on first run, preload it, keep it warm.
             launcher = LocalAILauncher(
                 client.base_url, client.model,
@@ -355,10 +408,10 @@ def main():
         try:
             from channel_store import ChannelLogger
             channel_logger = ChannelLogger(
-                args.log_channels, on_file=lambda path: print(f"\n[CHANNELS] Saved {path}"))
-            print(f"[CHANNELS] Logging every sample to {args.log_channels}/")
+                args.log_channels, on_file=lambda path: log.info(f"Channels saved to {path}"))
+            log.info(f"Logging every channel sample to {args.log_channels}/")
         except RuntimeError as e:  # pyarrow missing
-            print(f"[WARN] Channel logging disabled: {e}")
+            log.warning(f"Channel logging disabled: {e}")
 
     # ─── Set up UDP Socket (or a recording standing in for it) ───
     recorder = None
@@ -366,7 +419,7 @@ def main():
         try:
             sock = ReplaySource(args.replay, args.replay_speed)
         except (OSError, ValueError) as e:
-            print(f"[ERROR] Cannot open recording {args.replay}: {e}")
+            log.error(f"Cannot open recording {args.replay}: {e}")
             voice.shutdown()
             history.close()
             sys.exit(1)
@@ -376,10 +429,10 @@ def main():
         sock.settimeout(1.0)  # Non-blocking with 1s timeout for clean shutdown
 
         try:
-            sock.bind(("0.0.0.0", args.port))
+            sock.bind(("0.0.0.0", cfg.network.udp_port))
         except OSError as e:
-            print(f"[ERROR] Cannot bind to port {args.port}: {e}")
-            print("  Is another application using this port?")
+            log.error(f"Cannot bind to UDP port {cfg.network.udp_port}: {e}. "
+                      "Is another application using this port?")
             voice.shutdown()
             history.close()
             sock.close()
@@ -387,9 +440,9 @@ def main():
         if args.record:
             try:
                 args.record.parent.mkdir(parents=True, exist_ok=True)
-                recorder = RecordingWriter(args.record, metadata={'port': args.port})
+                recorder = RecordingWriter(args.record, metadata={'port': cfg.network.udp_port})
             except OSError as e:  # includes FileExistsError: never overwrite a recording
-                print(f"[ERROR] Cannot create recording {args.record}: {e}")
+                log.error(f"Cannot create recording {args.record}: {e}")
                 voice.shutdown()
                 history.close()
                 sock.close()
@@ -403,24 +456,24 @@ def main():
             pass
 
     # Start Visual Telemetry Web HUD Server (Port 5000)
-    web_server = start_web_hud_server(port=5000)
+    hud_port = cfg.network.hud_port
+    web_server = start_web_hud_server(port=hud_port)
     try:
-        webbrowser.open("http://localhost:5000")
+        webbrowser.open(f"http://localhost:{hud_port}")
     except Exception:
         pass
 
-    print_telemetry_banner()
+    print_telemetry_banner(cfg.network.udp_port)
     if args.replay:
         speed = 'max speed' if args.replay_speed is None else f'{args.replay_speed:g}x'
-        print(f"[REPLAY] Reading telemetry from {args.replay} at {speed}")
+        log.info(f"Replay: reading telemetry from {args.replay} at {speed}")
     else:
-        print(f"[OK] Bound to UDP port {args.port}")
+        log.info(f"Bound to UDP port {cfg.network.udp_port}")
     if recorder:
-        print(f"[REC] Recording every datagram to {args.record}")
-    print("[HUD] [*] Live Telemetry Dashboard running at: http://localhost:5000")
-    print("[STATUS] [*] Waiting for F1 2021 telemetry data...")
-    print("         (Launch F1 2021, start Time Trial/Grand Prix/Race, and make sure UDP Telemetry is ON)")
-    print()
+        log.info(f"Recording every datagram to {args.record}")
+    log.info(f"Live Telemetry Dashboard running at: http://localhost:{hud_port}")
+    log.info("Waiting for F1 2021 telemetry data... (Launch F1 2021, start Time Trial/Grand Prix/Race, "
+             "and make sure UDP Telemetry is ON)")
 
     # ─── State ───
     latest_telemetry: CarTelemetryData | None = None
@@ -439,7 +492,7 @@ def main():
             try:
                 data, addr = sock.recvfrom(MAX_DATAGRAM)
             except ReplayFinished as done:
-                print(f"\n\n[REPLAY] {done}")
+                log.info(f"Replay: {done}")
                 break
             except socket.timeout:
                 stream.check_timeout()
@@ -449,7 +502,8 @@ def main():
                         last_wait_tick = now
                         spin = spinner_chars[spinner_idx % len(spinner_chars)]
                         spinner_idx += 1
-                        sys.stdout.write(f"\r  [{spin}] Listening on 0.0.0.0:{args.port}... waiting for car on track...")
+                        sys.stdout.write(f"\r  [{spin}] Listening on 0.0.0.0:{cfg.network.udp_port}... "
+                                         "waiting for car on track...")
                         sys.stdout.flush()
                 continue
             except ConnectionResetError:
@@ -461,8 +515,8 @@ def main():
             if channel_logger:
                 channel_logger.handle(data)
             if not stream.handle(data):
-                if args.debug and stream.last_error:
-                    print(f'[DEBUG] Ignored packet: {stream.last_error}')
+                if stream.last_error:
+                    log.debug(f'Ignored packet: {stream.last_error}')
                 continue
             latest_session = stream.latest_session
             latest_telemetry = stream.latest_telemetry
@@ -471,8 +525,7 @@ def main():
             if not first_packet_logged:
                 first_packet_logged = True
                 sys.stdout.write("\r" + " " * 75 + "\r")
-                print('[CONNECTED] >> Valid F1 2021 telemetry stream detected!')
-                print()
+                log.info('Valid F1 2021 telemetry stream detected!')
                 # Prepare space for 9 lines of dashboard
                 for _ in range(9):
                     print()
@@ -494,19 +547,19 @@ def main():
                         pass  # Don't crash on display errors
 
     except KeyboardInterrupt:
-        print("\n\n[INFO] Shutting down...")
+        log.info("Shutting down...")
         voice.say_immediate("That's it from us. Good work today, see you in the garage.")
         time.sleep(2)
     finally:
         sock.close()
         if recorder:
             recorder.close()
-            print(f"[REC] Saved {recorder.count} datagrams to {args.record}")
+            log.info(f"Saved {recorder.count} datagrams to {args.record}")
         if channel_logger:
             try:
                 channel_logger.close()
             except Exception as e:
-                print(f"[CHANNELS] Could not finish the channel file: {e}")
+                log.warning(f"Could not finish the channel file: {e}")
         if listener:
             listener.stop()
         if radio:
@@ -518,14 +571,14 @@ def main():
                 auto_refit.refit(history, models_path,
                                  extra_recordings=[args.record] if args.record else ())
             except Exception as error:      # never let learning break shutdown
-                print(f'[Learn] Model refit skipped: {error}')
+                log.warning(f'Model refit skipped: {error}')
         history.close()
         if web_server:
             web_server.shutdown()
             web_server.server_close()
         voice.shutdown()
-        print(f"[INFO] Received {packets_received} packets total.")
-        print("[INFO] AI Race Engineer offline.")
+        log.info(f"Received {packets_received} packets total.")
+        log.info("AI Race Engineer offline.")
 
 
 if __name__ == "__main__":

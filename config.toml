@@ -1,0 +1,71 @@
+# F1 2021 AI Race Engineer — settings
+#
+# Read once at startup by `python main.py` (or pass another file with --config FILE).
+# Every value below is the built-in default: delete a line and nothing changes.
+# Command-line flags override this file (e.g. --chatty beats radio.on_demand = true).
+# A misspelt section or key is an error at startup, so a typo can't silently do nothing.
+
+[network]
+udp_port = 20777            # --port. Must match F1 2021 Settings -> Telemetry -> UDP Port
+hud_port = 5000             # web HUD at http://localhost:<hud_port>
+
+[logging]
+level = "INFO"              # --log-level: DEBUG, INFO, WARNING, ERROR
+format = "text"             # --log-format: "text" for the terminal, "json" for one JSON object per line
+file = ""                   # --log-file: also write every record as JSON lines to this file ("" = off)
+
+[radio]
+on_demand = true            # speak only when asked, plus the proactive keys below (--chatty = false)
+# Callouts that break on-demand silence: critical events and this-lap strategy calls.
+proactive_keys = [
+    "tyre_temperature", "safety_car", "safety_car_in", "weather_rain", "critical_wear",
+    "wing_damage", "penalty", "flag_yellow", "flag_red", "rival_pit", "undercut",
+    "rival_preempt", "plan_b",
+]
+# The driver counts as busy (non-urgent calls wait) above any of these:
+busy_brake = 0.15           # brake pressure, 0-1
+busy_steer = 0.20           # steering lock, 0-1
+busy_lateral_g = 1.2        # lateral G
+braking_warn_distance_m = 220.0   # braking-point call this many metres before the zone
+delta_report_interval_s = 14.0    # minimum seconds between live "up/down on your best" calls
+
+[tyres]
+high_c = 104                # surface °C above this counts as running hot (end-of-lap summary)
+low_c = 80                  # surface °C below this counts as running cold
+critical_c = 112            # critical overheat: the only tyre call made mid-lap...
+rise_rate_c_per_s = 1.5     # ...and only while the temperature climbs at least this fast...
+critical_sustain_s = 0.5    # ...for at least this long
+alert_cooldown_s = 40.0     # minimum seconds between two critical overheat calls
+summary_min_s = 4.0         # seconds hot or cold in a lap before the lap summary mentions it
+summary_repeat_laps = 3     # an unchanged tyre summary is repeated at most every N laps
+
+[laps]
+delta_sample_interval_m = 10.0   # metres between speed-trace / live-delta samples
+profile_refresh_laps = 3         # rebuild the driver profile for the AI every N clean laps
+
+[strategy]
+rival_react_gap_s = 6.0          # only react to a rival's pit stop within this gap
+rival_forecast_laps = 2          # "Hamilton likely to box lap 22" when due within N laps
+rival_preempt_laps = 1           # pre-empt an undercut from behind due this lap or the next N
+rival_preempt_prob = 0.5         # ...when the stop model gives at least this chance
+rival_summary_positions = 3      # cars this many places either side go in the strategy summary
+
+[simulation]
+enabled = true              # Monte Carlo race simulator: win chances and Plan B (--no-race-sim = false)
+runs = 300                  # --sim-runs: races simulated per update
+plan_b_margin_s = 3.0       # --plan-b-margin: Plan B must beat Plan A by this much race time...
+plan_b_places = 0.5         # --plan-b-places: ...or by this many finishing places on average
+
+[voice]
+tts = "kokoro"              # --tts: "kokoro" (neural, offline) or "system" (pyttsx3)
+kokoro_voice = "bm_george"  # --kokoro-voice: bm_george, bm_lewis, bm_daniel, ...
+kokoro_speed = 1.1          # --kokoro-speed
+radio_fx = true             # team-radio filter on the Kokoro voice (--no-radio-fx = false)
+rate_wpm = 175              # --voice-rate: system voice speed
+cooldown_s = 30.0           # default seconds before the same callout may repeat
+
+[ai]
+base_url = ""               # --ai-base-url ("" = $F1_AI_BASE_URL, else local Ollama)
+model = ""                  # --ai-model ("" = $F1_AI_MODEL, else deepseek-r1:8b)
+timeout_s = 30.0            # --ai-timeout: seconds before answering from rules instead
+autostart = true            # start Ollama and download/preload the model (--no-ai-autostart = false)

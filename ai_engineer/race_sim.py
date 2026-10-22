@@ -878,10 +878,10 @@ class FieldTracker:
     the "fresh tyres, empty tank" lap time the simulator builds on.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.crossings: dict[int, dict[int, float]] = {}
         self.last_lap: dict[int, int] = {}
         self.dirty: dict[int, bool] = {}
@@ -1010,7 +1010,7 @@ class SimRunner:
     def enabled(self) -> bool:
         return self.mode in ('sync', 'async')
 
-    def reset(self):
+    def reset(self) -> None:
         with self._lock:
             self.latest = None
             self.latest_key = None

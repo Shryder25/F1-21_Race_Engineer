@@ -52,6 +52,9 @@ from packets import (ACTUAL_COMPOUNDS, HEADER_SIZE, VISUAL_COMPOUNDS, PacketHead
                      parse_session_data)
 from physics_models import _compound_params
 from track_data import get_track_info, resolve_track_id
+from log_setup import get_logger
+
+log = get_logger('models')
 
 STORE_VERSION = 1
 DEFAULT_LEVEL = 0.80            # 10th-90th percentile
@@ -919,7 +922,7 @@ class ModelStore:
     '<track_id>' (pooled: '*', in kg per km).
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.wear: dict[str, WearModel] = {}
         self.deg: dict[str, DegModel] = {}
         self.fuel: dict[str, FuelModel] = {}
@@ -1062,7 +1065,7 @@ class ModelStore:
         except FileNotFoundError:
             return cls()
         except (OSError, ValueError, TypeError, KeyError) as error:
-            print(f'[Models] Ignoring unreadable fitted models {path}: {error}')
+            log.warning(f'Ignoring unreadable fitted models {path}: {error}')
             return cls()
 
 

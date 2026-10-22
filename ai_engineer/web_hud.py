@@ -23,6 +23,9 @@ from typing import Any
 
 from track_data import get_all_tracks
 from track_analysis import TrackAnalyst, model_analysis, normalize_session
+from log_setup import get_logger
+
+log = get_logger('hud')
 
 TELEMETRY_TIMEOUT = 2.0
 
@@ -968,7 +971,7 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
                 try:
                     _reset_map_handler()
                 except Exception as error:
-                    print(f'[WebHUD] reset_map handler failed: {error}')
+                    log.warning(f'reset_map handler failed: {error}')
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -1016,8 +1019,8 @@ def start_web_hud_server(port: int = 5000):
         httpd = ReusableTCPServer(("0.0.0.0", port), TelemetryHUDHandler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True, name="WebHUDServer")
         thread.start()
-        print(f"[WebHUD] Visual Telemetry Dashboard live at http://localhost:{port}")
+        log.info(f"Visual Telemetry Dashboard live at http://localhost:{port}")
         return httpd
     except Exception as e:
-        print(f"[WebHUD] Warning: Could not bind to port {port}: {e}")
+        log.warning(f"Could not bind to port {port}: {e}")
         return None

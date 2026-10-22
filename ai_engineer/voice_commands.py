@@ -18,6 +18,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from voice_engine import Priority
+from log_setup import get_logger
+
+log = get_logger('voice')
 
 ACK_TEXT = 'We are checking.'
 QUESTION = 'question'          # handle_text() result for a free-form question
@@ -128,7 +131,7 @@ class CommandDispatcher:
             else:
                 message = self.brain.answer(command)
         except Exception as error:  # never let a bad answer kill the worker silently
-            print(f'[Engineer] Could not answer {question or command}: {error}')
+            log.warning(f'Could not answer {question or command}: {error}')
             message = 'Sorry, I could not get that. Try again.'
         self._speak(message, f'cmd_answer:{sequence}', self.answer_ttl)
 
@@ -145,7 +148,7 @@ def transcribe(recognizer, audio, engine: str = 'google', language: str = 'en-GB
         return recognizer.recognize_google(audio, language=language) or None
     except Exception as error:   # unintelligible audio / network error: just ignore the clip
         if type(error).__name__ != 'UnknownValueError':
-            print(f'[Voice] Speech recognition error: {error}')
+            log.warning(f'Speech recognition error: {error}')
         return None
 
 
@@ -176,14 +179,14 @@ class VoiceCommandListener:
             return  # the push-to-talk button is handling this
         text = self.transcribe(audio)
         if text:
-            print(f'[Voice] Heard: "{text}"')
+            log.info(f'Heard: "{text}"')
             self.dispatcher.handle_text(text)
 
     def start(self) -> bool:
         try:
             import speech_recognition as sr
         except ImportError:
-            print('[Voice] Voice commands disabled: pip install SpeechRecognition PyAudio')
+            log.warning('Voice commands disabled: pip install SpeechRecognition PyAudio')
             return False
         try:
             self._recognizer = (self._recognizer_factory or sr.Recognizer)()
@@ -194,9 +197,9 @@ class VoiceCommandListener:
             self._stop = self._recognizer.listen_in_background(microphone, self._on_audio,
                                                                phrase_time_limit=6)
         except Exception as error:   # no microphone / PyAudio missing
-            print(f'[Voice] Microphone unavailable, voice commands disabled: {error}')
+            log.warning(f'Microphone unavailable, voice commands disabled: {error}')
             return False
-        print('[Voice] Listening for commands: weather, tyre temps, pit window, '
+        log.info('Listening for commands: weather, tyre temps, pit window, '
               'gap ahead, gap behind, pace update.')
         return True
 

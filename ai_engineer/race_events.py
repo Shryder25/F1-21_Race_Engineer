@@ -13,6 +13,8 @@ including calls that on-demand mode keeps off the radio.
 
 import math
 from collections import deque
+from collections.abc import Callable
+from typing import Any
 
 from voice_engine import Priority
 
@@ -48,7 +50,7 @@ def capitalise(text: str) -> str:
 
 
 class RaceControl:
-    def __init__(self, speak):
+    def __init__(self, speak: Callable[..., Any]) -> None:
         self.speak = speak
         self.participants: list = []
         self.feed: deque = deque(maxlen=30)
@@ -58,7 +60,7 @@ class RaceControl:
     # State
     # ──────────────────────────────────────────
 
-    def reset(self, session):
+    def reset(self, session: Any) -> None:
         """New session: forget everything except who is driving which car."""
         self.session = session
         self.feed.clear()
@@ -89,7 +91,7 @@ class RaceControl:
     def is_race(self) -> bool:
         return bool(self.session and self.session.session_type in RACE_SESSIONS)
 
-    def update_participants(self, participants):
+    def update_participants(self, participants: list) -> None:
         self.participants = list(participants)
 
     def position_of(self, index):
