@@ -38,6 +38,7 @@ import track_wetness
 import track_maps
 import pit_wall
 import track_status
+import radio_discipline
 from session_history import SessionLog, lap_rows, stint_rows
 
 
@@ -169,8 +170,14 @@ class AnalysisEngine:
                  on_demand: bool = False, fitted: fitted_models.ModelStore | None = None,
                  race_simulation: str = 'off', sim_runs: int = race_sim.DEFAULT_RUNS,
                  track_store: track_maps.TrackMapStore | None = None,
-                 replan: strategy_replan.ReplanConfig | None = None):
+                 replan: strategy_replan.ReplanConfig | None = None,
+                 calls_per_lap: int | None = radio_discipline.DEFAULT_CALLS_PER_LAP,
+                 load_thresholds: radio_discipline.LoadThresholds | None = None):
         self.voice = voice
+        # Radio discipline: a per-lap budget for proactive calls, and no talking through
+        # high-load corners or heavy braking (the voice queue holds calls for the straight).
+        self.call_budget = radio_discipline.CallBudget(calls_per_lap)
+        self.load_gate = radio_discipline.DriverLoadGate(load_thresholds)
         # Saved outline + pit lane per circuit (memory-only unless main.py gives it a file).
         self.track_store = track_store if track_store is not None else track_maps.TrackMapStore()
         # Monte Carlo race simulator (race_sim.py): 'async' live, 'sync' in tests, 'off'.
@@ -327,6 +334,8 @@ class AnalysisEngine:
             self.last_strategy_call = None
             self.field_tracker.reset()
             self.field_laps = None
+            self.call_budget.reset()
+            self.load_gate.reset()
             self.sim_runner.reset()
             self.replanner.reset()
             self.wetness.reset()
@@ -473,8 +482,12 @@ class AnalysisEngine:
         topic = options.get('key', message)
         if self.on_demand and topic not in PROACTIVE_KEYS:
             return  # radio silence until the driver asks or critical priority event
+        if not self.call_budget.allows(topic, priority):
+            return  # this lap's proactive calls are used up; urgent calls still get through
         options['key'] = f'{self.capture_id or self.session_context}:{topic}'
         queued = self.voice.say(message, priority, **options)
+        if queued:
+            self.call_budget.spend(topic, priority)
         if not queued and not getattr(self.voice, 'is_running', False):
             add_voice_log(message, status='muted')
 
@@ -615,16 +628,19 @@ class AnalysisEngine:
         # A rewind into an earlier lap is handled by the lap change in update_delta.
 
     def is_driver_busy(self) -> bool:
-        """Check if driver is under heavy braking or in a high-G corner (silence filter)."""
-        if self.latest_telemetry is None:
+        """True in a high-load corner or under heavy braking (the voice queue's silence filter).
+
+        Read by the voice thread while a call is waiting. A high-load corner is fast and high
+        lateral G (radio_discipline.LoadThresholds); once in one, the driver counts as busy
+        until the car has been on a straight for a moment, so the call lands there.
+        """
+        telemetry = self.latest_telemetry
+        if telemetry is None:
             return False
-        if self.latest_telemetry.brake > 0.15:
-            return True
-        if abs(self.latest_telemetry.steer) > 0.20:
-            return True
-        if self.latest_motion and abs(self.latest_motion.g_force_lateral) > 1.2:
-            return True
-        return False
+        motion = getattr(self, 'latest_motion', None)
+        self.load_gate.update(telemetry.speed, motion.g_force_lateral if motion else 0.0,
+                              telemetry.brake)
+        return self.load_gate.busy()
 
     # ──────────────────────────────────────────
     # Tyre Temperature Analysis
@@ -925,6 +941,7 @@ class AnalysisEngine:
     def _on_new_lap(self, lap: LapData):
         """Handle lap completion and save best baseline."""
         prev_lap_num = self.delta.current_lap_num
+        self.call_budget.new_lap(lap.current_lap_num)   # a fresh radio budget every lap
         if prev_lap_num > 0:
             self._capture_outline(prev_lap_num, lap.current_lap_num)
         self.delta.current_lap_num = lap.current_lap_num

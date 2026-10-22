@@ -8,7 +8,8 @@ from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
                      parse_player_telemetry, parse_all_car_damage,
                      parse_player_motion, parse_all_positions, parse_speed_trap_event, parse_all_car_status,
                      parse_race_event, race_event_body_size, parse_participants,
-                     parse_car_setups, parse_final_classification, parse_session_history)
+                     parse_car_setups, parse_final_classification, parse_session_history,
+                     parse_buttons_event)
 from session_history import valid_history
 from web_hud import update_web_state, TELEMETRY_TIMEOUT
 
@@ -44,6 +45,7 @@ class TelemetryStream:
         self.last_flashback = None
         self.rewind_anchor = None
         self.last_session_time = None
+        self.on_buttons = None          # callable(mask) for the game's Buttons event (push-to-talk)
 
     def check_timeout(self, now=None):
         now = time.monotonic() if now is None else now
@@ -72,7 +74,7 @@ class TelemetryStream:
                 code = bytes(data[24:28])
                 expected_size = EVENT_PACKET_SIZES.get(code)
                 if expected_size is None:
-                    if race_event_body_size(code) is None:
+                    if code != b'BUTN' and race_event_body_size(code) is None:
                         return False  # an event sub-type we don't need (and don't know the size of)
                     expected_size = len(data) if len(data) in RACE_EVENT_PACKET_SIZES else -1
             else:
@@ -101,6 +103,15 @@ class TelemetryStream:
                     raise ValueError('Invalid lap state')
                 payload = all_laps
             elif packet_id == 3:
+                if data[24:28] == b'BUTN':
+                    # The radio button. Handled before the session checks so push-to-talk
+                    # works from the first packet, in menus and while paused.
+                    if self.on_buttons is not None:
+                        try:
+                            self.on_buttons(parse_buttons_event(data))
+                        except Exception as error:   # never let the radio break telemetry
+                            print(f'[PTT] Game button handler failed: {error}')
+                    return False
                 if data[24:28] == b'SPTP':
                     speed_trap = parse_speed_trap_event(data)
                     if (speed_trap is None or not math.isfinite(speed_trap.speed_kph)

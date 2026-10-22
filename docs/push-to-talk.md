@@ -64,6 +64,26 @@ The game still sees the button too, so pick one F1 2021 does nothing with, or un
   a D-pad direction you have unbound. Avoid the buttons used for MFD/radio menus unless you
   unbind them.
 
+### Or: read the button from the game itself (no pygame)
+
+F1 2021 sends its own button feed over UDP (the "Buttons" event, `BUTN`). The engineer can
+use that instead of reading the wheel directly, which avoids wheel software or Steam Input
+blocking a second program. With the game running and UDP Telemetry on:
+
+```
+python main.py --find-game-button
+```
+
+Press the wheel button you want within 30 seconds. The game reports wheel buttons as the pad
+button they are mapped to, so you will see something like `Radio button: R1 from the game`.
+It is saved to `push_to_talk.json` next to any pygame button, and both work. Or pass it by
+hand: `python main.py --ptt-game-button r1` (names: cross, triangle, circle, square, l1, r1,
+l2, r2, l3, r3, dpad_up/down/left/right, options, rs_up/down/left/right, special; Xbox names
+a, b, x, y, lb, rb, lt, rt also work).
+
+The same button still does its normal job in the game, so pick one you don't use, or unbind
+it. If the game ever drops the "released" packet, the radio closes itself after 15 seconds.
+
 ## 3. Drive
 
 ```
@@ -78,13 +98,35 @@ button, talk, release. The console and the HUD radio log show what was heard.
 | Flag | What it does |
 |------|--------------|
 | `--find-ptt-button` | Press the button you want; saves it and exits |
+| `--find-game-button` | Press a wheel button; reads it from the game's UDP feed, saves it and exits |
+| `--ptt-game-button r1` | Use this game button (from the UDP Buttons event) without the saved file |
 | `--ptt-button 7` / `--ptt-button hat0:up` | Use this button without the saved file |
 | `--ptt-device "T300"` | Only listen on the controller whose name contains this (or its index, e.g. `0`) |
 | `--ptt-mode hold\|toggle` | Hold to talk (default) or press to start / press to send |
 | `--no-ptt` | Ignore the saved button for this run |
 | `--always-listen` | Keep the hands-free "engineer, ..." microphone on as well |
 | `--mic-index N` | Which microphone to record from |
-| `--stt-engine vosk` | Offline speech recognition instead of Google |
+| `--stt-engine whisper\|google\|vosk` | Speech recognition. Default `whisper`, offline (see below) |
+| `--whisper-model tiny.en` | Smaller, quicker Whisper model (default `base.en`) |
+
+## Offline speech recognition (Whisper)
+
+The radio turns your voice into text with OpenAI's open-source Whisper model running on your
+own PC, so it works with no internet and no account. `pip install -r requirements.txt`
+installs it (`openai-whisper`, which brings PyTorch, about 1 GB on disk). The first start
+downloads the model once (`base.en` is about 140 MB, `tiny.en` about 75 MB); it then loads in
+the background while the engineer starts. If Whisper is not installed or can't load, the
+engineer says so in the console and uses Google speech recognition (online) as before.
+
+`base.en` takes roughly half a second to a second per question on a modern CPU; use
+`--whisper-model tiny.en` if that feels slow, or `small.en` if words are often misheard.
+
+## How questions are understood
+
+Fixed commands (tyre temps, gaps, pit window, pace, weather, threats, strategy, rival stops)
+are recognised by meaning, not exact words: "how are my tyres holding up?", "are the rears
+getting hot?" and "tyre temps" are all the tyre question, and a slightly misheard word
+("temprature") still matches. Anything else goes to the AI as a free-form question.
 
 When a radio button is set, the always-on wake-word microphone is switched off so the same
 question is not answered twice. `--always-listen` turns it back on; it then ignores speech
