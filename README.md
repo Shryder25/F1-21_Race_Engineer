@@ -132,7 +132,9 @@ The project is structured into distinct modules to handle stream ingestion, data
 * `main.py` — The core execution loop initializing the telemetry listener and AI services[cite: 1].
 * `run_engineer.bat` & `test_simulation.bat` — Windows batch scripts for quick launching and testing the application[cite: 1].
 * **`ai_engineer/`**
-  * `analysis.py` — Contains data analytics and machine learning logic for predicting race strategies[cite: 1].
+  * `analysis.py` — The engine (`AnalysisEngine`): wires the pipeline stages together and runs them on every telemetry frame.
+  * `pipeline/` — The engine, one module per stage, each only calling the stages below it: `state` (every per-session value, typed), `radio` (when the engineer may speak, tyre and braking calls), `models` (tyre wear, degradation, fuel), `strategy` (race plan, undercut, rival stops, race simulation), `track_map`, `outputs` (web HUD, history database, AI prompt), `laps` (delta, sectors, personal bests, corners), `ingest` (one handler per game packet), and `config` (loads `config.toml`).
+  * `log_setup.py` — Logging: readable terminal lines or JSON lines.
   * `history.py` — Manages historical race logs and database interactions[cite: 1].
   * `packets.py` & `telemetry_stream.py` — Handle decoding and real-time processing of F1 2021 UDP binary packets[cite: 1].
   * `race_radio.py` — Manages speech-to-text input, F1 radio timing logic, and text-to-speech output[cite: 1].
@@ -144,11 +146,24 @@ The project is structured into distinct modules to handle stream ingestion, data
   * Contains unit and integration tests (`test_analysis.py`, `test_hud.py`, `test_race_radio.py`, `test_stream.py`, etc.) to ensure system stability[cite: 1].
   * Includes frontend UI tests like `hud_client_test.js`[cite: 1].
 
+### Settings, logs and development
+
+* **Settings**: `config.toml` at the repo root holds every tuneable threshold (tyre temperatures, when the driver counts as busy, rival-call gaps, simulator runs, voice, AI timeout, ports), each one commented. Every value shipped is the built-in default. Command-line flags override the file; `--config FILE` uses another file. A misspelt key is an error at startup.
+* **Logs**: `--log-level DEBUG|INFO|WARNING|ERROR` (`--debug` = DEBUG), `--log-format json` for one JSON object per line, `--log-file FILE` to also keep them as JSON lines. Logs go to stderr; the live console dashboard stays on stdout.
+* **Install as a package**: `pip install -e ".[dev]"` gives an `f1-race-engineer` command (same flags as `python main.py`) plus ruff and mypy.
+* **Checks** (all run in CI as part of the `tests` check):
+  ```bash
+  ruff check .            # lint
+  ruff format .           # format (CI runs ruff format --check)
+  mypy                    # strict type check of ai_engineer/pipeline
+  cd tests && python -m unittest discover
+  ```
+
 ---
 
 ## ⚙️ Installation Prerequisites
 
-1. **Python 3.10+** installed on your system.
+1. **Python 3.11+** installed on your system.
 2. **UDP Telemetry Configuration**: In the F1 2021 game settings, enable UDP Telemetry, set the port to `20777`, set the send rate to 20Hz, and choose the 2021 format.
 3. **Local LLM Setup (Optional but Recommended)**: Install Ollama and pull a DeepSeek model for zero-latency, offline AI processing:
    ```bash

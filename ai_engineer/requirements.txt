@@ -1,3 +1,5 @@
+# Same packages as [project.dependencies] in pyproject.toml (the source of truth).
+# Kept for: pip install -r ai_engineer/requirements.txt
 pyttsx3>=2.90
 numpy>=1.26
 SpeechRecognition>=3.10
