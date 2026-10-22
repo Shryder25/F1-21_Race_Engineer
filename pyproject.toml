@@ -65,7 +65,6 @@ quote-style = "preserve"    # the code base mixes ' and "; don't churn every str
 # ── mypy: strict on the typed pipeline ────────────────────────────────
 
 [tool.mypy]
-python_version = "3.11"
 mypy_path = "ai_engineer"
 explicit_package_bases = true
 files = ["ai_engineer/pipeline", "ai_engineer/log_setup.py"]
