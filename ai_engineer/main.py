@@ -183,6 +183,20 @@ def export_motec(args) -> int:
     return 0
 
 
+def run_ai_test_from(args, cfg: EngineConfig) -> int:
+    from ai_check import run_ai_test
+
+    load_options = ollama_options(args.ai_context, 0 if args.ai_cpu else args.ai_gpu_layers, args.ai_threads)
+    client = AIClient(
+        cfg.ai.base_url or None,
+        cfg.ai.model or None,
+        args.ai_api_key,
+        cfg.ai.timeout_s,
+        load_options=load_options,
+    )
+    return run_ai_test(client, load_options=load_options, autostart=cfg.ai.autostart, question=args.ai_test)
+
+
 def settings_from(args) -> EngineConfig:
     """config.toml (or --config FILE), with every command-line flag the user gave on top."""
     config = load_config(args.config, required=args.config is not None)
@@ -358,6 +372,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help='Seconds to wait for the model before answering from rules (default: 30; '
         'DeepSeek R1 thinks before it answers)',
+    )
+    ai.add_argument(
+        '--ai-test',
+        nargs='?',
+        const='',
+        default=None,
+        metavar='QUESTION',
+        help='Check the AI without the game: start it, ask one question (or QUESTION), print the '
+        'raw reply, the time it took and why an answer was thrown away, then exit',
     )
     ai.add_argument(
         '--ai-for-commands',
@@ -584,6 +607,8 @@ def main():
         sys.exit(
             push_to_talk.run_game_button_finder(cfg.network.udp_port, args.ptt_mode or push_to_talk.HOLD)
         )
+    if args.ai_test is not None:
+        sys.exit(run_ai_test_from(args, cfg))
     ptt_settings = None
     if not args.no_ptt and not args.no_mic and not args.no_voice:
         try:

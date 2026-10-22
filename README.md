@@ -56,6 +56,7 @@ An AI race engineer for the F1 2021 game. It reads the game's live UDP telemetry
 | `--chatty` | Play every callout, not just the urgent ones |
 | `--calls-per-lap N` | Max proactive callouts per lap (default 4, 0 = no limit) |
 | `--ai-model NAME` | Ollama model; `qwen2.5:3b` is lighter if you get frame drops |
+| `--ai-test` | Check the AI without the game: asks one question and prints the reply, the time it took, or why it failed |
 
 `python main.py --help` lists every option.
 `ollama rm deepseek-r1:8b` run this command if you have installed deepseek r1:8b to uninstall it and then run `--ai-model qwen2.5:3b` in main.py to install the new model. Also use `--ai-cpu` to keep the AI of your GPU completely to reduce frame drops.

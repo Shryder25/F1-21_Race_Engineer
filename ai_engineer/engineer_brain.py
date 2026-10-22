@@ -18,13 +18,15 @@ import re
 from collections.abc import Callable
 
 import session_modes
-from ai_client import AIClient, AITimeout, AIUnavailable
+from ai_client import AIClient, AITimeout, AIUnavailable, radio_line, voice_from_reply
 from log_setup import get_logger
 
 log = get_logger('engineer')
 
 # Radio lines are under 25 words; with thinking off this leaves plenty of room for the JSON.
 RADIO_MAX_TOKENS = 220
+# Last try when the quick answer fails (e.g. a model that thinks anyway): room to finish.
+SLOW_MAX_TOKENS = 900
 
 COMMAND_QUESTIONS = {
     'weather': 'Give me a weather report.',
@@ -42,6 +44,9 @@ UNKNOWN_QUESTION_REPLY = (
     "Copy, can't answer that one without the AI. "
     "Ask me about gaps, tyres, pace, the pit window, weather or strategy."
 )
+# Said instead when the AI is set up but didn't answer, so the driver knows which it was.
+AI_TIMEOUT_REPLY = "Copy, the AI took too long on that one. Ask me again, or ask about gaps, tyres or pace."
+AI_FAILED_REPLY = "Copy, the AI didn't give me an answer, check the console. Ask about gaps, tyres or pace."
 
 SYSTEM_PROMPT = """You are the driver's Formula 1 race engineer speaking over team radio.
 Rules:
@@ -621,6 +626,8 @@ class EngineerBrain:
         self.focused = focused
         self.last_source = None  # 'ai' or 'fallback' or 'rules' - useful for the HUD and tests
         self.last_advice = ''  # longer note from the last AI answer, for an on-screen log
+        self.last_failure = ''  # why the AI gave nothing last time ('' when it answered)
+        self._timed_out = False
 
     def answer(self, command: str) -> str:
         ctx = self.context_provider()
@@ -666,10 +673,18 @@ class EngineerBrain:
         self.last_advice = ''
         if command:
             return rule_based_answer(command, ctx)
-        return UNKNOWN_QUESTION_REPLY
+        if self.client is None or not question:
+            return UNKNOWN_QUESTION_REPLY
+        return AI_TIMEOUT_REPLY if self._timed_out else AI_FAILED_REPLY
 
     def _ask_ai(self, question: str, ctx: dict) -> str | None:
-        """The AI's radio line for a command id or a free-form question, or None."""
+        """The AI's radio line for a command id or a free-form question, or None.
+
+        Tries the quickest way first and falls back step by step. Every failure is logged
+        with its reason (and kept in ``last_failure``) so a silent AI can be diagnosed.
+        """
+        self.last_failure = ''
+        self._timed_out = False
         if self.client is None:
             return None
         system, user = build_prompt(question, ctx, focused=self.focused)
@@ -679,39 +694,62 @@ class EngineerBrain:
             if getattr(self.client, 'supports_fast', False)
             else {}
         )
+        model = getattr(self.client, 'model', '?')
+        failures: list[str] = []
+
+        def too_slow(error):
+            self._timed_out = True
+            self.last_failure = f'timed out ({error})'
+            log.warning(
+                f'AI ({model}) too slow ({error}); answering from rules. '
+                'Try a lighter model (--ai-model qwen2.5:3b) or a longer --ai-timeout.'
+            )
+            return None
+
+        def answered(voice, advice=''):
+            self.last_source = 'ai'
+            self.last_advice = advice
+            return voice
+
         if fast and hasattr(self.client, 'radio_voice'):
             # Local Ollama: stream the reply and speak as soon as the radio line is complete.
             try:
                 voice = self.client.radio_voice(system, user, max_tokens=RADIO_MAX_TOKENS)
             except AITimeout as error:
-                log.warning(f'AI too slow ({error}); answering from rules.')
-                return None
-            except AIUnavailable:
+                return too_slow(error)
+            except AIUnavailable as error:
+                failures.append(f'stream: {error}')
                 voice = None
             voice = clean_radio_text(voice or '')
             if voice:
-                self.last_source = 'ai'
-                self.last_advice = ''
-                return voice
+                return answered(voice)
+            if not failures:
+                failures.append(f"stream: {getattr(self.client, 'last_error', '') or 'no answer'}")
         if hasattr(self.client, 'chat_json'):
             try:
                 result = self.client.chat_json(system, user, **fast)
-                voice = clean_radio_text(str(result.get('voice') or ''))
+                voice = clean_radio_text(radio_line(result) or '')
                 if voice:
-                    self.last_source = 'ai'
-                    self.last_advice = str(result.get('advice') or '').strip()
-                    return voice
+                    advice = str(result.get('advice') or '').strip() if isinstance(result, dict) else ''
+                    return answered(voice, '' if advice == voice else advice)
+                failures.append(f'json: no radio line in {str(result)[:120]}')
             except AITimeout as error:
-                log.warning(f'AI too slow ({error}); answering from rules.')
-                return None
+                return too_slow(error)
             except AIUnavailable as error:
-                log.info(f'AI JSON reply unavailable ({error}); trying plain text.')
-        try:
-            text = clean_radio_text(self.client.chat(system, user, **fast))
-            if text:
-                self.last_source = 'ai'
-                self.last_advice = ''
-                return text
-        except AIUnavailable as error:
-            log.warning(f'AI unavailable ({error}); answering from rules.')
+                failures.append(f'json: {error}')
+        attempts: list[tuple[str, dict]] = [('text', fast)]
+        if fast:  # the model may think despite being told not to: give it room to finish
+            attempts.append(('text with thinking', {'max_tokens': SLOW_MAX_TOKENS}))
+        for step, options in attempts:
+            try:
+                text = clean_radio_text(voice_from_reply(self.client.chat(system, user, **options)) or '')
+                if text:
+                    return answered(text)
+                failures.append(f'{step}: empty answer')
+            except AITimeout as error:
+                return too_slow(error)
+            except AIUnavailable as error:
+                failures.append(f'{step}: {error}')
+        self.last_failure = '; '.join(failures)
+        log.warning(f'AI ({model}) gave no usable answer, answering from rules. Reasons: {self.last_failure}')
         return None

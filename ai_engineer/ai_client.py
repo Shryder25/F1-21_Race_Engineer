@@ -30,7 +30,9 @@ DEFAULT_MODEL = 'deepseek-r1:8b'
 DEFAULT_NUM_CTX = 4096
 
 # The radio line, complete, inside a streamed {"voice": "...", ...} reply.
-_VOICE_DONE = re.compile(r'"voice"\s*:\s*"((?:[^"\\]|\\.)*)"')
+_VOICE_DONE = re.compile(r'"voice"\s*:\s*"((?:[^"\\]|\\.)*)"', re.IGNORECASE)
+# Keys a model may use for its answer instead of "voice" (small models drift from the format).
+_ANSWER_KEYS = ('voice', 'radio', 'answer', 'response', 'reply', 'message', 'text', 'advice')
 
 _THINK_BLOCK = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
 _THINK_OPEN = re.compile(r'<think>.*', re.DOTALL | re.IGNORECASE)
@@ -90,6 +92,62 @@ def voice_from_partial(text: str) -> str | None:
         return match.group(1)
 
 
+def _json_object(text: str):
+    """The JSON value in ``text`` (also when wrapped in prose or a code fence), else None."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except ValueError:
+            pass
+    return None
+
+
+def radio_line(value) -> str | None:
+    """The spoken answer in a parsed JSON reply: "voice", or another answer-like text field."""
+    if isinstance(value, str):
+        return value.strip() or None
+    if not isinstance(value, dict):
+        return None
+    by_key = {str(key).lower(): item for key, item in value.items()}
+    for key in _ANSWER_KEYS:
+        item = by_key.get(key)
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+    for item in value.values():
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+    return None
+
+
+def voice_from_reply(text: str) -> str | None:
+    """The radio line in a finished reply: JSON {"voice": ...}, another text field, or plain text."""
+    text = strip_reasoning(text)
+    if not text:
+        return None
+    parsed = _json_object(text)
+    if parsed is not None:
+        return radio_line(parsed)
+    if text.lstrip().startswith(('{', '[')):
+        return voice_from_partial(text)  # JSON cut off: keep the voice line if it was finished
+    return text
+
+
+def _error_text(error) -> str:
+    """Readable reason for a failed request, including Ollama's own message ("model not found")."""
+    if isinstance(error, urllib.error.HTTPError):
+        try:
+            detail = json.loads(error.read().decode('utf-8', 'replace')).get('error')
+        except (ValueError, AttributeError, OSError):
+            detail = None
+        return f'HTTP {error.code}: {detail or error.reason}'
+    return str(error)
+
+
 class AIClient:
     def __init__(
         self,
@@ -108,6 +166,8 @@ class AIClient:
         # DeepSeek R1's long "thinking" off, which is most of the wait.
         self.ollama_root = ollama_root(self.base_url)
         self.load_options = ollama_options() if load_options is None else dict(load_options)
+        self.last_error = ''  # why the last attempt failed, for the log and --ai-test
+        self.last_reply = ''  # the model's raw text from the last streamed answer
 
     supports_fast = True
 
@@ -134,7 +194,14 @@ class AIClient:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode('utf-8'))
-            return payload['message']['content']
+            message = payload['message']
+            content = message.get('content') or ''
+            thinking = message.get('thinking') or ''
+            # Some Ollama versions put a thinking model's whole JSON reply in "thinking".
+            self.last_reply = content or thinking
+            if json_mode and not content.strip() and voice_from_partial(thinking):
+                return thinking
+            return content
         except (
             urllib.error.URLError,
             TimeoutError,
@@ -146,7 +213,7 @@ class AIClient:
         ) as error:
             if _is_timeout(error):
                 raise AITimeout(str(error)) from error
-            raise AIUnavailable(str(error)) from error
+            raise AIUnavailable(_error_text(error)) from error
 
     def _fast(self, system, user, temperature, max_tokens, json_mode) -> str | None:
         """Native Ollama call with thinking off; None means use the OpenAI-compatible path."""
@@ -156,13 +223,14 @@ class AIClient:
             return self._post_native(system, user, temperature, max_tokens, json_mode, think=False)
         except AITimeout:
             raise
-        except AIUnavailable:
-            pass
+        except AIUnavailable as error:
+            self.last_error = str(error)
         try:  # e.g. an older Ollama or a model that rejects the think switch
             return self._post_native(system, user, temperature, max_tokens, json_mode, think=None)
         except AITimeout:
             raise
-        except AIUnavailable:
+        except AIUnavailable as error:
+            self.last_error = str(error)
             return None
 
     def _stream_voice(
@@ -191,7 +259,8 @@ class AIClient:
             headers={'Content-Type': 'application/json'},
         )
         deadline = time.monotonic() + self.timeout
-        content = ''
+        content = thinking = ''
+        done_reason = None
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 for raw in response:
@@ -200,11 +269,15 @@ class AIClient:
                     chunk = json.loads(raw.decode('utf-8'))
                     if chunk.get('error'):
                         raise AIUnavailable(str(chunk['error']))
-                    content += (chunk.get('message') or {}).get('content') or ''
+                    message = chunk.get('message') or {}
+                    content += message.get('content') or ''
+                    thinking += message.get('thinking') or ''
                     voice = voice_from_partial(content)
                     if voice is not None:
+                        self.last_reply = content
                         return voice
                     if chunk.get('done'):
+                        done_reason = chunk.get('done_reason')
                         break
                     if time.monotonic() > deadline:
                         raise AITimeout(f'no answer within {self.timeout:g} s')
@@ -222,22 +295,27 @@ class AIClient:
         ) as error:
             if _is_timeout(error):
                 raise AITimeout(str(error)) from error
-            raise AIUnavailable(str(error)) from error
-        text = strip_reasoning(content)
-        try:
-            voice = json.loads(text).get('voice')
-        except (ValueError, AttributeError):
-            voice = None
-        if not voice:
-            raise AIUnavailable('reply had no voice line')
-        return str(voice)
+            raise AIUnavailable(_error_text(error)) from error
+        self.last_reply = content or thinking
+        # Some Ollama versions file a thinking model's whole JSON reply under "thinking".
+        voice = voice_from_reply(content) or voice_from_partial(thinking)
+        if voice:
+            return voice
+        if not strip_reasoning(content):
+            if thinking or '<think>' in content.lower():
+                raise AIUnavailable(f'the model only thought and gave no answer ({max_tokens} token budget)')
+            raise AIUnavailable('the model sent an empty reply')
+        if done_reason == 'length':
+            raise AIUnavailable(f'the reply was cut off at {max_tokens} tokens: {content[:120]!r}')
+        raise AIUnavailable(f'the reply had no radio line: {content[:120]!r}')
 
     def radio_voice(
         self, system: str, user: str, *, temperature: float = 0.3, max_tokens: int = 220
     ) -> str | None:
         """Fastest path for a spoken answer on a local Ollama: streamed, thinking off.
 
-        Returns None when the server isn't a local Ollama, so the caller uses chat_json().
+        Returns None when the server isn't a local Ollama (the caller uses chat_json()) or the
+        reply was unusable; ``last_error`` then says why.
         """
         if not self.ollama_root:
             return None
@@ -245,13 +323,14 @@ class AIClient:
             return self._stream_voice(system, user, temperature, max_tokens, think=False)
         except AITimeout:
             raise
-        except AIUnavailable:
-            pass
+        except AIUnavailable as error:
+            self.last_error = str(error)
         try:  # an older Ollama or a model that rejects the think switch
             return self._stream_voice(system, user, temperature, max_tokens, think=None)
         except AITimeout:
             raise
-        except AIUnavailable:
+        except AIUnavailable as error:
+            self.last_error = str(error)
             return None
 
     def _post(self, system: str, user: str, temperature: float, max_tokens: int, json_mode: bool) -> str:
@@ -273,7 +352,8 @@ class AIClient:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode('utf-8'))
-            return payload['choices'][0]['message']['content']
+            self.last_reply = payload['choices'][0]['message']['content'] or ''
+            return self.last_reply
         except (
             urllib.error.URLError,
             TimeoutError,
@@ -285,7 +365,7 @@ class AIClient:
         ) as error:
             if _is_timeout(error):
                 raise AITimeout(str(error)) from error
-            raise AIUnavailable(str(error)) from error
+            raise AIUnavailable(_error_text(error)) from error
 
     def chat(
         self, system: str, user: str, *, temperature: float = 0.3, max_tokens: int = 600, fast: bool = False
@@ -328,15 +408,8 @@ class AIClient:
                 content = self._post(system, user, temperature, max_tokens, json_mode=False)
         text = strip_reasoning(content)
         if not text:
-            raise AIUnavailable('empty response')
-        try:
-            return json.loads(text)
-        except ValueError:
-            pass
-        match = re.search(r'\{.*\}', text, re.DOTALL)  # model wrapped the JSON in prose
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except ValueError:
-                pass
-        raise AIUnavailable('response was not valid JSON')
+            raise AIUnavailable('empty response (the model may have used its whole budget thinking)')
+        parsed = _json_object(text)  # also finds JSON the model wrapped in prose
+        if isinstance(parsed, dict):
+            return parsed
+        raise AIUnavailable(f'response was not valid JSON: {text[:120]!r}')
