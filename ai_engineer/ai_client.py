@@ -15,6 +15,7 @@ import json
 import os
 import re
 import socket
+import time
 import urllib.error
 import urllib.request
 
@@ -22,6 +23,14 @@ from ai_launcher import KEEP_ALIVE, ollama_root
 
 DEFAULT_BASE_URL = 'http://localhost:11434/v1'
 DEFAULT_MODEL = 'deepseek-r1:8b'
+# Context window asked of Ollama. Its own default (2048 on many versions) is smaller than the
+# system prompt plus a full race's data, and Ollama silently cuts the start of a prompt that
+# doesn't fit: the model then really "doesn't have that information". 4096 fits a full race
+# with room for the answer without the extra graphics memory a bigger window would take.
+DEFAULT_NUM_CTX = 4096
+
+# The radio line, complete, inside a streamed {"voice": "...", ...} reply.
+_VOICE_DONE = re.compile(r'"voice"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
 _THINK_BLOCK = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
 _THINK_OPEN = re.compile(r'<think>.*', re.DOTALL | re.IGNORECASE)
@@ -48,9 +57,40 @@ def strip_reasoning(text: str) -> str:
     return text.strip()
 
 
+def ollama_options(num_ctx: int | None = DEFAULT_NUM_CTX, gpu_layers: int | None = None,
+                   threads: int | None = None) -> dict:
+    """Model options that decide how Ollama loads the model.
+
+    Every request must send the same ones (the launcher's preload and keep-warm pings too):
+    a request with different load options makes Ollama reload the whole model first.
+    ``gpu_layers`` 0 keeps the model off the graphics card so the game keeps all of it;
+    ``threads`` caps the CPU cores Ollama uses for whatever runs on the CPU.
+    """
+    options = {}
+    if num_ctx:
+        options['num_ctx'] = int(num_ctx)
+    if gpu_layers is not None:
+        options['num_gpu'] = int(gpu_layers)
+    if threads:
+        options['num_thread'] = int(threads)
+    return options
+
+
+def voice_from_partial(text: str) -> str | None:
+    """The finished "voice" string from a JSON reply that may still be arriving, else None."""
+    match = _VOICE_DONE.search(text or '')
+    if not match:
+        return None
+    try:
+        return json.loads(f'"{match.group(1)}"')
+    except ValueError:
+        return match.group(1)
+
+
 class AIClient:
     def __init__(self, base_url: str | None = None, model: str | None = None,
-                 api_key: str | None = None, timeout: float = 15.0):
+                 api_key: str | None = None, timeout: float = 15.0, *,
+                 load_options: dict | None = None):
         self.base_url = (base_url or os.environ.get('F1_AI_BASE_URL') or DEFAULT_BASE_URL).rstrip('/')
         self.model = model or os.environ.get('F1_AI_MODEL') or DEFAULT_MODEL
         self.api_key = api_key or os.environ.get('F1_AI_API_KEY') or 'ollama'
@@ -58,6 +98,7 @@ class AIClient:
         # Local Ollama gets the native API for quick radio answers: it can switch
         # DeepSeek R1's long "thinking" off, which is most of the wait.
         self.ollama_root = ollama_root(self.base_url)
+        self.load_options = ollama_options() if load_options is None else dict(load_options)
 
     supports_fast = True
 
@@ -69,7 +110,7 @@ class AIClient:
                          {'role': 'user', 'content': user}],
             'stream': False,
             'keep_alive': KEEP_ALIVE,
-            'options': {'temperature': temperature, 'num_predict': max_tokens},
+            'options': {**self.load_options, 'temperature': temperature, 'num_predict': max_tokens},
         }
         if think is not None:
             body['think'] = think
@@ -100,6 +141,83 @@ class AIClient:
             pass
         try:   # e.g. an older Ollama or a model that rejects the think switch
             return self._post_native(system, user, temperature, max_tokens, json_mode, think=None)
+        except AITimeout:
+            raise
+        except AIUnavailable:
+            return None
+
+    def _stream_voice(self, system: str, user: str, temperature: float, max_tokens: int,
+                      think: bool | None) -> str:
+        """Stream a JSON radio reply and stop reading as soon as its "voice" line is complete.
+
+        The spoken line comes first in the reply, so this returns before the model writes the
+        rest (the on-screen note), and closing the stream makes Ollama stop generating, which
+        frees the graphics card for the game sooner.
+        """
+        body = {
+            'model': self.model,
+            'messages': [{'role': 'system', 'content': system},
+                         {'role': 'user', 'content': user}],
+            'stream': True,
+            'format': 'json',
+            'keep_alive': KEEP_ALIVE,
+            'options': {**self.load_options, 'temperature': temperature, 'num_predict': max_tokens},
+        }
+        if think is not None:
+            body['think'] = think
+        request = urllib.request.Request(
+            f'{self.ollama_root}/api/chat', data=json.dumps(body).encode('utf-8'), method='POST',
+            headers={'Content-Type': 'application/json'})
+        deadline = time.monotonic() + self.timeout
+        content = ''
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                for raw in response:
+                    if not raw.strip():
+                        continue
+                    chunk = json.loads(raw.decode('utf-8'))
+                    if chunk.get('error'):
+                        raise AIUnavailable(str(chunk['error']))
+                    content += (chunk.get('message') or {}).get('content') or ''
+                    voice = voice_from_partial(content)
+                    if voice is not None:
+                        return voice
+                    if chunk.get('done'):
+                        break
+                    if time.monotonic() > deadline:
+                        raise AITimeout(f'no answer within {self.timeout:g} s')
+        except AIUnavailable:
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError,
+                KeyError, IndexError, TypeError, AttributeError) as error:
+            if _is_timeout(error):
+                raise AITimeout(str(error)) from error
+            raise AIUnavailable(str(error)) from error
+        text = strip_reasoning(content)
+        try:
+            voice = json.loads(text).get('voice')
+        except (ValueError, AttributeError):
+            voice = None
+        if not voice:
+            raise AIUnavailable('reply had no voice line')
+        return str(voice)
+
+    def radio_voice(self, system: str, user: str, *, temperature: float = 0.3,
+                    max_tokens: int = 220) -> str | None:
+        """Fastest path for a spoken answer on a local Ollama: streamed, thinking off.
+
+        Returns None when the server isn't a local Ollama, so the caller uses chat_json().
+        """
+        if not self.ollama_root:
+            return None
+        try:
+            return self._stream_voice(system, user, temperature, max_tokens, think=False)
+        except AITimeout:
+            raise
+        except AIUnavailable:
+            pass
+        try:   # an older Ollama or a model that rejects the think switch
+            return self._stream_voice(system, user, temperature, max_tokens, think=None)
         except AITimeout:
             raise
         except AIUnavailable:
