@@ -13,7 +13,10 @@ You can ask in your own words, not just the fixed commands:
 Free-form questions need the AI brain (DeepSeek / Ollama / Groq, see the main README).
 If the AI is offline, questions that match a fixed command (gaps, tyres, pace, pit
 window, weather, strategy, threats) still get a rule-based answer; anything else gets
-a short "can't answer that without the AI" reply.
+a short "can't answer that without the AI" reply. If the AI is on but didn't answer, you
+hear "the AI took too long" or "the AI didn't give me an answer" instead, and the console
+says why. Run `python main.py --ai-test` (add `--ai-model` if you use one) to check it
+without the game.
 
 ## 1. Install
 
@@ -143,6 +146,11 @@ while you are using the button.
 - **Wrong controller**: pass `--ptt-device` with part of the name shown by `--find-ptt-button`.
 - **"Say again, didn't get that"**: speech was not recognised. Talk after pressing, keep the
   button held until you finish, and check `--mic-index`. A tap shorter than 0.3 s is ignored.
+- **"The AI took too long"**: the model didn't answer within `--ai-timeout` (30 s). Common
+  with `--ai-cpu` while the game is running. Try a longer `--ai-timeout`, drop `--ai-cpu`, or
+  a lighter model.
+- **"The AI didn't give me an answer"**: the console line `AI (...) gave no usable answer`
+  says why (model not installed, empty reply...). `python main.py --ai-test` shows the raw reply.
 - **Unplugged mid-session**: the engineer notices and picks the controller back up when it
   is plugged in again.
 

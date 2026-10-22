@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 import push_to_talk as ptt
-from engineer_brain import UNKNOWN_QUESTION_REPLY, EngineerBrain
+from engineer_brain import AI_FAILED_REPLY, UNKNOWN_QUESTION_REPLY, EngineerBrain
 from voice_commands import ACK_TEXT, QUESTION, CommandDispatcher, VoiceCommandListener
 from voice_engine import Priority
 
@@ -349,8 +349,10 @@ class FreeFormQuestionTests(unittest.TestCase):
             brain.answer_question("what's the gap to the guy ahead", 'gap_ahead'),
             'Gap to Hamilton ahead is 1.2.',
         )
-        self.assertEqual(brain.answer_question('is my front wing damaged'), UNKNOWN_QUESTION_REPLY)
+        self.assertEqual(brain.answer_question('is my front wing damaged'), AI_FAILED_REPLY)
         self.assertEqual(brain.last_source, 'fallback')
+        no_ai = EngineerBrain(lambda: RACE_CTX, None)
+        self.assertEqual(no_ai.answer_question('is my front wing damaged'), UNKNOWN_QUESTION_REPLY)
 
     def test_session_mode_still_answers_instantly(self):
         client = FakeClient('should not be used')
