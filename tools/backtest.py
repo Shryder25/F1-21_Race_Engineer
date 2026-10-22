@@ -57,13 +57,13 @@ for _path in (ROOT / 'ai_engineer', GOLDEN):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-import analysis as analysis_module                  # noqa: E402
 import race_strategy                                # noqa: E402
 import rival_strategy                               # noqa: E402
 import harness                                      # noqa: E402
 import recording                                    # noqa: E402
 import session_history                              # noqa: E402
 import telemetry_stream as stream_module            # noqa: E402
+import web_hud                                      # noqa: E402
 from analysis import AnalysisEngine                 # noqa: E402
 from history import TelemetryHistory                # noqa: E402
 from packets import (HEADER_SIZE, TRACK_NAMES, PacketHeader, parse_all_car_status,  # noqa: E402
@@ -340,7 +340,7 @@ class Segment:
 def no_hud():
     """Skip the web HUD state updates during a replay: nobody is watching, and deep-copying
     the HUD state every frame is most of the replay time."""
-    modules = (analysis_module, stream_module)
+    modules = (web_hud, stream_module)   # the pipeline stages call web_hud.update_web_state
     saved = [(m, m.update_web_state) for m in modules]
     try:
         for module in modules:

@@ -116,7 +116,7 @@ class RecordingVoice:
 
 @contextlib.contextmanager
 def simulated_time(clock: SimClock):
-    modules = (analysis_module, race_radio_module, stream_module, web_hud)
+    modules = (*analysis_module.TIMED_MODULES, race_radio_module, stream_module, web_hud)
     saved = [(m, m.time) for m in modules]
     saved_state = copy.deepcopy(web_hud.dashboard_state)
     try:
