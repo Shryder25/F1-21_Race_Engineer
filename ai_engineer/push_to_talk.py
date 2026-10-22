@@ -46,9 +46,11 @@ HAT_DIRECTIONS = {'up': (0, 1), 'down': (0, -1), 'left': (-1, 0), 'right': (1, 0
 # Button binding
 # ──────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class Binding:
     """A button (``kind='button'``) or a D-pad/hat direction (``kind='hat'``)."""
+
     kind: str
     index: int
     direction: str | None = None
@@ -87,6 +89,7 @@ def parse_binding(text) -> Binding:
 # Saved settings (written by --find-ptt-button)
 # ──────────────────────────────────────────────
 
+
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict | None:
     try:
         data = json.loads(Path(path).read_text(encoding='utf-8'))
@@ -102,17 +105,21 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict | None:
     return data
 
 
-def save_config(binding: Binding, device: str | None, mode: str = HOLD,
-                path: Path = DEFAULT_CONFIG_PATH) -> Path:
+def save_config(
+    binding: Binding, device: str | None, mode: str = HOLD, path: Path = DEFAULT_CONFIG_PATH
+) -> Path:
     path = Path(path)
-    path.write_text(json.dumps({'button': binding.label, 'device': device, 'mode': mode},
-                               indent=2) + '\n', encoding='utf-8')
+    path.write_text(
+        json.dumps({'button': binding.label, 'device': device, 'mode': mode}, indent=2) + '\n',
+        encoding='utf-8',
+    )
     return path
 
 
 # ──────────────────────────────────────────────
 # Joystick access (pygame)
 # ──────────────────────────────────────────────
+
 
 class PygameJoysticks:
     """Minimal pygame wrapper. Create and use it from one thread only."""
@@ -123,16 +130,16 @@ class PygameJoysticks:
         os.environ.setdefault('SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS', '1')
         os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
         import pygame
+
         self.pygame = pygame
         try:
-            pygame.display.init()       # the event pump needs it; no window is opened
+            pygame.display.init()  # the event pump needs it; no window is opened
         except pygame.error:
             os.environ['SDL_VIDEODRIVER'] = 'dummy'
             pygame.display.init()
         pygame.joystick.init()
         self._open = {}
-        self._device_events = {getattr(pygame, 'JOYDEVICEADDED', -1),
-                               getattr(pygame, 'JOYDEVICEREMOVED', -1)}
+        self._device_events = {getattr(pygame, 'JOYDEVICEADDED', -1), getattr(pygame, 'JOYDEVICEREMOVED', -1)}
 
     def poll(self) -> bool:
         """Read new input. True when a controller was plugged in or removed."""
@@ -170,13 +177,16 @@ def _device_matches(device, index: int, joystick) -> bool:
 
 
 def describe_devices(joysticks) -> list[str]:
-    return [f'  [{i}] {j.get_name()}  ({j.get_numbuttons()} buttons, {j.get_numhats()} hats)'
-            for i, j in enumerate(joysticks)]
+    return [
+        f'  [{i}] {j.get_name()}  ({j.get_numbuttons()} buttons, {j.get_numhats()} hats)'
+        for i, j in enumerate(joysticks)
+    ]
 
 
 # ──────────────────────────────────────────────
 # Button watcher
 # ──────────────────────────────────────────────
+
 
 class ButtonWatcher:
     """Polls the bound button and calls ``on_start`` / ``on_stop`` for the radio.
@@ -185,9 +195,20 @@ class ButtonWatcher:
     A radio left open is closed after ``max_open_s`` so a forgotten toggle can't record forever.
     """
 
-    def __init__(self, binding: Binding, on_start, on_stop, *, device=None, mode: str = HOLD,
-                 backend_factory=PygameJoysticks, poll_hz: float = 100, debounce_s: float = 0.05,
-                 max_open_s: float = 15.0, rescan_s: float = 2.0):
+    def __init__(
+        self,
+        binding: Binding,
+        on_start,
+        on_stop,
+        *,
+        device=None,
+        mode: str = HOLD,
+        backend_factory=PygameJoysticks,
+        poll_hz: float = 100,
+        debounce_s: float = 0.05,
+        max_open_s: float = 15.0,
+        rescan_s: float = 2.0,
+    ):
         if mode not in MODES:
             raise ValueError(f'mode must be one of {MODES}')
         self.binding = binding
@@ -219,7 +240,7 @@ class ButtonWatcher:
         if pressed == self._pressed:
             return
         if self._last_edge is not None and now - self._last_edge < self.debounce_s:
-            return                                  # contact bounce
+            return  # contact bounce
         self._pressed = pressed
         self._last_edge = now
         if self._wait_release:
@@ -230,7 +251,7 @@ class ButtonWatcher:
                 self._open(now)
             elif not pressed and self.is_open:
                 self._close()
-        elif pressed:                               # toggle: act on the press only
+        elif pressed:  # toggle: act on the press only
             if self.is_open:
                 self._close()
             else:
@@ -261,7 +282,7 @@ class ButtonWatcher:
     def _run(self):
         try:
             backend = self.backend_factory()
-        except Exception as error:      # pygame missing or no input subsystem
+        except Exception as error:  # pygame missing or no input subsystem
             self._error = error
             self._ready.set()
             return
@@ -281,7 +302,7 @@ class ButtonWatcher:
                             log.info('Controller disconnected, waiting for it to come back.')
                         joystick, next_scan = found, now + self.rescan_s
                     pressed = joystick is not None and self.binding.is_pressed(joystick)
-                except Exception as error:   # unplugged mid-read
+                except Exception as error:  # unplugged mid-read
                     if joystick is not None:
                         log.warning(f'Lost the controller ({error}).')
                     joystick, pressed, next_scan = None, False, now + self.rescan_s
@@ -311,6 +332,7 @@ class ButtonWatcher:
 # Microphone recorder
 # ──────────────────────────────────────────────
 
+
 class MicRecorder:
     """Records between ``begin()`` and ``end()``.
 
@@ -318,9 +340,16 @@ class MicRecorder:
     outside a press is only kept for ``preroll_s`` in memory and then thrown away.
     """
 
-    def __init__(self, device_index: int | None = None, *, preroll_s: float = 0.3,
-                 max_s: float = 15.0, min_s: float = 0.3, microphone_factory=None,
-                 audio_factory=None):
+    def __init__(
+        self,
+        device_index: int | None = None,
+        *,
+        preroll_s: float = 0.3,
+        max_s: float = 15.0,
+        min_s: float = 0.3,
+        microphone_factory=None,
+        audio_factory=None,
+    ):
         self.device_index = device_index
         self.preroll_s = preroll_s
         self.max_s = max_s
@@ -346,15 +375,16 @@ class MicRecorder:
         try:
             self._mic = (self._microphone_factory or sr.Microphone)(device_index=self.device_index)
             source = self._mic.__enter__()
-        except Exception as error:      # no microphone / PyAudio missing
+        except Exception as error:  # no microphone / PyAudio missing
             log.warning(f'Microphone unavailable: {error}')
             return False
         self._audio_factory = self._audio_factory or sr.AudioData
         self.sample_rate, self.sample_width = source.SAMPLE_RATE, source.SAMPLE_WIDTH
         self.chunk = source.CHUNK
         self._preroll = deque(maxlen=max(1, int(self.preroll_s * self.sample_rate / self.chunk)))
-        self._thread = threading.Thread(target=self._read_loop, args=(source,),
-                                        name='PushToTalkMic', daemon=True)
+        self._thread = threading.Thread(
+            target=self._read_loop, args=(source,), name='PushToTalkMic', daemon=True
+        )
         self._thread.start()
         return True
 
@@ -416,13 +446,14 @@ class MicRecorder:
 # Glue
 # ──────────────────────────────────────────────
 
+
 class PushToTalk:
     """Button down: record. Button up: transcribe in the background and ask the engineer."""
 
     def __init__(self, dispatcher, recorder, transcriber, *, voice=None, on_log=None):
         self.dispatcher = dispatcher
         self.recorder = recorder
-        self.transcriber = transcriber        # callable(audio) -> text or None
+        self.transcriber = transcriber  # callable(audio) -> text or None
         self.voice = voice
         self.on_log = on_log
         self.last_active = None
@@ -477,8 +508,9 @@ class Settings:
     mode: str = HOLD
 
 
-def resolve_settings(button=None, device=None, mode=None,
-                     config_path: Path = DEFAULT_CONFIG_PATH) -> Settings | None:
+def resolve_settings(
+    button=None, device=None, mode=None, config_path: Path = DEFAULT_CONFIG_PATH
+) -> Settings | None:
     """Command-line values win over the saved push_to_talk.json. None when no button is set."""
     saved = load_config(config_path) or {}
     button = button if button is not None else saved.get('button')
@@ -508,36 +540,58 @@ class RadioButton:
         self.ptt.shutdown()
 
 
-def start(settings: Settings, dispatcher, *, voice=None, engine: str = 'google',
-          mic_index: int | None = None, language: str = 'en-GB', on_log=None,
-          backend_factory=PygameJoysticks, recorder=None, recognizer=None) -> RadioButton | None:
+def start(
+    settings: Settings,
+    dispatcher,
+    *,
+    voice=None,
+    engine: str = 'google',
+    mic_index: int | None = None,
+    language: str = 'en-GB',
+    on_log=None,
+    backend_factory=PygameJoysticks,
+    recorder=None,
+    recognizer=None,
+) -> RadioButton | None:
     """Start the radio button. None (with a console message) if the mic or controller is unavailable."""
     from voice_commands import transcribe
+
     recorder = recorder or MicRecorder(mic_index)
     if not recorder.start():
         return None
     if recognizer is None:
         import speech_recognition as sr
+
         recognizer = sr.Recognizer()
-    ptt = PushToTalk(dispatcher, recorder,
-                     lambda audio: transcribe(recognizer, audio, engine, language),
-                     voice=voice, on_log=on_log)
-    watcher = ButtonWatcher(settings.binding, ptt.on_start, ptt.on_stop, device=settings.device,
-                            mode=settings.mode, backend_factory=backend_factory)
+    ptt = PushToTalk(
+        dispatcher,
+        recorder,
+        lambda audio: transcribe(recognizer, audio, engine, language),
+        voice=voice,
+        on_log=on_log,
+    )
+    watcher = ButtonWatcher(
+        settings.binding,
+        ptt.on_start,
+        ptt.on_stop,
+        device=settings.device,
+        mode=settings.mode,
+        backend_factory=backend_factory,
+    )
     if not watcher.start():
         recorder.stop()
         ptt.shutdown()
         return None
     where = f' on "{settings.device}"' if settings.device else ''
     action = 'Hold' if settings.mode == HOLD else 'Press'
-    log.info(f'{action} button {settings.binding.label}{where} to talk to the engineer. '
-          'Ask anything.')
+    log.info(f'{action} button {settings.binding.label}{where} to talk to the engineer. Ask anything.')
     return RadioButton(watcher, recorder, ptt)
 
 
 # ──────────────────────────────────────────────
 # "Press the button you want" helper
 # ──────────────────────────────────────────────
+
 
 def _snapshot(joystick):
     buttons = tuple(bool(joystick.get_button(i)) for i in range(joystick.get_numbuttons()))
@@ -552,14 +606,15 @@ def _hat_direction(value):
     return None
 
 
-def find_button(backend, *, timeout_s: float = 30.0, out=print, clock=time.monotonic,
-                sleep=time.sleep):
+def find_button(backend, *, timeout_s: float = 30.0, out=print, clock=time.monotonic, sleep=time.sleep):
     """Wait for a button press on any controller. Returns (device index, device name, Binding) or None."""
     backend.poll()
     joysticks = backend.devices()
     if not joysticks:
-        out('No wheel or controller found. Plug it in (and close apps that grab it exclusively), '
-            'then run this again.')
+        out(
+            'No wheel or controller found. Plug it in (and close apps that grab it exclusively), '
+            'then run this again.'
+        )
         return None
     out('Controllers found:')
     for line in describe_devices(joysticks):
@@ -567,7 +622,9 @@ def find_button(backend, *, timeout_s: float = 30.0, out=print, clock=time.monot
     out(f'\nPress and release the button you want as the radio button (within {timeout_s:.0f} s)...')
     sleep(0.2)
     backend.poll()
-    baseline = [_snapshot(j) for j in joysticks]   # ignores buttons that are always on (shifters, mode switches)
+    baseline = [
+        _snapshot(j) for j in joysticks
+    ]  # ignores buttons that are always on (shifters, mode switches)
     deadline = clock() + timeout_s
     while clock() < deadline:
         if backend.poll():
@@ -589,8 +646,9 @@ def find_button(backend, *, timeout_s: float = 30.0, out=print, clock=time.monot
     return None
 
 
-def run_button_finder(mode: str = HOLD, config_path: Path = DEFAULT_CONFIG_PATH,
-                      backend_factory=PygameJoysticks) -> int:
+def run_button_finder(
+    mode: str = HOLD, config_path: Path = DEFAULT_CONFIG_PATH, backend_factory=PygameJoysticks
+) -> int:
     """CLI entry for ``python main.py --find-ptt-button``. Returns a process exit code."""
     try:
         backend = backend_factory()
@@ -613,4 +671,5 @@ def run_button_finder(mode: str = HOLD, config_path: Path = DEFAULT_CONFIG_PATH,
 
 if __name__ == '__main__':
     import sys
+
     raise SystemExit(run_button_finder(TOGGLE if '--toggle' in sys.argv else HOLD))

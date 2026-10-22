@@ -80,6 +80,7 @@ log = get_logger('main')
 # Console Display
 # ──────────────────────────────────────────────
 
+
 def print_telemetry_banner(port: int = 20777):
     """Print the startup banner (console UI on stdout, like the live dashboard; not a log)."""
     print("=" * 60)
@@ -96,14 +97,12 @@ def print_telemetry_banner(port: int = 20777):
 def format_tyre_temps(telemetry: CarTelemetryData) -> str:
     """Format tyre temperatures for console display."""
     t = telemetry.tyres_surface_temperature
-    return (
-        f"  FL: {t[2]:3d} C  |  FR: {t[3]:3d} C\n"
-        f"  RL: {t[0]:3d} C  |  RR: {t[1]:3d} C"
-    )
+    return f"  FL: {t[2]:3d} C  |  FR: {t[3]:3d} C\n  RL: {t[0]:3d} C  |  RR: {t[1]:3d} C"
 
 
-def print_live_dashboard(telemetry: CarTelemetryData, lap: LapData,
-                         session: SessionData | None, delta_ms: int | None):
+def print_live_dashboard(
+    telemetry: CarTelemetryData, lap: LapData, session: SessionData | None, delta_ms: int | None
+):
     """Print a compact live dashboard to the console."""
     # Build the display
     speed = telemetry.speed
@@ -129,7 +128,7 @@ def print_live_dashboard(telemetry: CarTelemetryData, lap: LapData,
     # Delta
     if delta_ms is not None:
         delta_sign = "+" if delta_ms > 0 else "-"
-        delta_str = f"{delta_sign}{abs(delta_ms)/1000:.3f}s"
+        delta_str = f"{delta_sign}{abs(delta_ms) / 1000:.3f}s"
     else:
         delta_str = "---"
 
@@ -161,17 +160,22 @@ def print_live_dashboard(telemetry: CarTelemetryData, lap: LapData,
 # Main UDP Listener
 # ──────────────────────────────────────────────
 
+
 def export_motec(args) -> int:
     """--export-motec: write a channel-store file out for MoTeC i2 and return an exit code."""
     try:
         from motec import export_session
-        result = export_session(args.export_motec, args.motec_out, rate_hz=args.motec_rate,
-                                fmt=args.motec_format)
+
+        result = export_session(
+            args.export_motec, args.motec_out, rate_hz=args.motec_rate, fmt=args.motec_format
+        )
     except (OSError, ValueError, RuntimeError) as e:
         log.error(f"MoTeC export failed: {e}")
         return 1
-    log.info(f"MoTeC: wrote {result['path']} ({result['channels']} channels at {result['rate_hz']} Hz, "
-             f"{result['laps']} laps)")
+    log.info(
+        f"MoTeC: wrote {result['path']} ({result['channels']} channels at {result['rate_hz']} Hz, "
+        f"{result['laps']} laps)"
+    )
     if result.get('ldx'):
         log.info(f"MoTeC: wrote {result['ldx']} (lap markers; keep it next to the .ld)")
     return 0
@@ -180,137 +184,282 @@ def export_motec(args) -> int:
 def settings_from(args) -> EngineConfig:
     """config.toml (or --config FILE), with every command-line flag the user gave on top."""
     config = load_config(args.config, required=args.config is not None)
-    return apply_overrides(config, {
-        'network.udp_port': args.port,
-        'voice.rate_wpm': args.voice_rate,
-        'voice.tts': args.tts,
-        'voice.kokoro_voice': args.kokoro_voice,
-        'voice.kokoro_speed': args.kokoro_speed,
-        'voice.radio_fx': False if args.no_radio_fx else None,
-        'simulation.enabled': False if args.no_race_sim else None,
-        'simulation.runs': args.sim_runs,
-        'simulation.plan_b_margin_s': args.plan_b_margin,
-        'simulation.plan_b_places': args.plan_b_places,
-        'ai.base_url': args.ai_base_url,
-        'ai.model': args.ai_model,
-        'ai.timeout_s': args.ai_timeout,
-        'ai.autostart': False if args.no_ai_autostart else None,
-        'radio.on_demand': False if args.chatty else None,
-        'logging.level': args.log_level or ('DEBUG' if args.debug else None),
-        'logging.format': args.log_format,
-        'logging.file': args.log_file,
-    })
+    return apply_overrides(
+        config,
+        {
+            'network.udp_port': args.port,
+            'voice.rate_wpm': args.voice_rate,
+            'voice.tts': args.tts,
+            'voice.kokoro_voice': args.kokoro_voice,
+            'voice.kokoro_speed': args.kokoro_speed,
+            'voice.radio_fx': False if args.no_radio_fx else None,
+            'simulation.enabled': False if args.no_race_sim else None,
+            'simulation.runs': args.sim_runs,
+            'simulation.plan_b_margin_s': args.plan_b_margin,
+            'simulation.plan_b_places': args.plan_b_places,
+            'ai.base_url': args.ai_base_url,
+            'ai.model': args.ai_model,
+            'ai.timeout_s': args.ai_timeout,
+            'ai.autostart': False if args.no_ai_autostart else None,
+            'radio.on_demand': False if args.chatty else None,
+            'logging.level': args.log_level or ('DEBUG' if args.debug else None),
+            'logging.format': args.log_format,
+            'logging.file': args.log_file,
+        },
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
     defaults = EngineConfig()
     parser = argparse.ArgumentParser(
         description="F1 2021 AI Race Engineer",
-        epilog='Defaults come from config.toml at the repo root; a flag overrides the file.')
-    parser.add_argument('--config', type=Path, default=None, metavar='FILE',
-                        help='Settings file (default: config.toml at the repo root, if present)')
-    parser.add_argument("--port", type=int, default=None,
-                        help=f"UDP port to listen on (default: {defaults.network.udp_port})")
-    parser.add_argument("--no-voice", action="store_true",
-                        help="Disable voice output (console only)")
-    parser.add_argument("--debug", action="store_true",
-                        help="Debug output (same as --log-level DEBUG)")
-    parser.add_argument('--log-level', type=str.upper, choices=LEVELS, default=None,
-                        help=f'Log detail (default: {defaults.logging.level})')
-    parser.add_argument('--log-format', choices=FORMATS, default=None,
-                        help='text: readable terminal lines (default); json: one JSON object per line')
-    parser.add_argument('--log-file', default=None, metavar='FILE',
-                        help='Also write every log record to FILE as JSON lines')
-    parser.add_argument("--voice-rate", type=int, default=None,
-                        help=f"TTS speech rate in WPM (default: {defaults.voice.rate_wpm})")
-    parser.add_argument("--voice-index", type=int, default=0,
-                        help="System voice index (default: 0)")
-    parser.add_argument('--history-dir', type=Path,
-                        default=Path(__file__).resolve().parent.parent / 'telemetry-history',
-                        help='Directory for track/session telemetry history')
-    parser.add_argument('--models', type=Path, default=None, metavar='FILE',
-                        help='Tyre/fuel models fitted by tools/fit_models.py '
-                             '(default: <history-dir>/fitted_models.json; built-in estimates if missing)')
-    parser.add_argument('--no-auto-refit', action='store_true',
-                        help="Don't refit the tyre/fuel models from your laps when the engineer closes")
-    parser.add_argument('--no-race-sim', action='store_true',
-                        help='Turn off the Monte Carlo race simulator (strategy win chances)')
-    parser.add_argument('--sim-runs', type=int, default=None, metavar='N',
-                        help=f'Races the Monte Carlo simulator runs per update (default {defaults.simulation.runs})')
-    parser.add_argument('--plan-b-margin', type=float, default=None, metavar='SECONDS',
-                        help='Only call Plan B when it beats the current plan by this much race time '
-                             f'(default {defaults.simulation.plan_b_margin_s:g})')
-    parser.add_argument('--plan-b-places', type=float, default=None,
-                        metavar='PLACES',
-                        help='... or by this many finishing places on average '
-                             f'(default {defaults.simulation.plan_b_places:g})')
+        epilog='Defaults come from config.toml at the repo root; a flag overrides the file.',
+    )
+    parser.add_argument(
+        '--config',
+        type=Path,
+        default=None,
+        metavar='FILE',
+        help='Settings file (default: config.toml at the repo root, if present)',
+    )
+    parser.add_argument(
+        "--port", type=int, default=None, help=f"UDP port to listen on (default: {defaults.network.udp_port})"
+    )
+    parser.add_argument("--no-voice", action="store_true", help="Disable voice output (console only)")
+    parser.add_argument("--debug", action="store_true", help="Debug output (same as --log-level DEBUG)")
+    parser.add_argument(
+        '--log-level',
+        type=str.upper,
+        choices=LEVELS,
+        default=None,
+        help=f'Log detail (default: {defaults.logging.level})',
+    )
+    parser.add_argument(
+        '--log-format',
+        choices=FORMATS,
+        default=None,
+        help='text: readable terminal lines (default); json: one JSON object per line',
+    )
+    parser.add_argument(
+        '--log-file', default=None, metavar='FILE', help='Also write every log record to FILE as JSON lines'
+    )
+    parser.add_argument(
+        "--voice-rate",
+        type=int,
+        default=None,
+        help=f"TTS speech rate in WPM (default: {defaults.voice.rate_wpm})",
+    )
+    parser.add_argument("--voice-index", type=int, default=0, help="System voice index (default: 0)")
+    parser.add_argument(
+        '--history-dir',
+        type=Path,
+        default=Path(__file__).resolve().parent.parent / 'telemetry-history',
+        help='Directory for track/session telemetry history',
+    )
+    parser.add_argument(
+        '--models',
+        type=Path,
+        default=None,
+        metavar='FILE',
+        help='Tyre/fuel models fitted by tools/fit_models.py '
+        '(default: <history-dir>/fitted_models.json; built-in estimates if missing)',
+    )
+    parser.add_argument(
+        '--no-auto-refit',
+        action='store_true',
+        help="Don't refit the tyre/fuel models from your laps when the engineer closes",
+    )
+    parser.add_argument(
+        '--no-race-sim',
+        action='store_true',
+        help='Turn off the Monte Carlo race simulator (strategy win chances)',
+    )
+    parser.add_argument(
+        '--sim-runs',
+        type=int,
+        default=None,
+        metavar='N',
+        help=f'Races the Monte Carlo simulator runs per update (default {defaults.simulation.runs})',
+    )
+    parser.add_argument(
+        '--plan-b-margin',
+        type=float,
+        default=None,
+        metavar='SECONDS',
+        help='Only call Plan B when it beats the current plan by this much race time '
+        f'(default {defaults.simulation.plan_b_margin_s:g})',
+    )
+    parser.add_argument(
+        '--plan-b-places',
+        type=float,
+        default=None,
+        metavar='PLACES',
+        help='... or by this many finishing places on average '
+        f'(default {defaults.simulation.plan_b_places:g})',
+    )
     tts = parser.add_argument_group('engineer voice')
-    tts.add_argument('--tts', choices=('kokoro', 'system'), default=None,
-                     help='Voice: kokoro (default; free offline neural voice, falls back to the system '
-                          'voice if not installed) or system (pyttsx3)')
-    tts.add_argument('--kokoro-dir', type=Path, default=None,
-                     help='Folder with kokoro-v1.0.onnx and voices-v1.0.bin (default: ./models/kokoro)')
-    tts.add_argument('--kokoro-voice', default=None,
-                     help='Kokoro voice, e.g. bm_george, bm_lewis, bm_daniel (default: bm_george)')
-    tts.add_argument('--kokoro-speed', type=float, default=None,
-                     help='Kokoro speaking speed (default: 1.1, a touch brisk like real radio)')
-    tts.add_argument('--no-radio-fx', action='store_true',
-                     help='Kokoro only: clean studio voice instead of the team-radio effect')
+    tts.add_argument(
+        '--tts',
+        choices=('kokoro', 'system'),
+        default=None,
+        help='Voice: kokoro (default; free offline neural voice, falls back to the system '
+        'voice if not installed) or system (pyttsx3)',
+    )
+    tts.add_argument(
+        '--kokoro-dir',
+        type=Path,
+        default=None,
+        help='Folder with kokoro-v1.0.onnx and voices-v1.0.bin (default: ./models/kokoro)',
+    )
+    tts.add_argument(
+        '--kokoro-voice',
+        default=None,
+        help='Kokoro voice, e.g. bm_george, bm_lewis, bm_daniel (default: bm_george)',
+    )
+    tts.add_argument(
+        '--kokoro-speed',
+        type=float,
+        default=None,
+        help='Kokoro speaking speed (default: 1.1, a touch brisk like real radio)',
+    )
+    tts.add_argument(
+        '--no-radio-fx',
+        action='store_true',
+        help='Kokoro only: clean studio voice instead of the team-radio effect',
+    )
     ai = parser.add_argument_group('AI engineer (DeepSeek via an OpenAI-compatible API)')
-    ai.add_argument('--ai-base-url', default=None,
-                    help='API base URL (default: $F1_AI_BASE_URL or Ollama http://localhost:11434/v1)')
-    ai.add_argument('--ai-model', default=None,
-                    help='Model name (default: $F1_AI_MODEL or deepseek-r1:8b)')
-    ai.add_argument('--ai-api-key', default=None,
-                    help='API key for cloud providers such as Groq (default: $F1_AI_API_KEY)')
-    ai.add_argument('--ai-timeout', type=float, default=None,
-                    help='Seconds to wait for the model before answering from rules (default: 30; '
-                         'DeepSeek R1 thinks before it answers)')
-    ai.add_argument('--no-ai-autostart', action='store_true',
-                    help="Don't start Ollama / download / preload the local DeepSeek model automatically")
+    ai.add_argument(
+        '--ai-base-url',
+        default=None,
+        help='API base URL (default: $F1_AI_BASE_URL or Ollama http://localhost:11434/v1)',
+    )
+    ai.add_argument('--ai-model', default=None, help='Model name (default: $F1_AI_MODEL or deepseek-r1:8b)')
+    ai.add_argument(
+        '--ai-api-key',
+        default=None,
+        help='API key for cloud providers such as Groq (default: $F1_AI_API_KEY)',
+    )
+    ai.add_argument(
+        '--ai-timeout',
+        type=float,
+        default=None,
+        help='Seconds to wait for the model before answering from rules (default: 30; '
+        'DeepSeek R1 thinks before it answers)',
+    )
+    ai.add_argument(
+        '--no-ai-autostart',
+        action='store_true',
+        help="Don't start Ollama / download / preload the local DeepSeek model automatically",
+    )
     ai.add_argument('--no-ai', action='store_true', help='Answer commands from rules only')
     cmd = parser.add_argument_group('voice commands')
     cmd.add_argument('--no-mic', action='store_true', help='Disable microphone voice commands')
-    cmd.add_argument('--stt-engine', choices=('google', 'vosk'), default='google',
-                     help='Speech-to-text engine (default: google; vosk is offline)')
+    cmd.add_argument(
+        '--stt-engine',
+        choices=('google', 'vosk'),
+        default='google',
+        help='Speech-to-text engine (default: google; vosk is offline)',
+    )
     cmd.add_argument('--mic-index', type=int, default=None, help='Microphone device index')
-    cmd.add_argument('--chatty', action='store_true',
-                     help='Keep the old constant callouts instead of speaking only when asked')
+    cmd.add_argument(
+        '--chatty',
+        action='store_true',
+        help='Keep the old constant callouts instead of speaking only when asked',
+    )
     ptt = parser.add_argument_group('push-to-talk radio button (wheel or controller)')
-    ptt.add_argument('--find-ptt-button', action='store_true',
-                     help='Press the wheel/controller button you want as the radio button; saves it to push_to_talk.json and exits')
-    ptt.add_argument('--ptt-button', default=None, metavar='BUTTON',
-                     help='Radio button: a button number like 5, or a D-pad direction like hat0:up (default: saved choice)')
-    ptt.add_argument('--ptt-device', default=None, metavar='DEVICE',
-                     help='Controller index or part of its name, e.g. 0 or "T300" (default: saved choice, else any)')
-    ptt.add_argument('--ptt-mode', choices=push_to_talk.MODES, default=None,
-                     help='hold: talk while held (default). toggle: press to talk, press again to send')
+    ptt.add_argument(
+        '--find-ptt-button',
+        action='store_true',
+        help='Press the wheel/controller button you want as the radio button; saves it to push_to_talk.json and exits',
+    )
+    ptt.add_argument(
+        '--ptt-button',
+        default=None,
+        metavar='BUTTON',
+        help='Radio button: a button number like 5, or a D-pad direction like hat0:up (default: saved choice)',
+    )
+    ptt.add_argument(
+        '--ptt-device',
+        default=None,
+        metavar='DEVICE',
+        help='Controller index or part of its name, e.g. 0 or "T300" (default: saved choice, else any)',
+    )
+    ptt.add_argument(
+        '--ptt-mode',
+        choices=push_to_talk.MODES,
+        default=None,
+        help='hold: talk while held (default). toggle: press to talk, press again to send',
+    )
     ptt.add_argument('--no-ptt', action='store_true', help='Ignore the saved push-to-talk button')
-    ptt.add_argument('--always-listen', action='store_true',
-                     help='Keep the hands-free wake-word microphone on as well as the radio button')
+    ptt.add_argument(
+        '--always-listen',
+        action='store_true',
+        help='Keep the hands-free wake-word microphone on as well as the radio button',
+    )
     rec = parser.add_argument_group('recording and replay (format: docs/udp-recording-format.md)')
-    rec.add_argument('--record', type=Path, default=None, metavar='FILE',
-                     help='Save every incoming UDP datagram with its arrival time to FILE '
-                          '(a name ending .gz is compressed)')
-    rec.add_argument('--replay', type=Path, default=None, metavar='FILE',
-                     help='Read telemetry from a recording instead of the game')
-    rec.add_argument('--replay-speed', type=parse_speed, default=1.0, metavar='SPEED',
-                     help='Replay speed: 1 (real time, default), 10, or max (as fast as possible)')
+    rec.add_argument(
+        '--record',
+        type=Path,
+        default=None,
+        metavar='FILE',
+        help='Save every incoming UDP datagram with its arrival time to FILE '
+        '(a name ending .gz is compressed)',
+    )
+    rec.add_argument(
+        '--replay',
+        type=Path,
+        default=None,
+        metavar='FILE',
+        help='Read telemetry from a recording instead of the game',
+    )
+    rec.add_argument(
+        '--replay-speed',
+        type=parse_speed,
+        default=1.0,
+        metavar='SPEED',
+        help='Replay speed: 1 (real time, default), 10, or max (as fast as possible)',
+    )
     ch = parser.add_argument_group('channel data store and MoTeC export (docs/channel-store.md)')
-    ch.add_argument('--log-channels', type=Path, default=None, metavar='DIR', nargs='?',
-                    const=Path('channels'),
-                    help='Log every telemetry sample to DIR/<session>.parquet (default channels/), keyed '
-                         'by lap distance (needs pyarrow). Works live and with --replay')
-    ch.add_argument('--export-motec', type=Path, default=None, metavar='FILE_OR_DIR', nargs='?',
-                    const=Path('channels'),
-                    help='Export a channel file to MoTeC i2 (.ld + .ldx) and exit. Given a folder, '
-                         'or nothing, it uses the newest file in that folder (default channels/)')
-    ch.add_argument('--motec-out', type=Path, default=None, metavar='FILE',
-                    help='Output path for --export-motec (default: next to the Parquet file)')
-    ch.add_argument('--motec-format', choices=('ld', 'csv'), default='ld',
-                    help='ld (MoTeC i2 log, default) or csv (MoTeC-style CSV)')
-    ch.add_argument('--motec-rate', type=int, default=None, metavar='HZ',
-                    help='Sample rate for the export (default: the rate the game sent)')
+    ch.add_argument(
+        '--log-channels',
+        type=Path,
+        default=None,
+        metavar='DIR',
+        nargs='?',
+        const=Path('channels'),
+        help='Log every telemetry sample to DIR/<session>.parquet (default channels/), keyed '
+        'by lap distance (needs pyarrow). Works live and with --replay',
+    )
+    ch.add_argument(
+        '--export-motec',
+        type=Path,
+        default=None,
+        metavar='FILE_OR_DIR',
+        nargs='?',
+        const=Path('channels'),
+        help='Export a channel file to MoTeC i2 (.ld + .ldx) and exit. Given a folder, '
+        'or nothing, it uses the newest file in that folder (default channels/)',
+    )
+    ch.add_argument(
+        '--motec-out',
+        type=Path,
+        default=None,
+        metavar='FILE',
+        help='Output path for --export-motec (default: next to the Parquet file)',
+    )
+    ch.add_argument(
+        '--motec-format',
+        choices=('ld', 'csv'),
+        default='ld',
+        help='ld (MoTeC i2 log, default) or csv (MoTeC-style CSV)',
+    )
+    ch.add_argument(
+        '--motec-rate',
+        type=int,
+        default=None,
+        metavar='HZ',
+        help='Sample rate for the export (default: the rate the game sent)',
+    )
     return parser
 
 
@@ -339,9 +488,13 @@ def main():
     driver_factory = None
     if cfg.voice.tts == 'kokoro' and not args.no_voice:
         from neural_voice import DEFAULT_KOKORO_DIR, build_kokoro_driver_factory
+
         driver_factory = build_kokoro_driver_factory(
-            args.kokoro_dir or DEFAULT_KOKORO_DIR, cfg.voice.kokoro_voice, cfg.voice.kokoro_speed,
-            radio_effect=cfg.voice.radio_fx)
+            args.kokoro_dir or DEFAULT_KOKORO_DIR,
+            cfg.voice.kokoro_voice,
+            cfg.voice.kokoro_speed,
+            radio_effect=cfg.voice.radio_fx,
+        )
         if driver_factory:
             log.info(f'Engineer voice: Kokoro ({cfg.voice.kokoro_voice})')
     voice = VoiceEngine(
@@ -356,7 +509,9 @@ def main():
     if not args.no_voice:
         voice.start()
         time.sleep(0.5)
-        voice.say('Radio check. Engineer standing by, waiting for the car.', Priority.LOW, key='startup', ttl=10)
+        voice.say(
+            'Radio check. Engineer standing by, waiting for the car.', Priority.LOW, key='startup', ttl=10
+        )
     else:
         log.info("Voice output disabled (--no-voice)")
 
@@ -365,25 +520,36 @@ def main():
     models_path = args.models or args.history_dir / 'fitted_models.json'
     fitted = ModelStore.load_or_empty(models_path)
     if fitted.wear or fitted.fuel:
-        log.info(f"Loaded {len(fitted.wear)} tyre and {len(fitted.fuel)} fuel fits from {models_path}"
-                 + (' (simulator data only)' if fitted.simulated_only else ''))
+        log.info(
+            f"Loaded {len(fitted.wear)} tyre and {len(fitted.fuel)} fuel fits from {models_path}"
+            + (' (simulator data only)' if fitted.simulated_only else '')
+        )
     else:
-        log.info('No fitted tyre/fuel models yet; using built-in estimates. '
-                 'Fit them with: python tools/fit_models.py recordings/*.f1rec.gz')
+        log.info(
+            'No fitted tyre/fuel models yet; using built-in estimates. '
+            'Fit them with: python tools/fit_models.py recordings/*.f1rec.gz'
+        )
     sim = cfg.simulation
-    analysis = AnalysisEngine(voice, history=history, on_demand=cfg.radio.on_demand, fitted=fitted,
-                              race_simulation='async' if sim.enabled else 'off',
-                              sim_runs=sim.runs,
-                              replan=strategy_replan.ReplanConfig(margin_s=sim.plan_b_margin_s,
-                                                                  margin_positions=sim.plan_b_places),
-                              track_store=TrackMapStore(args.history_dir / 'track_maps.json'),
-                              config=cfg)
+    analysis = AnalysisEngine(
+        voice,
+        history=history,
+        on_demand=cfg.radio.on_demand,
+        fitted=fitted,
+        race_simulation='async' if sim.enabled else 'off',
+        sim_runs=sim.runs,
+        replan=strategy_replan.ReplanConfig(margin_s=sim.plan_b_margin_s, margin_positions=sim.plan_b_places),
+        track_store=TrackMapStore(args.history_dir / 'track_maps.json'),
+        config=cfg,
+    )
     stream = TelemetryStream(analysis)
     voice.set_silence_filter(analysis.is_driver_busy)
 
     # ─── AI brain + on-demand voice commands ───
-    client = None if args.no_ai else AIClient(cfg.ai.base_url or None, cfg.ai.model or None,
-                                              args.ai_api_key, cfg.ai.timeout_s)
+    client = (
+        None
+        if args.no_ai
+        else AIClient(cfg.ai.base_url or None, cfg.ai.model or None, args.ai_api_key, cfg.ai.timeout_s)
+    )
     brain = EngineerBrain(analysis.build_context, client)
     dispatcher = CommandDispatcher(voice, brain, on_log=add_voice_log)
     # Typed HUD questions are deliberate, so they may be free-form like the radio button.
@@ -393,22 +559,34 @@ def main():
     listener = None
     radio = None
     if ptt_settings:
-        radio = push_to_talk.start(ptt_settings, dispatcher, voice=voice, engine=args.stt_engine,
-                                   mic_index=args.mic_index, on_log=add_voice_log)
+        radio = push_to_talk.start(
+            ptt_settings,
+            dispatcher,
+            voice=voice,
+            engine=args.stt_engine,
+            mic_index=args.mic_index,
+            on_log=add_voice_log,
+        )
     if not args.no_mic and not args.no_voice and (radio is None or args.always_listen):
-        listener = VoiceCommandListener(dispatcher, engine=args.stt_engine,
-                                        device_index=args.mic_index, voice=voice,
-                                        ignore_when=radio.recently_active if radio else None)
+        listener = VoiceCommandListener(
+            dispatcher,
+            engine=args.stt_engine,
+            device_index=args.mic_index,
+            voice=voice,
+            ignore_when=radio.recently_active if radio else None,
+        )
         listener.start()
     if client:
-        log.info(f"Engineer brain: {client.model} @ {client.base_url} "
-                 f"(falls back to rules if unreachable)")
+        log.info(f"Engineer brain: {client.model} @ {client.base_url} (falls back to rules if unreachable)")
         if cfg.ai.autostart:
             # Local Ollama: start it, fetch the model on first run, preload it, keep it warm.
             launcher = LocalAILauncher(
-                client.base_url, client.model,
-                on_ready=lambda: voice.say('Pit wall is connected. Ask me anything.',
-                                           Priority.LOW, key='ai_ready', ttl=15))
+                client.base_url,
+                client.model,
+                on_ready=lambda: voice.say(
+                    'Pit wall is connected. Ask me anything.', Priority.LOW, key='ai_ready', ttl=15
+                ),
+            )
             if launcher.start():
                 atexit.register(launcher.shutdown)
 
@@ -416,8 +594,10 @@ def main():
     if args.log_channels:
         try:
             from channel_store import ChannelLogger
+
             channel_logger = ChannelLogger(
-                args.log_channels, on_file=lambda path: log.info(f"Channels saved to {path}"))
+                args.log_channels, on_file=lambda path: log.info(f"Channels saved to {path}")
+            )
             log.info(f"Logging every channel sample to {args.log_channels}/")
         except RuntimeError as e:  # pyarrow missing
             log.warning(f"Channel logging disabled: {e}")
@@ -440,8 +620,10 @@ def main():
         try:
             sock.bind(("0.0.0.0", cfg.network.udp_port))
         except OSError as e:
-            log.error(f"Cannot bind to UDP port {cfg.network.udp_port}: {e}. "
-                      "Is another application using this port?")
+            log.error(
+                f"Cannot bind to UDP port {cfg.network.udp_port}: {e}. "
+                "Is another application using this port?"
+            )
             voice.shutdown()
             history.close()
             sock.close()
@@ -481,8 +663,10 @@ def main():
     if recorder:
         log.info(f"Recording every datagram to {args.record}")
     log.info(f"Live Telemetry Dashboard running at: http://localhost:{hud_port}")
-    log.info("Waiting for F1 2021 telemetry data... (Launch F1 2021, start Time Trial/Grand Prix/Race, "
-             "and make sure UDP Telemetry is ON)")
+    log.info(
+        "Waiting for F1 2021 telemetry data... (Launch F1 2021, start Time Trial/Grand Prix/Race, "
+        "and make sure UDP Telemetry is ON)"
+    )
 
     # ─── State ───
     latest_telemetry: CarTelemetryData | None = None
@@ -511,8 +695,10 @@ def main():
                         last_wait_tick = now
                         spin = spinner_chars[spinner_idx % len(spinner_chars)]
                         spinner_idx += 1
-                        sys.stdout.write(f"\r  [{spin}] Listening on 0.0.0.0:{cfg.network.udp_port}... "
-                                         "waiting for car on track...")
+                        sys.stdout.write(
+                            f"\r  [{spin}] Listening on 0.0.0.0:{cfg.network.udp_port}... "
+                            "waiting for car on track..."
+                        )
                         sys.stdout.flush()
                 continue
             except ConnectionResetError:
@@ -550,7 +736,7 @@ def main():
                             latest_telemetry,
                             latest_lap,
                             latest_session,
-                            analysis.delta.last_reported_delta_ms
+                            analysis.delta.last_reported_delta_ms,
                         )
                     except Exception:
                         pass  # Don't crash on display errors
@@ -577,9 +763,8 @@ def main():
         if not args.no_auto_refit:
             # Learn from this session: refit tyre/fuel/pit models from every lap driven so far.
             try:
-                auto_refit.refit(history, models_path,
-                                 extra_recordings=[args.record] if args.record else ())
-            except Exception as error:      # never let learning break shutdown
+                auto_refit.refit(history, models_path, extra_recordings=[args.record] if args.record else ())
+            except Exception as error:  # never let learning break shutdown
                 log.warning(f'Model refit skipped: {error}')
         history.close()
         if web_server:

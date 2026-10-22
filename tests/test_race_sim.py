@@ -24,13 +24,17 @@ from test_analysis import SilentVoice
 from voice_commands import match_command
 
 MEDIUM = 17
-USED = ('MEDIUM', 'HARD')      # two dry compounds already run: no forced stop
+USED = ('MEDIUM', 'HARD')  # two dry compounds already run: no forced stop
 SILVERSTONE = 7
 
 
 def field(n=10, player=4, compound='MEDIUM', age=10, gap_step=1.5, pace_step=0.1):
-    return [sim.SimCar(i, i + 1, i * gap_step, compound, age, 90.0 + pace_step * i, 5, 60.0, (),
-                       f'D{i}', i == player) for i in range(n)]
+    return [
+        sim.SimCar(
+            i, i + 1, i * gap_step, compound, age, 90.0 + pace_step * i, 5, 60.0, (), f'D{i}', i == player
+        )
+        for i in range(n)
+    ]
 
 
 def candidates(laps_to_go, compound='MEDIUM', age=10, current_lap=11, track=SILVERSTONE):
@@ -58,8 +62,10 @@ class OutcomeShapeTests(unittest.TestCase):
 
     def test_one_outcome_per_plan_best_first(self):
         self.assertEqual(len(self.result.outcomes), len(self.cands))
-        self.assertEqual([o.p_best for o in self.result.outcomes],
-                         sorted((o.p_best for o in self.result.outcomes), reverse=True))
+        self.assertEqual(
+            [o.p_best for o in self.result.outcomes],
+            sorted((o.p_best for o in self.result.outcomes), reverse=True),
+        )
         self.assertIs(self.result.recommended, self.result.outcomes[0])
 
     def test_same_seed_same_answer(self):
@@ -74,6 +80,7 @@ class OutcomeShapeTests(unittest.TestCase):
 
     def test_summary_is_json_friendly(self):
         import json
+
         summary = self.result.summary()
         json.dumps(summary)
         json.dumps(self.result.as_dict())
@@ -117,7 +124,7 @@ class SafetyCarAndRainTests(unittest.TestCase):
     def test_lap_one_is_the_likeliest_lap(self):
         s = self.neutral({'sc_probability': 0.6, 'vsc_probability': 0.0})
         starts = (s.status[:, 0] == 1).mean()
-        later = (s.status[:, 20] == 1).mean() / 4      # an SC covers ~4 laps
+        later = (s.status[:, 20] == 1).mean() / 4  # an SC covers ~4 laps
         self.assertGreater(starts, 2 * later)
 
     def test_safety_car_out_now_starts_every_run_neutralised(self):
@@ -127,10 +134,14 @@ class SafetyCarAndRainTests(unittest.TestCase):
 
     def test_rain_chance_scales_with_laps_left(self):
         state = sim.RaceState(SILVERSTONE, 50, 26, field(3, player=0))
-        s = sim.RaceSimulator(state, runs=4000, seed=2, profile={'rain_probability': 0.4, 'sc_probability': 0})
+        s = sim.RaceSimulator(
+            state, runs=4000, seed=2, profile={'rain_probability': 0.4, 'sc_probability': 0}
+        )
         self.assertAlmostEqual((s.rain_at >= 0).mean(), 0.4 * 25 / 50, delta=0.03)
-        dry = sim.RaceSimulator(replace(state, raining=True), runs=500, seed=2, profile={'rain_probability': 1.0})
-        self.assertTrue((dry.rain_at == 0).all())        # already wet: wet from the lap in progress
+        dry = sim.RaceSimulator(
+            replace(state, raining=True), runs=500, seed=2, profile={'rain_probability': 1.0}
+        )
+        self.assertTrue((dry.rain_at == 0).all())  # already wet: wet from the lap in progress
         off = sim.RaceSimulator(state, runs=500, seed=2, profile={'rain_probability': 1.0}, rain=False)
         self.assertFalse((off.rain_at >= 0).any())
 
@@ -147,10 +158,18 @@ class SafetyCarAndRainTests(unittest.TestCase):
         """Boxing now under a Safety Car beats boxing now under green, by roughly the saving."""
         cars = field(6, player=2, age=18)
         one = [sim.Candidate('One-stop (M-H)', 1, ['MEDIUM', 'HARD'], [20])]
-        green = sim.RaceSimulator(sim.RaceState(SILVERSTONE, 40, 20, cars), runs=200, seed=9,
-                                  profile={'sc_probability': 0.0, 'overtaking': 3}).evaluate(one)
-        sc = sim.RaceSimulator(sim.RaceState(SILVERSTONE, 40, 20, cars, safety_car=1), runs=200, seed=9,
-                               profile={'sc_probability': 0.0, 'overtaking': 3}).evaluate(one)
+        green = sim.RaceSimulator(
+            sim.RaceState(SILVERSTONE, 40, 20, cars),
+            runs=200,
+            seed=9,
+            profile={'sc_probability': 0.0, 'overtaking': 3},
+        ).evaluate(one)
+        sc = sim.RaceSimulator(
+            sim.RaceState(SILVERSTONE, 40, 20, cars, safety_car=1),
+            runs=200,
+            seed=9,
+            profile={'sc_probability': 0.0, 'overtaking': 3},
+        ).evaluate(one)
         self.assertLess(sc.outcomes[0].mean_position, green.outcomes[0].mean_position)
 
     def test_safety_car_brings_planned_stops_forward(self):
@@ -160,7 +179,7 @@ class SafetyCarAndRainTests(unittest.TestCase):
         s = sim.RaceSimulator(state, runs=1, seed=1, profile={'sc_probability': 0.0})
         s.status[:] = 0
         s.status[0, 0] = 0
-        s.status[0, 1] = 1                                # SC starts on lap 21
+        s.status[0, 1] = 1  # SC starts on lap 21
         s.pit_loss[:] = 20.0
         s.noise[:] = 0.0
         later = sim.Candidate('One-stop', 1, ['MEDIUM', 'HARD'], [25])
@@ -173,13 +192,14 @@ class SafetyCarAndRainTests(unittest.TestCase):
 
 class PitLossTests(unittest.TestCase):
     def test_pit_loss_is_a_distribution_around_the_track_figure(self):
-        state = sim.RaceState(12, 61, 10, field(5, player=0))      # Singapore, long pit lane
+        state = sim.RaceState(12, 61, 10, field(5, player=0))  # Singapore, long pit lane
         s = sim.RaceSimulator(state, runs=400, seed=4)
         loss = s.pit_loss.ravel()
-        self.assertAlmostEqual(float(loss.mean()), rs.pit_loss_s(12) + sim.SLOW_STOP_PROB * sim.SLOW_STOP_MEAN_S,
-                               delta=0.15)
+        self.assertAlmostEqual(
+            float(loss.mean()), rs.pit_loss_s(12) + sim.SLOW_STOP_PROB * sim.SLOW_STOP_MEAN_S, delta=0.15
+        )
         self.assertGreater(float(loss.std()), sim.PIT_LOSS_SD_S * 0.9)
-        self.assertGreater(float(loss.max()), rs.pit_loss_s(12) + 5)      # the odd slow stop
+        self.assertGreater(float(loss.max()), rs.pit_loss_s(12) + 5)  # the odd slow stop
         result = s.evaluate(candidates(52, current_lap=10, track=12))
         lo, mean, hi = result.pit_loss_s
         self.assertLess(lo, mean)
@@ -189,11 +209,15 @@ class PitLossTests(unittest.TestCase):
 class TrafficAndOvertakingTests(unittest.TestCase):
     def pass_rate(self, overtaking, advantage=0.8, laps=10):
         """Player 1 s behind a car `advantage` s/lap slower: how often do we finish ahead?"""
-        cars = [sim.SimCar(0, 1, 0.0, 'HARD', 5, 90.0 + advantage, 5, 30.0, USED, 'Slow'),
-                sim.SimCar(1, 2, 1.0, 'HARD', 5, 90.0, 5, 30.0, USED, 'Us', True)]
+        cars = [
+            sim.SimCar(0, 1, 0.0, 'HARD', 5, 90.0 + advantage, 5, 30.0, USED, 'Slow'),
+            sim.SimCar(1, 2, 1.0, 'HARD', 5, 90.0, 5, 30.0, USED, 'Us', True),
+        ]
         state = sim.RaceState(SILVERSTONE, 30, 30 - laps + 1, cars)
         no_stop = [sim.Candidate('No-stop (H)', 0, ['HARD'], [])]
-        s = sim.RaceSimulator(state, runs=400, seed=7, profile={'sc_probability': 0.0, 'overtaking': overtaking})
+        s = sim.RaceSimulator(
+            state, runs=400, seed=7, profile={'sc_probability': 0.0, 'overtaking': overtaking}
+        )
         return s.evaluate(no_stop).outcomes[0].p_win
 
     def test_overtaking_is_harder_on_harder_tracks(self):
@@ -207,24 +231,28 @@ class TrafficAndOvertakingTests(unittest.TestCase):
 
     def test_being_held_up_costs_time(self):
         """Stuck behind a slower car at Monaco, we cross the line just behind it, lap after lap."""
-        cars = [sim.SimCar(0, 1, 0.0, 'HARD', 5, 91.0, 5, 30.0, USED, 'Slow'),
-                sim.SimCar(1, 2, 0.5, 'HARD', 5, 90.0, 5, 30.0, USED, 'Us', True)]
+        cars = [
+            sim.SimCar(0, 1, 0.0, 'HARD', 5, 91.0, 5, 30.0, USED, 'Slow'),
+            sim.SimCar(1, 2, 0.5, 'HARD', 5, 90.0, 5, 30.0, USED, 'Us', True),
+        ]
         state = sim.RaceState(5, 78, 70, cars)
         s = sim.RaceSimulator(state, runs=200, seed=1, profile={'sc_probability': 0.0, 'overtaking': 5})
         s.noise[:] = 0.0
         s.form[:] = 0.0
-        s.u_pass[:] = 0.999                                    # no pass ever succeeds
-        s.z_slope[:] = 0.0                                     # identical tyres: no cliff surprises
+        s.u_pass[:] = 0.999  # no pass ever succeeds
+        s.z_slope[:] = 0.0  # identical tyres: no cliff surprises
         s.z_life[:] = 0.0
-        s.rival_laps[:] = sim.NEVER                            # and the slow car never boxes
+        s.rival_laps[:] = sim.NEVER  # and the slow car never boxes
         T = s._simulate(sim.Candidate('No-stop (H)', 0, ['HARD'], []))
         self.assertTrue((T[:, 1] > T[:, 0]).all())
         self.assertTrue(((T[:, 1] - T[:, 0]) <= sim.MIN_GAP_S + 1e-6).all())
 
     def test_car_on_its_in_lap_does_not_block(self):
         """A slower car ahead boxes: the car behind is not held up by it and comes out ahead."""
-        cars = [sim.SimCar(0, 1, 0.0, 'HARD', 5, 91.0, 5, 30.0, USED, 'Slow'),
-                sim.SimCar(1, 2, 0.5, 'HARD', 5, 90.0, 5, 30.0, USED, 'Us', True)]
+        cars = [
+            sim.SimCar(0, 1, 0.0, 'HARD', 5, 91.0, 5, 30.0, USED, 'Slow'),
+            sim.SimCar(1, 2, 0.5, 'HARD', 5, 90.0, 5, 30.0, USED, 'Us', True),
+        ]
         state = sim.RaceState(5, 78, 70, cars)
         s = sim.RaceSimulator(state, runs=20, seed=1, profile={'sc_probability': 0.0, 'overtaking': 5})
         s.u_pass[:] = 0.999
@@ -260,6 +288,7 @@ class StrategyChoiceTests(unittest.TestCase):
         cands = candidates(42)
         normal = sim.simulate(state, cands, runs=150, seed=2)
         fragile = sim.simulate(state, cands, runs=150, seed=2, player_deg_scale=3.0, player_life_scale=0.6)
+
         def stops(r):
             return sum(o.p_best * o.stops for o in r.outcomes)
 
@@ -267,6 +296,7 @@ class StrategyChoiceTests(unittest.TestCase):
 
     def test_fitted_models_feed_the_tyre_inputs(self):
         import fitted_models as fm
+
         store = fm.ModelStore()
         prior = store.deg_model(SILVERSTONE, 'C3')
         store.deg[f'{SILVERSTONE}/C3'] = replace(prior, mean=0.2, var=1e-6, tau2=1e-6, basis='track')
@@ -277,18 +307,20 @@ class StrategyChoiceTests(unittest.TestCase):
 
     def test_rival_predictions_drive_rival_stops(self):
         cars = field(4, player=0)
-        cars[1].prediction = SimpleNamespace(stop_lap_mean=30.0, stop_lap_sd=0.5, will_stop=True,
-                                             next_compound_probs={'HARD': 1.0})
-        cars[2].prediction = SimpleNamespace(stop_lap_mean=30.0, stop_lap_sd=0.5, will_stop=False,
-                                             next_compound_probs={})
+        cars[1].prediction = SimpleNamespace(
+            stop_lap_mean=30.0, stop_lap_sd=0.5, will_stop=True, next_compound_probs={'HARD': 1.0}
+        )
+        cars[2].prediction = SimpleNamespace(
+            stop_lap_mean=30.0, stop_lap_sd=0.5, will_stop=False, next_compound_probs={}
+        )
         s = sim.RaceSimulator(sim.RaceState(SILVERSTONE, 52, 11, cars), runs=300, seed=1)
         first = s.rival_laps[:, 1, 0]
         self.assertAlmostEqual(float(first.mean()), 30.0, delta=0.3)
         self.assertTrue((s.rival_comps[:, 1, 0] == sim._CI['HARD']).all())
         self.assertTrue((s.rival_laps[:, 2, :] == sim.NEVER).all())
-        self.assertTrue((s.rival_laps[:, 0, :] == sim.NEVER).all())     # the player has no rival plan
+        self.assertTrue((s.rival_laps[:, 0, :] == sim.NEVER).all())  # the player has no rival plan
         jittered = s.rival_laps[:, 3, 0]
-        self.assertGreater(float(jittered.std()), 0.5)                    # modelled plan + jitter
+        self.assertGreater(float(jittered.std()), 0.5)  # modelled plan + jitter
 
     def test_compound_allocation_from_one_known_set(self):
         alloc = sim.compound_allocation([('Medium', 'C2')])
@@ -299,8 +331,15 @@ class StrategyChoiceTests(unittest.TestCase):
 
 def lap(position, lap_num, last_ms=90000, pit_status=0, stops=0):
     base = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 2), 0)
-    return replace(base, car_position=position, current_lap_num=lap_num, last_lap_time_ms=last_ms,
-                   pit_status=pit_status, num_pit_stops=stops, result_status=2)
+    return replace(
+        base,
+        car_position=position,
+        current_lap_num=lap_num,
+        last_lap_time_ms=last_ms,
+        pit_status=pit_status,
+        num_pit_stops=stops,
+        result_status=2,
+    )
 
 
 def status(age=5, compound=MEDIUM, fuel=50.0):
@@ -314,11 +353,20 @@ class FieldTrackerTests(unittest.TestCase):
         tracker.update([lap(1, 1), lap(2, 1)], t, [status(), status()])
         for n in range(2, 8):
             t += 90.0
-            pit = n == 5                                  # car 1 boxes on lap 5
-            tracker.update([lap(1, n, 90000), lap(2, n - 1, 91000, pit_status=1 if pit else 0,
-                                                   stops=1 if n >= 5 else 0)], t, [status(n), status(n)])
-            tracker.update([lap(1, n, 90000), lap(2, n, 91000 if n not in (5, 6) else 112000,
-                                                   stops=1 if n >= 5 else 0)], t + 1.5, [status(n), status(n)])
+            pit = n == 5  # car 1 boxes on lap 5
+            tracker.update(
+                [
+                    lap(1, n, 90000),
+                    lap(2, n - 1, 91000, pit_status=1 if pit else 0, stops=1 if n >= 5 else 0),
+                ],
+                t,
+                [status(n), status(n)],
+            )
+            tracker.update(
+                [lap(1, n, 90000), lap(2, n, 91000 if n not in (5, 6) else 112000, stops=1 if n >= 5 else 0)],
+                t + 1.5,
+                [status(n), status(n)],
+            )
         gaps = tracker.gap_to_leader([lap(1, 7), lap(2, 7)])
         self.assertAlmostEqual(gaps[0], 0.0)
         self.assertAlmostEqual(gaps[1], 1.5)
@@ -389,9 +437,10 @@ class AnalysisIntegrationTests(unittest.TestCase):
             if runner.latest is not None:
                 break
             import time
+
             time.sleep(0.02)
         self.assertIsNotNone(runner.latest)
-        self.assertFalse(runner.submit('k', state, candidates(42)))       # same key: no re-run
+        self.assertFalse(runner.submit('k', state, candidates(42)))  # same key: no re-run
 
     def test_runner_survives_a_bad_state(self):
         runner = sim.SimRunner('sync')
@@ -441,7 +490,7 @@ class FinalLapOddsTests(unittest.TestCase):
         self.assertEqual(odds['plans'][0]['pit_laps'], [])
 
     def test_leader_on_the_final_lap_after_a_stop(self):
-        odds = self.drive_to(52, compounds=(MEDIUM, 18))       # ran mediums, now on hards
+        odds = self.drive_to(52, compounds=(MEDIUM, 18))  # ran mediums, now on hards
         self.assertGreater(odds['p_win'], 0.6)
         self.assertGreater(odds['p_podium'], 0.95)
 
@@ -474,15 +523,22 @@ class FinalLapOddsTests(unittest.TestCase):
 
     def test_finished_p3_is_no_win_but_a_podium(self):
         r = sim.settled_result(3, 20, 52, 'Hard')
-        self.assertEqual((r.outcomes[0].p_win, r.outcomes[0].p_podium, r.outcomes[0].p_points), (0.0, 1.0, 1.0))
+        self.assertEqual(
+            (r.outcomes[0].p_win, r.outcomes[0].p_podium, r.outcomes[0].p_points), (0.0, 1.0, 1.0)
+        )
         self.assertIn('P3', r.radio)
 
     def test_session_history_counts_sets_run_before_the_engineer_started(self):
         e = self.engine
-        e.update_car_status(status(12, 18), [status(12, 18)])          # only ever seen on hards
-        history = SimpleNamespace(car_index=0, num_laps=30, best_lap_num=0, best_sector_lap_nums=(0, 0, 0),
-                                  laps=[], stints=[SimpleNamespace(compound_name='Medium'),
-                                                   SimpleNamespace(compound_name='Hard')])
+        e.update_car_status(status(12, 18), [status(12, 18)])  # only ever seen on hards
+        history = SimpleNamespace(
+            car_index=0,
+            num_laps=30,
+            best_lap_num=0,
+            best_sector_lap_nums=(0, 0, 0),
+            laps=[],
+            stints=[SimpleNamespace(compound_name='Medium'), SimpleNamespace(compound_name='Hard')],
+        )
         e.session_log.update_history = lambda h: None
         e.update_session_history(history)
         self.assertEqual(e.compounds_used, {'MEDIUM', 'HARD'})

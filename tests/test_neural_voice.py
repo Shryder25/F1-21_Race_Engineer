@@ -19,8 +19,7 @@ class RadioFilterTests(unittest.TestCase):
     def test_cuts_low_and_high_frequencies_keeps_voice_band(self):
         sr = 24000
         t = np.arange(sr) / sr
-        clean = (np.sin(2 * np.pi * 80 * t) + np.sin(2 * np.pi * 1000 * t)
-                 + np.sin(2 * np.pi * 8000 * t)) / 3
+        clean = (np.sin(2 * np.pi * 80 * t) + np.sin(2 * np.pi * 1000 * t) + np.sin(2 * np.pi * 8000 * t)) / 3
         out = radio_filter(clean, sr, beeps=False, noise_level=0, drive=0.01)
         self.assertGreater(self._energy_at(out, sr, 1000), 20 * self._energy_at(out, sr, 80))
         self.assertGreater(self._energy_at(out, sr, 1000), 20 * self._energy_at(out, sr, 8000))
@@ -56,6 +55,7 @@ def fake_synth(calls):
     def synthesize(text):
         calls.append(text)
         return np.zeros(2400, dtype=np.float32), 24000
+
     return synthesize
 
 
@@ -71,8 +71,9 @@ def wait_for(condition, timeout=2.0):
 class NeuralDriverTests(unittest.TestCase):
     def test_voice_engine_speaks_through_driver_and_caches_repeats(self):
         calls, player, spoken = [], FakePlayer(), []
-        engine = VoiceEngine(on_spoken=spoken.append,
-                             driver_factory=lambda: NeuralSpeechDriver(fake_synth(calls), player))
+        engine = VoiceEngine(
+            on_spoken=spoken.append, driver_factory=lambda: NeuralSpeechDriver(fake_synth(calls), player)
+        )
         engine.start()
         try:
             self.assertTrue(engine.is_running)
@@ -80,7 +81,7 @@ class NeuralDriverTests(unittest.TestCase):
             self.assertTrue(wait_for(lambda: len(player.played) == 1 and not engine.is_busy))
             engine.say('We are checking.', Priority.CRITICAL, key='b', cooldown=0)
             self.assertTrue(wait_for(lambda: len(player.played) == 2))
-            self.assertEqual(calls, ['We are checking.'])         # second time came from cache
+            self.assertEqual(calls, ['We are checking.'])  # second time came from cache
             self.assertEqual(spoken, ['We are checking.'] * 2)
         finally:
             engine.shutdown()
@@ -105,6 +106,7 @@ class NeuralDriverTests(unittest.TestCase):
 
         def broken(text):
             raise RuntimeError('model crashed')
+
         engine = VoiceEngine(driver_factory=lambda: NeuralSpeechDriver(broken, player))
         engine.start()
         try:
@@ -141,7 +143,7 @@ class KokoroDownloadTests(unittest.TestCase):
             self.assertEqual(sorted(fetched), ['kokoro-v1.0.onnx', 'voices-v1.0.bin'])
             self.assertEqual((Path(tmp) / 'voices-v1.0.bin').read_bytes(), b'abcdef')
             self.assertTrue(neural_voice.download_model_files(tmp, lambda _: None, opener=opener))
-            self.assertEqual(len(fetched), 2)       # already there, nothing fetched again
+            self.assertEqual(len(fetched), 2)  # already there, nothing fetched again
 
     def test_failed_download_leaves_no_partial_file(self):
         import tempfile

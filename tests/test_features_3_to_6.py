@@ -27,22 +27,35 @@ from voice_engine import Priority
 from web_hud import get_web_state, update_web_state
 
 
-def build_motion_packet(session_time: float, frame_id: int, x: float, z: float,
-                        lat_g: float = 0.0, player_idx: int = 0) -> bytes:
+def build_motion_packet(
+    session_time: float, frame_id: int, x: float, z: float, lat_g: float = 0.0, player_idx: int = 0
+) -> bytes:
     header = struct.pack(
-        HEADER_FORMAT,
-        2021, 1, 18, 1, 0, 123456789, float(session_time), frame_id, player_idx, 255
+        HEADER_FORMAT, 2021, 1, 18, 1, 0, 123456789, float(session_time), frame_id, player_idx, 255
     )
     cars_data = bytearray()
     for car_idx in range(22):
         if car_idx == player_idx:
             car_block = struct.pack(
                 CAR_MOTION_FORMAT,
-                float(x), 0.0, float(z),
-                0.0, 0.0, 0.0,
-                0, 0, 0, 0, 0, 0,
-                float(lat_g), 0.0, 0.0,
-                0.0, 0.0, 0.0
+                float(x),
+                0.0,
+                float(z),
+                0.0,
+                0.0,
+                0.0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                float(lat_g),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
             )
         else:
             car_block = bytes(CAR_MOTION_SIZE)
@@ -67,20 +80,48 @@ class Feature3TrackMappingTests(unittest.TestCase):
 
         # Feed telemetry and motion points around lap
         dummy_telem = CarTelemetryData(
-            speed=250, throttle=1.0, steer=0.0, brake=0.0, clutch=0, gear=7, engine_rpm=11000,
-            drs=1, rev_lights_percent=50, rev_lights_bit_value=0,
+            speed=250,
+            throttle=1.0,
+            steer=0.0,
+            brake=0.0,
+            clutch=0,
+            gear=7,
+            engine_rpm=11000,
+            drs=1,
+            rev_lights_percent=50,
+            rev_lights_bit_value=0,
             brakes_temperature=(400, 400, 400, 400),
             tyres_surface_temperature=(95, 95, 95, 95),
             tyres_inner_temperature=(90, 90, 90, 90),
-            engine_temperature=95, tyres_pressure=(23, 23, 22, 22), surface_type=(0, 0, 0, 0)
+            engine_temperature=95,
+            tyres_pressure=(23, 23, 22, 22),
+            surface_type=(0, 0, 0, 0),
         )
         dummy_lap = LapData(
-            last_lap_time_ms=0, current_lap_time_ms=5000, sector1_time_ms=0, sector2_time_ms=0,
-            lap_distance=0.0, total_distance=0.0, safety_car_delta=0.0, car_position=1,
-            current_lap_num=1, pit_status=0, num_pit_stops=0, sector=0, current_lap_invalid=0,
-            penalties=0, warnings=0, num_unserved_drive_through=0, num_unserved_stop_go=0,
-            grid_position=1, driver_status=4, result_status=2, pit_lane_timer_active=0,
-            pit_lane_time_ms=0, pit_stop_timer_ms=0, pit_stop_should_serve_pen=0
+            last_lap_time_ms=0,
+            current_lap_time_ms=5000,
+            sector1_time_ms=0,
+            sector2_time_ms=0,
+            lap_distance=0.0,
+            total_distance=0.0,
+            safety_car_delta=0.0,
+            car_position=1,
+            current_lap_num=1,
+            pit_status=0,
+            num_pit_stops=0,
+            sector=0,
+            current_lap_invalid=0,
+            penalties=0,
+            warnings=0,
+            num_unserved_drive_through=0,
+            num_unserved_stop_go=0,
+            grid_position=1,
+            driver_status=4,
+            result_status=2,
+            pit_lane_timer_active=0,
+            pit_lane_time_ms=0,
+            pit_stop_timer_ms=0,
+            pit_stop_should_serve_pen=0,
         )
         engine.latest_telemetry = dummy_telem
         engine.latest_lap = dummy_lap
@@ -102,12 +143,22 @@ class Feature4RealisticF1RadioProtocolTests(unittest.TestCase):
     def test_cornering_and_braking_silence_filter(self):
         engine = AnalysisEngine(MagicMock())
         dummy_telem = CarTelemetryData(
-            speed=200, throttle=1.0, steer=0.0, brake=0.0, clutch=0, gear=6, engine_rpm=10500,
-            drs=0, rev_lights_percent=0, rev_lights_bit_value=0,
+            speed=200,
+            throttle=1.0,
+            steer=0.0,
+            brake=0.0,
+            clutch=0,
+            gear=6,
+            engine_rpm=10500,
+            drs=0,
+            rev_lights_percent=0,
+            rev_lights_bit_value=0,
             brakes_temperature=(400, 400, 400, 400),
             tyres_surface_temperature=(95, 95, 95, 95),
             tyres_inner_temperature=(90, 90, 90, 90),
-            engine_temperature=95, tyres_pressure=(23, 23, 22, 22), surface_type=(0, 0, 0, 0)
+            engine_temperature=95,
+            tyres_pressure=(23, 23, 22, 22),
+            surface_type=(0, 0, 0, 0),
         )
         engine.latest_telemetry = dummy_telem
 
@@ -154,10 +205,30 @@ class Feature4RealisticF1RadioProtocolTests(unittest.TestCase):
 
 class Feature5TrackDatabaseAndSetupAdvisorTests(unittest.TestCase):
     REQUIRED_CIRCUITS = [
-        "Albert Park", "Bahrain", "Imola", "Portimão", "Shanghai", "Barcelona",
-        "Monaco", "Baku", "Canada", "Paul Ricard", "Red Bull Ring", "Silverstone",
-        "Hungaroring", "Spa", "Zandvoort", "Monza", "Sochi", "Marina Bay",
-        "Suzuka", "COTA", "Mexico City", "Interlagos", "Jeddah", "Abu Dhabi"
+        "Albert Park",
+        "Bahrain",
+        "Imola",
+        "Portimão",
+        "Shanghai",
+        "Barcelona",
+        "Monaco",
+        "Baku",
+        "Canada",
+        "Paul Ricard",
+        "Red Bull Ring",
+        "Silverstone",
+        "Hungaroring",
+        "Spa",
+        "Zandvoort",
+        "Monza",
+        "Sochi",
+        "Marina Bay",
+        "Suzuka",
+        "COTA",
+        "Mexico City",
+        "Interlagos",
+        "Jeddah",
+        "Abu Dhabi",
     ]
 
     def test_all_24_circuits_present_in_database(self):
@@ -223,12 +294,19 @@ class Feature6WebHUDStructureTests(unittest.TestCase):
         self.assertTrue((root / 'static' / 'app.js').is_file())
 
     def test_web_state_snapshot_includes_all_hud_fields(self):
-        update_web_state({
-            'car_x': 100.5, 'car_z': -250.2, 'g_force_lat': 1.85,
-            'track_map': [[0, 0], [10, 10]], 'braking_zones': [[5, 5, 0.8]],
-            'ers_zones': [[10, 10]], 'tyre_wear': [12.0, 14.0, 11.5, 13.0],
-            'ers_percent': 85, 'safety_car': 'NONE'
-        })
+        update_web_state(
+            {
+                'car_x': 100.5,
+                'car_z': -250.2,
+                'g_force_lat': 1.85,
+                'track_map': [[0, 0], [10, 10]],
+                'braking_zones': [[5, 5, 0.8]],
+                'ers_zones': [[10, 10]],
+                'tyre_wear': [12.0, 14.0, 11.5, 13.0],
+                'ers_percent': 85,
+                'safety_car': 'NONE',
+            }
+        )
         state = get_web_state()
         self.assertEqual(state['car_x'], 100.5)
         self.assertEqual(state['car_z'], -250.2)

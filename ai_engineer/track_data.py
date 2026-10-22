@@ -41,24 +41,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 8, "rear_wing": 9},
             "transmission": {"diff_on_throttle": 60, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -2.70, "rear_camber": -1.50,
-                "front_toe": 0.08, "rear_toe": 0.23
+                "front_camber": -2.70,
+                "rear_camber": -1.50,
+                "front_toe": 0.08,
+                "rear_toe": 0.23,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 96, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.4, "front_left_pressure": 23.4,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.4,
+                "front_left_pressure": 23.4,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Good front-end bite is essential for the rapid chicane changes. Soft rear suspension aids traction out of Turn 2 and Turn 16."
+            "notes": "Good front-end bite is essential for the rapid chicane changes. Soft rear suspension aids traction out of Turn 2 and Turn 16.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Soften front anti-roll bar to 3 to prevent understeer on standing water."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Soften front anti-roll bar to 3 to prevent understeer on standing water.",
         },
         "braking_points": [
             (280, "Turn 1 Brabham", "Heavy braking into Turn 1, right-hander"),
@@ -67,10 +77,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2100, "Turn 9", "Medium braking into the Clark chicane"),
             (2950, "Turn 11-12 Waite", "High-speed chicane, slight lift and quick stab on brakes"),
             (4100, "Turn 13 Ascari", "Hard braking for Ascari"),
-            (4850, "Turn 15", "Heavy braking into penultimate corner")
-        ]
+            (4850, "Turn 15", "Heavy braking into penultimate corner"),
+        ],
     },
-
     # 1: Circuit Paul Ricard, Le Castellet (France)
     1: {
         "id": 1,
@@ -88,24 +97,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 5, "rear_wing": 6},
             "transmission": {"diff_on_throttle": 65, "diff_off_throttle": 56},
             "suspension_geometry": {
-                "front_camber": -2.80, "rear_camber": -1.40,
-                "front_toe": 0.07, "rear_toe": 0.22
+                "front_camber": -2.80,
+                "rear_camber": -1.40,
+                "front_toe": 0.07,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 5, "rear_suspension": 4,
-                "front_anti_roll": 7, "rear_anti_roll": 5,
-                "front_ride_height": 2, "rear_ride_height": 4
+                "front_suspension": 5,
+                "rear_suspension": 4,
+                "front_anti_roll": 7,
+                "rear_anti_roll": 5,
+                "front_ride_height": 2,
+                "rear_ride_height": 4,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 57},
             "tyres": {
-                "front_right_pressure": 23.8, "front_left_pressure": 23.8,
-                "rear_right_pressure": 22.2, "rear_left_pressure": 22.2
+                "front_right_pressure": 23.8,
+                "front_left_pressure": 23.8,
+                "rear_right_pressure": 22.2,
+                "rear_left_pressure": 22.2,
             },
-            "notes": "Low drag setup preserves overtaking potential down Mistral while stiff front ARB controls roll in Sector 3."
+            "notes": "Low drag setup preserves overtaking potential down Mistral while stiff front ARB controls roll in Sector 3.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+1", "brake_bias": "55%",
-            "notes": "Keep diff open (54%) to prevent snap oversteer on the kerbs."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+1",
+            "brake_bias": "55%",
+            "notes": "Keep diff open (54%) to prevent snap oversteer on the kerbs.",
         },
         "braking_points": [
             (320, "Turn 1 S de la Verrerie", "Hard braking into Turn 1 chicane"),
@@ -113,10 +132,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2500, "Mistral Chicane", "Heavy stop from 330 km/h into Mistral chicane"),
             (3700, "Signes", "Flat out or gentle lift into Signes"),
             (4200, "Le Beausset", "Double apex right-hander, modulate trail braking"),
-            (5200, "Bendor & Pont", "Slow technical final complex, brake early for rotation")
-        ]
+            (5200, "Bendor & Pont", "Slow technical final complex, brake early for rotation"),
+        ],
     },
-
     # 2: Shanghai International Circuit (China)
     2: {
         "id": 2,
@@ -134,24 +152,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 5, "rear_wing": 6},
             "transmission": {"diff_on_throttle": 62, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -3.00, "rear_camber": -1.60,
-                "front_toe": 0.08, "rear_toe": 0.24
+                "front_camber": -3.00,
+                "rear_camber": -1.60,
+                "front_toe": 0.08,
+                "rear_toe": 0.24,
             },
             "suspension": {
-                "front_suspension": 5, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 5,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 97, "brake_bias": 57},
             "tyres": {
-                "front_right_pressure": 23.6, "front_left_pressure": 24.2,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.6,
+                "front_left_pressure": 24.2,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Slightly asymmetric tyre pressure compensates for heavy Front-Left load through Turn 1 and 13."
+            "notes": "Slightly asymmetric tyre pressure compensates for heavy Front-Left load through Turn 1 and 13.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+3", "ride_height": "+2", "brake_bias": "55%",
-            "notes": "Soften front suspension to navigate the downhill snail complex without sliding."
+            "front_wing": "+2",
+            "rear_wing": "+3",
+            "ride_height": "+2",
+            "brake_bias": "55%",
+            "notes": "Soften front suspension to navigate the downhill snail complex without sliding.",
         },
         "braking_points": [
             (250, "Turn 1-2 Snail", "Brake gently while tightening radius into Turn 1"),
@@ -159,10 +187,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (1600, "Turn 7-8", "High-speed left-right flick, light brake tap"),
             (2500, "Turn 11-12", "Double chicane, brake in a straight line"),
             (4150, "Turn 14 Hairpin", "Massive braking zone at end of 1.2km straight"),
-            (5050, "Turn 16", "Final corner onto pit straight, smooth brake release")
-        ]
+            (5050, "Turn 16", "Final corner onto pit straight, smooth brake release"),
+        ],
     },
-
     # 3: Bahrain International Circuit, Sakhir (Bahrain)
     3: {
         "id": 3,
@@ -180,24 +207,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 6, "rear_wing": 7},
             "transmission": {"diff_on_throttle": 58, "diff_off_throttle": 52},
             "suspension_geometry": {
-                "front_camber": -2.80, "rear_camber": -1.40,
-                "front_toe": 0.06, "rear_toe": 0.20
+                "front_camber": -2.80,
+                "rear_camber": -1.40,
+                "front_toe": 0.06,
+                "rear_toe": 0.20,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 3,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 3,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 95, "brake_bias": 55},
             "tyres": {
-                "front_right_pressure": 23.2, "front_left_pressure": 23.2,
-                "rear_right_pressure": 21.8, "rear_left_pressure": 21.8
+                "front_right_pressure": 23.2,
+                "front_left_pressure": 23.2,
+                "rear_right_pressure": 21.8,
+                "rear_left_pressure": 21.8,
             },
-            "notes": "Soft rear anti-roll bar and low on-throttle differential (58%) protect rear traction on corner exit."
+            "notes": "Soft rear anti-roll bar and low on-throttle differential (58%) protect rear traction on corner exit.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Rare desert rain creates extremely greasy surface; open diff to 50%."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Rare desert rain creates extremely greasy surface; open diff to 50%.",
         },
         "braking_points": [
             (410, "Turn 1", "Heavy braking zone, turn 1, down to 1st gear"),
@@ -207,10 +244,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2050, "Turn 10", "Downhill off-camber lockup hazard, brake in straight line"),
             (2890, "Turn 11", "Uphill sweep, medium brake pressure"),
             (3500, "Turn 13", "Short braking zone, turn 13"),
-            (4150, "Turn 14", "Brake for final hairpin, good exit vital for DRS straight")
-        ]
+            (4150, "Turn 14", "Brake for final hairpin, good exit vital for DRS straight"),
+        ],
     },
-
     # 4: Circuit de Barcelona-Catalunya (Spain)
     4: {
         "id": 4,
@@ -228,24 +264,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 8, "rear_wing": 9},
             "transmission": {"diff_on_throttle": 62, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -2.90, "rear_camber": -1.50,
-                "front_toe": 0.08, "rear_toe": 0.22
+                "front_camber": -2.90,
+                "rear_camber": -1.50,
+                "front_toe": 0.08,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 5, "rear_suspension": 4,
-                "front_anti_roll": 7, "rear_anti_roll": 4,
-                "front_ride_height": 2, "rear_ride_height": 4
+                "front_suspension": 5,
+                "rear_suspension": 4,
+                "front_anti_roll": 7,
+                "rear_anti_roll": 4,
+                "front_ride_height": 2,
+                "rear_ride_height": 4,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.5, "front_left_pressure": 24.0,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.5,
+                "front_left_pressure": 24.0,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "High aero balance keeps the car planted through Turn 3 and Turn 9 Campsa. Stiff front ARB aids change of direction."
+            "notes": "High aero balance keeps the car planted through Turn 3 and Turn 9 Campsa. Stiff front ARB aids change of direction.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Raise rear ride height to clear sausage kerbs in Turn 14-15 chicane."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Raise rear ride height to clear sausage kerbs in Turn 14-15 chicane.",
         },
         "braking_points": [
             (320, "Turn 1 Elf", "Brake hard for Turn 1, chicane complex"),
@@ -255,10 +301,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2350, "Turn 9 Campsa", "High speed right-hander, small lift or tap"),
             (2950, "Turn 10 Caixa", "Heavy braking into newly configured Turn 10"),
             (3700, "Turn 12", "Trail brake into long right-hander"),
-            (4200, "Turn 14-15 Chicane", "Slowest part of circuit, aggressive kerb hopping")
-        ]
+            (4200, "Turn 14-15 Chicane", "Slowest part of circuit, aggressive kerb hopping"),
+        ],
     },
-
     # 5: Circuit de Monaco (Monaco)
     5: {
         "id": 5,
@@ -276,24 +321,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 11, "rear_wing": 11},
             "transmission": {"diff_on_throttle": 52, "diff_off_throttle": 50},
             "suspension_geometry": {
-                "front_camber": -3.50, "rear_camber": -2.00,
-                "front_toe": 0.12, "rear_toe": 0.20
+                "front_camber": -3.50,
+                "rear_camber": -2.00,
+                "front_toe": 0.12,
+                "rear_toe": 0.20,
             },
             "suspension": {
-                "front_suspension": 2, "rear_suspension": 2,
-                "front_anti_roll": 3, "rear_anti_roll": 2,
-                "front_ride_height": 4, "rear_ride_height": 6
+                "front_suspension": 2,
+                "rear_suspension": 2,
+                "front_anti_roll": 3,
+                "rear_anti_roll": 2,
+                "front_ride_height": 4,
+                "rear_ride_height": 6,
             },
             "brakes": {"brake_pressure": 90, "brake_bias": 53},
             "tyres": {
-                "front_right_pressure": 22.0, "front_left_pressure": 22.0,
-                "rear_right_pressure": 20.5, "rear_left_pressure": 20.5
+                "front_right_pressure": 22.0,
+                "front_left_pressure": 22.0,
+                "rear_right_pressure": 20.5,
+                "rear_left_pressure": 20.5,
             },
-            "notes": "Maximum wings, ultra-soft suspension to absorb bumps and manhole covers, and unlocked diff for razor-sharp rotation."
+            "notes": "Maximum wings, ultra-soft suspension to absorb bumps and manhole covers, and unlocked diff for razor-sharp rotation.",
         },
         "wet_adjustments": {
-            "front_wing": "+0 (Already 11)", "rear_wing": "+0", "ride_height": "+3", "brake_bias": "52%",
-            "notes": "Monaco in the wet is treacherous; lower tyre pressures to minimum to build temperature."
+            "front_wing": "+0 (Already 11)",
+            "rear_wing": "+0",
+            "ride_height": "+3",
+            "brake_bias": "52%",
+            "notes": "Monaco in the wet is treacherous; lower tyre pressures to minimum to build temperature.",
         },
         "braking_points": [
             (180, "Sainte Dévote", "Brake for Turn 1 Sainte Devote, watch inside kerb"),
@@ -305,10 +360,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2050, "Nouvelle Chicane", "Heavy stop coming out of tunnel, 200m board"),
             (2700, "Tabac", "Commit in 4th gear, skim the armco barrier"),
             (2950, "Swimming Pool", "High-speed chicane, ride first kerb, avoid second"),
-            (3250, "La Rascasse", "Tight hairpin into Anthony Noghes and finish straight")
-        ]
+            (3250, "La Rascasse", "Tight hairpin into Anthony Noghes and finish straight"),
+        ],
     },
-
     # 6: Circuit Gilles Villeneuve, Montreal (Canada)
     6: {
         "id": 6,
@@ -326,24 +380,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 4, "rear_wing": 5},
             "transmission": {"diff_on_throttle": 64, "diff_off_throttle": 56},
             "suspension_geometry": {
-                "front_camber": -2.80, "rear_camber": -1.40,
-                "front_toe": 0.07, "rear_toe": 0.22
+                "front_camber": -2.80,
+                "rear_camber": -1.40,
+                "front_toe": 0.07,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 3, "rear_suspension": 3,
-                "front_anti_roll": 5, "rear_anti_roll": 4,
-                "front_ride_height": 4, "rear_ride_height": 6
+                "front_suspension": 3,
+                "rear_suspension": 3,
+                "front_anti_roll": 5,
+                "rear_anti_roll": 4,
+                "front_ride_height": 4,
+                "rear_ride_height": 6,
             },
             "brakes": {"brake_pressure": 100, "brake_bias": 57},
             "tyres": {
-                "front_right_pressure": 23.4, "front_left_pressure": 23.4,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.4,
+                "front_left_pressure": 23.4,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Low downforce for high top speed, compliant ride height (4/6) to ride the chicanes without launching the chassis."
+            "notes": "Low downforce for high top speed, compliant ride height (4/6) to ride the chicanes without launching the chassis.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "55%",
-            "notes": "Smooth braking into the final chicane to avoid aquaplaning into the Wall of Champions."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "55%",
+            "notes": "Smooth braking into the final chicane to avoid aquaplaning into the Wall of Champions.",
         },
         "braking_points": [
             (350, "Turn 1-2 Senna", "Brake into Senna 'S', left then long right"),
@@ -351,10 +415,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (1500, "Turn 6-7", "Hard brake for left-right chicane"),
             (1900, "Turn 8-9", "Approach under bridge, brake in a straight line"),
             (3100, "Turn 10 L'Epingle Hairpin", "Heavy braking into the hairpin, 1st or 2nd gear"),
-            (4100, "Turn 13-14 Wall of Champions", "Massive braking from 335 km/h, commit to chicane kerbs")
-        ]
+            (4100, "Turn 13-14 Wall of Champions", "Massive braking from 335 km/h, commit to chicane kerbs"),
+        ],
     },
-
     # 7: Silverstone Circuit (Great Britain)
     7: {
         "id": 7,
@@ -372,24 +435,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 7, "rear_wing": 8},
             "transmission": {"diff_on_throttle": 68, "diff_off_throttle": 56},
             "suspension_geometry": {
-                "front_camber": -3.20, "rear_camber": -1.60,
-                "front_toe": 0.08, "rear_toe": 0.24
+                "front_camber": -3.20,
+                "rear_camber": -1.60,
+                "front_toe": 0.08,
+                "rear_toe": 0.24,
             },
             "suspension": {
-                "front_suspension": 6, "rear_suspension": 5,
-                "front_anti_roll": 8, "rear_anti_roll": 6,
-                "front_ride_height": 2, "rear_ride_height": 4
+                "front_suspension": 6,
+                "rear_suspension": 5,
+                "front_anti_roll": 8,
+                "rear_anti_roll": 6,
+                "front_ride_height": 2,
+                "rear_ride_height": 4,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.8, "front_left_pressure": 24.4,
-                "rear_right_pressure": 22.4, "rear_left_pressure": 22.4
+                "front_right_pressure": 23.8,
+                "front_left_pressure": 24.4,
+                "rear_right_pressure": 22.4,
+                "rear_left_pressure": 22.4,
             },
-            "notes": "Stiff suspension controls aerodynamic platform height at 290+ km/h through Copse and Maggots."
+            "notes": "Stiff suspension controls aerodynamic platform height at 290+ km/h through Copse and Maggots.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "British weather changes fast; keep rear wing high to prevent snap spins through Stowe."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "British weather changes fast; keep rear wing high to prevent snap spins through Stowe.",
         },
         "braking_points": [
             (290, "Turn 1 Abbey", "Flat out or gentle lift into Abbey"),
@@ -401,10 +474,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (3400, "Maggots-Becketts", "Dance of high-speed direction changes, precision throttle"),
             (4250, "Turn 14 Chapel", "Flat out onto Hangar Straight"),
             (4950, "Turn 15 Stowe", "Heavy braking into Stowe from 320 km/h"),
-            (5400, "Turn 16 Vale", "Hard brake for Vale chicane, then accelerate through Club")
-        ]
+            (5400, "Turn 16 Vale", "Hard brake for Vale chicane, then accelerate through Club"),
+        ],
     },
-
     # 9: Hungaroring (Hungary)
     9: {
         "id": 9,
@@ -422,24 +494,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 10, "rear_wing": 11},
             "transmission": {"diff_on_throttle": 56, "diff_off_throttle": 52},
             "suspension_geometry": {
-                "front_camber": -3.20, "rear_camber": -1.80,
-                "front_toe": 0.09, "rear_toe": 0.22
+                "front_camber": -3.20,
+                "rear_camber": -1.80,
+                "front_toe": 0.09,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 95, "brake_bias": 55},
             "tyres": {
-                "front_right_pressure": 23.0, "front_left_pressure": 23.0,
-                "rear_right_pressure": 21.5, "rear_left_pressure": 21.5
+                "front_right_pressure": 23.0,
+                "front_left_pressure": 23.0,
+                "rear_right_pressure": 21.5,
+                "rear_left_pressure": 21.5,
             },
-            "notes": "Maximum downforce is essential. Responsive front end needed for constant mid-corner rotation."
+            "notes": "Maximum downforce is essential. Responsive front end needed for constant mid-corner rotation.",
         },
         "wet_adjustments": {
-            "front_wing": "+0", "rear_wing": "+0", "ride_height": "+2", "brake_bias": "53%",
-            "notes": "Off-camber corners become ice rinks in the wet; soften rear anti-roll bar to 2."
+            "front_wing": "+0",
+            "rear_wing": "+0",
+            "ride_height": "+2",
+            "brake_bias": "53%",
+            "notes": "Off-camber corners become ice rinks in the wet; soften rear anti-roll bar to 2.",
         },
         "braking_points": [
             (300, "Turn 1", "Heavy downhill braking zone, main overtaking spot"),
@@ -449,10 +531,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2200, "Turn 8-9", "Flowing mid-speed corners, keep rhythm"),
             (3200, "Turn 11", "Fast right-hander, clip kerb cleanly"),
             (3700, "Turn 12", "90-degree right, precise braking"),
-            (4050, "Turn 13-14", "Long penultimate carousel, smooth exit for pit straight")
-        ]
+            (4050, "Turn 13-14", "Long penultimate carousel, smooth exit for pit straight"),
+        ],
     },
-
     # 10: Circuit de Spa-Francorchamps (Belgium)
     10: {
         "id": 10,
@@ -470,24 +551,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 4, "rear_wing": 5},
             "transmission": {"diff_on_throttle": 66, "diff_off_throttle": 56},
             "suspension_geometry": {
-                "front_camber": -3.00, "rear_camber": -1.50,
-                "front_toe": 0.08, "rear_toe": 0.22
+                "front_camber": -3.00,
+                "rear_camber": -1.50,
+                "front_toe": 0.08,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 5, "rear_suspension": 4,
-                "front_anti_roll": 7, "rear_anti_roll": 5,
-                "front_ride_height": 2, "rear_ride_height": 4
+                "front_suspension": 5,
+                "rear_suspension": 4,
+                "front_anti_roll": 7,
+                "rear_anti_roll": 5,
+                "front_ride_height": 2,
+                "rear_ride_height": 4,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.6, "front_left_pressure": 24.2,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.6,
+                "front_left_pressure": 24.2,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Low wing gives 335+ km/h onto Kemmel. Avoid bottoming out in Raidillon dip with sufficient ride height."
+            "notes": "Low wing gives 335+ km/h onto Kemmel. Avoid bottoming out in Raidillon dip with sufficient ride height.",
         },
         "wet_adjustments": {
-            "front_wing": "+3", "rear_wing": "+3", "ride_height": "+3", "brake_bias": "55%",
-            "notes": "Micro-climates often wet Sector 2 while Sector 1 is bone dry; aero trim gives confidence in wet Pouhon."
+            "front_wing": "+3",
+            "rear_wing": "+3",
+            "ride_height": "+3",
+            "brake_bias": "55%",
+            "notes": "Micro-climates often wet Sector 2 while Sector 1 is bone dry; aero trim gives confidence in wet Pouhon.",
         },
         "braking_points": [
             (250, "Turn 1 La Source", "Heavy downhill braking for La Source hairpin"),
@@ -499,10 +590,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (4750, "Turn 12-13 Fagnes", "Quick flick chicane, jump curbs cleanly"),
             (5200, "Turn 14-15 Stavelot", "Brake into right, carry speed through Paul Frere"),
             (5800, "Blanchimont", "Terrifying flat out 300+ km/h sweep"),
-            (6600, "Bus Stop Chicane", "Huge stop into final chicane, great passing zone")
-        ]
+            (6600, "Bus Stop Chicane", "Huge stop into final chicane, great passing zone"),
+        ],
     },
-
     # 11: Autodromo Nazionale Monza (Italy)
     11: {
         "id": 11,
@@ -520,36 +610,49 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 1, "rear_wing": 2},
             "transmission": {"diff_on_throttle": 70, "diff_off_throttle": 58},
             "suspension_geometry": {
-                "front_camber": -2.60, "rear_camber": -1.20,
-                "front_toe": 0.06, "rear_toe": 0.20
+                "front_camber": -2.60,
+                "rear_camber": -1.20,
+                "front_toe": 0.06,
+                "rear_toe": 0.20,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 7, "rear_anti_roll": 4,
-                "front_ride_height": 2, "rear_ride_height": 3
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 7,
+                "rear_anti_roll": 4,
+                "front_ride_height": 2,
+                "rear_ride_height": 3,
             },
             "brakes": {"brake_pressure": 100, "brake_bias": 58},
             "tyres": {
-                "front_right_pressure": 24.2, "front_left_pressure": 24.2,
-                "rear_right_pressure": 22.8, "rear_left_pressure": 22.8
+                "front_right_pressure": 24.2,
+                "front_left_pressure": 24.2,
+                "rear_right_pressure": 22.8,
+                "rear_left_pressure": 22.8,
             },
-            "notes": "Skinny wings. Maximum brake pressure (100%) to decelerate from 355 km/h into Variante del Rettifilo."
+            "notes": "Skinny wings. Maximum brake pressure (100%) to decelerate from 355 km/h into Variante del Rettifilo.",
         },
         "wet_adjustments": {
-            "front_wing": "+3", "rear_wing": "+3", "ride_height": "+2", "brake_bias": "55%",
-            "notes": "Low downforce on wet Monza is deadly; increase wings to 4/5."
+            "front_wing": "+3",
+            "rear_wing": "+3",
+            "ride_height": "+2",
+            "brake_bias": "55%",
+            "notes": "Low downforce on wet Monza is deadly; increase wings to 4/5.",
         },
         "braking_points": [
-            (340, "Variante del Rettifilo (Turn 1-2)", "Brutal braking from 355 km/h to 70 km/h, 1st chicane"),
+            (
+                340,
+                "Variante del Rettifilo (Turn 1-2)",
+                "Brutal braking from 355 km/h to 70 km/h, 1st chicane",
+            ),
             (1230, "Curva Grande (Turn 3)", "Flat out acceleration sweep"),
             (1950, "Variante della Roggia (Turn 4-5)", "Heavy braking from 330 km/h, second chicane"),
             (3550, "Lesmo 1 (Turn 6)", "Brake hard into 4th gear, commit early"),
             (3950, "Lesmo 2 (Turn 7)", "3rd gear right, clip apex and use all kerb"),
             (4700, "Variante Ascari (Turn 8-10)", "Fast chicane, brake at 100m, flick left-right-left"),
-            (5350, "Curva Parabolica (Turn 11)", "Long right-hander, brake at 80m, open steering on exit")
-        ]
+            (5350, "Curva Parabolica (Turn 11)", "Long right-hander, brake at 80m, open steering on exit"),
+        ],
     },
-
     # 12: Marina Bay Street Circuit (Singapore)
     12: {
         "id": 12,
@@ -568,24 +671,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 10, "rear_wing": 11},
             "transmission": {"diff_on_throttle": 54, "diff_off_throttle": 52},
             "suspension_geometry": {
-                "front_camber": -3.30, "rear_camber": -1.80,
-                "front_toe": 0.10, "rear_toe": 0.22
+                "front_camber": -3.30,
+                "rear_camber": -1.80,
+                "front_toe": 0.10,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 3, "rear_suspension": 2,
-                "front_anti_roll": 4, "rear_anti_roll": 3,
-                "front_ride_height": 4, "rear_ride_height": 6
+                "front_suspension": 3,
+                "rear_suspension": 2,
+                "front_anti_roll": 4,
+                "rear_anti_roll": 3,
+                "front_ride_height": 4,
+                "rear_ride_height": 6,
             },
             "brakes": {"brake_pressure": 94, "brake_bias": 55},
             "tyres": {
-                "front_right_pressure": 22.8, "front_left_pressure": 22.8,
-                "rear_right_pressure": 21.2, "rear_left_pressure": 21.2
+                "front_right_pressure": 22.8,
+                "front_left_pressure": 22.8,
+                "rear_right_pressure": 21.2,
+                "rear_left_pressure": 21.2,
             },
-            "notes": "Soft springs absorb the bumps across the Anderson Bridge. High wings keep rear planted under braking."
+            "notes": "Soft springs absorb the bumps across the Anderson Bridge. High wings keep rear planted under braking.",
         },
         "wet_adjustments": {
-            "front_wing": "+0", "rear_wing": "+0", "ride_height": "+2", "brake_bias": "53%",
-            "notes": "Street lines and painted kerbs are lethal in the wet; avoid throttle over paint."
+            "front_wing": "+0",
+            "rear_wing": "+0",
+            "ride_height": "+2",
+            "brake_bias": "53%",
+            "notes": "Street lines and painted kerbs are lethal in the wet; avoid throttle over paint.",
         },
         "braking_points": [
             (350, "Turn 1-2-3", "Heavy braking into Turn 1 left, flick through 2 and 3"),
@@ -597,10 +710,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (3200, "Turn 13 Hairpin", "Heavy stop into tight hairpin"),
             (4300, "Turn 16-17", "Flick through the grandstand section"),
             (4650, "Turn 18-19 Under The Grandstand", "Tunnel-like 90 degree corners"),
-            (5000, "Turn 20-21", "Final chicane leading to finish straight")
-        ]
+            (5000, "Turn 20-21", "Final chicane leading to finish straight"),
+        ],
     },
-
     # 13: Suzuka International Racing Course (Japan)
     13: {
         "id": 13,
@@ -618,24 +730,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 8, "rear_wing": 9},
             "transmission": {"diff_on_throttle": 64, "diff_off_throttle": 56},
             "suspension_geometry": {
-                "front_camber": -3.20, "rear_camber": -1.60,
-                "front_toe": 0.08, "rear_toe": 0.24
+                "front_camber": -3.20,
+                "rear_camber": -1.60,
+                "front_toe": 0.08,
+                "rear_toe": 0.24,
             },
             "suspension": {
-                "front_suspension": 6, "rear_suspension": 5,
-                "front_anti_roll": 8, "rear_anti_roll": 6,
-                "front_ride_height": 2, "rear_ride_height": 4
+                "front_suspension": 6,
+                "rear_suspension": 5,
+                "front_anti_roll": 8,
+                "rear_anti_roll": 6,
+                "front_ride_height": 2,
+                "rear_ride_height": 4,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 24.2, "front_left_pressure": 23.8,
-                "rear_right_pressure": 22.2, "rear_left_pressure": 22.2
+                "front_right_pressure": 24.2,
+                "front_left_pressure": 23.8,
+                "rear_right_pressure": 22.2,
+                "rear_left_pressure": 22.2,
             },
-            "notes": "Razor sharp front-end responsiveness is required through the Esses. Oversteering in Degner 2 or 130R means heavy crash."
+            "notes": "Razor sharp front-end responsiveness is required through the Esses. Oversteering in Degner 2 or 130R means heavy crash.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+3", "brake_bias": "54%",
-            "notes": "Rivers frequently form across the track in Esses; lift through standing water."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+3",
+            "brake_bias": "54%",
+            "notes": "Rivers frequently form across the track in Esses; lift through standing water.",
         },
         "braking_points": [
             (300, "Turn 1-2", "High speed entry in 6th, down to 3rd for Turn 2"),
@@ -646,10 +768,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (3100, "Turn 11 Hairpin", "Full braking down to 1st gear, tricky camber"),
             (3900, "Turn 13-14 Spoon Curve", "Double apex left, trail brake into 4th gear"),
             (4800, "Turn 15 130R", "Flat out 300 km/h left-hand sweep"),
-            (5300, "Turn 16-17 Casio Triangle", "Heavy braking into the final chicane")
-        ]
+            (5300, "Turn 16-17 Casio Triangle", "Heavy braking into the final chicane"),
+        ],
     },
-
     # 14: Yas Marina Circuit, Abu Dhabi (UAE)
     14: {
         "id": 14,
@@ -668,24 +789,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 6, "rear_wing": 7},
             "transmission": {"diff_on_throttle": 62, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -2.90, "rear_camber": -1.50,
-                "front_toe": 0.07, "rear_toe": 0.22
+                "front_camber": -2.90,
+                "rear_camber": -1.50,
+                "front_toe": 0.07,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 4,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 4,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.4, "front_left_pressure": 23.4,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.4,
+                "front_left_pressure": 23.4,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Balanced setup enables strong top speed on back straights while preserving rear grip under the Yas Viceroy hotel."
+            "notes": "Balanced setup enables strong top speed on back straights while preserving rear grip under the Yas Viceroy hotel.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Rain in Abu Dhabi is rare; keep diff unlocked to avoid snaps on painted runoff."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Rain in Abu Dhabi is rare; keep diff unlocked to avoid snaps on painted runoff.",
         },
         "braking_points": [
             (350, "Turn 1", "Fast 4th gear left-hander off pit straight"),
@@ -694,10 +825,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2800, "Turn 9 Banked Corner", "Carry speed around the new sweeping banked turn"),
             (3500, "Turn 11", "90-degree right, precise braking"),
             (4300, "Turn 12-14 Hotel Complex", "Blind technical rights under hotel bridge"),
-            (4900, "Turn 15-16", "Double right-handers onto the start-finish straight")
-        ]
+            (4900, "Turn 15-16", "Double right-handers onto the start-finish straight"),
+        ],
     },
-
     # 15: Circuit of the Americas (COTA, USA)
     15: {
         "id": 15,
@@ -715,24 +845,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 8, "rear_wing": 9},
             "transmission": {"diff_on_throttle": 62, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -3.10, "rear_camber": -1.50,
-                "front_toe": 0.08, "rear_toe": 0.23
+                "front_camber": -3.10,
+                "rear_camber": -1.50,
+                "front_toe": 0.08,
+                "rear_toe": 0.23,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 4,
-                "front_anti_roll": 7, "rear_anti_roll": 5,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 4,
+                "front_anti_roll": 7,
+                "rear_anti_roll": 5,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.6, "front_left_pressure": 24.0,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.6,
+                "front_left_pressure": 24.0,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Aero balance through the Sector 1 esses is paramount. Ride height must absorb the notorious Austin surface bumps."
+            "notes": "Aero balance through the Sector 1 esses is paramount. Ride height must absorb the notorious Austin surface bumps.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+3", "brake_bias": "54%",
-            "notes": "Bumps generate puddles; raise ride height to 5/8 to prevent high-speed aquaplaning."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+3",
+            "brake_bias": "54%",
+            "notes": "Bumps generate puddles; raise ride height to 5/8 to prevent high-speed aquaplaning.",
         },
         "braking_points": [
             (350, "Turn 1", "Brutal uphill braking into blind hairpin crest"),
@@ -742,10 +882,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (3200, "Turn 12", "Massive braking from 330 km/h, primary overtaking zone"),
             (4100, "Turn 13-15", "Technical stadium chicane"),
             (4900, "Turn 16-18 Carousel", "Multi-apex right-hander, hold car balanced on throttle"),
-            (5200, "Turn 19-20", "Fast final corners before front straight")
-        ]
+            (5200, "Turn 19-20", "Fast final corners before front straight"),
+        ],
     },
-
     # 16: Autódromo José Carlos Pace, Interlagos (Brazil)
     16: {
         "id": 16,
@@ -763,24 +902,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 7, "rear_wing": 8},
             "transmission": {"diff_on_throttle": 62, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -3.00, "rear_camber": -1.50,
-                "front_toe": 0.08, "rear_toe": 0.22
+                "front_camber": -3.00,
+                "rear_camber": -1.50,
+                "front_toe": 0.08,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 96, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.4, "front_left_pressure": 23.6,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.4,
+                "front_left_pressure": 23.6,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Anti-clockwise track stresses right tyres. Good traction out of Junção (Turn 12) is vital for the long uphill run."
+            "notes": "Anti-clockwise track stresses right tyres. Good traction out of Junção (Turn 12) is vital for the long uphill run.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+3", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Interlagos downpours are legendary; rivers flow downhill across the Senna S."
+            "front_wing": "+2",
+            "rear_wing": "+3",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Interlagos downpours are legendary; rivers flow downhill across the Senna S.",
         },
         "braking_points": [
             (280, "Senna S (Turn 1-2)", "Downhill blind left-right, heavy braking from 330 km/h"),
@@ -789,10 +938,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2100, "Ferradura (Turn 6-7)", "Fast double-apex uphill right"),
             (2700, "Bico de Pato (Turn 8)", "Tight right hairpin, lowest gear"),
             (3200, "Mergulho (Turn 11)", "High-speed downhill compression"),
-            (3900, "Junção (Turn 12)", "Crucial slow left, nail throttle for long uphill flat run")
-        ]
+            (3900, "Junção (Turn 12)", "Crucial slow left, nail throttle for long uphill flat run"),
+        ],
     },
-
     # 17: Red Bull Ring (Austria)
     17: {
         "id": 17,
@@ -810,24 +958,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 4, "rear_wing": 5},
             "transmission": {"diff_on_throttle": 64, "diff_off_throttle": 56},
             "suspension_geometry": {
-                "front_camber": -2.80, "rear_camber": -1.30,
-                "front_toe": 0.06, "rear_toe": 0.20
+                "front_camber": -2.80,
+                "rear_camber": -1.30,
+                "front_toe": 0.06,
+                "rear_toe": 0.20,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 57},
             "tyres": {
-                "front_right_pressure": 23.8, "front_left_pressure": 23.8,
-                "rear_right_pressure": 22.2, "rear_left_pressure": 22.2
+                "front_right_pressure": 23.8,
+                "front_left_pressure": 23.8,
+                "rear_right_pressure": 22.2,
+                "rear_left_pressure": 22.2,
             },
-            "notes": "Low drag maximizes overtaking with 3 consecutive DRS zones. Soft rear springs help traction out of Turn 3."
+            "notes": "Low drag maximizes overtaking with 3 consecutive DRS zones. Soft rear springs help traction out of Turn 3.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "55%",
-            "notes": "Stay off yellow sausage kerbs on corner exits in wet conditions."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "55%",
+            "notes": "Stay off yellow sausage kerbs on corner exits in wet conditions.",
         },
         "braking_points": [
             (300, "Turn 1 Niki Lauda", "Uphill 90-degree right, brake at 70m board"),
@@ -835,10 +993,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (1450, "Turn 3 Remus", "Steep uphill heavy braking to 1st gear, best passing spot"),
             (2200, "Turn 4 Schlossgold", "Downhill right, easy to lock inside front wheel"),
             (3450, "Turn 6-7 Rauch", "Double fast lefts, commit to apex speed"),
-            (3900, "Turn 9-10 Jochen Rindt", "High-speed rights, watch track limits on exit")
-        ]
+            (3900, "Turn 9-10 Jochen Rindt", "High-speed rights, watch track limits on exit"),
+        ],
     },
-
     # 18: Sochi Autodrom (Russia)
     18: {
         "id": 18,
@@ -856,24 +1013,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 5, "rear_wing": 6},
             "transmission": {"diff_on_throttle": 60, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -2.80, "rear_camber": -1.40,
-                "front_toe": 0.07, "rear_toe": 0.22
+                "front_camber": -2.80,
+                "rear_camber": -1.40,
+                "front_toe": 0.07,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 4,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 2, "rear_ride_height": 4
+                "front_suspension": 4,
+                "rear_suspension": 4,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 2,
+                "rear_ride_height": 4,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 24.0, "front_left_pressure": 24.0,
-                "rear_right_pressure": 22.4, "rear_left_pressure": 22.4
+                "front_right_pressure": 24.0,
+                "front_left_pressure": 24.0,
+                "rear_right_pressure": 22.4,
+                "rear_left_pressure": 22.4,
             },
-            "notes": "Smooth asphalt offers low tyre degradation. Front-right tyre requires temperature maintenance for Turn 3."
+            "notes": "Smooth asphalt offers low tyre degradation. Front-right tyre requires temperature maintenance for Turn 3.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Sochi's slick asphalt offers near zero grip in rain; trail brake gently."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Sochi's slick asphalt offers near zero grip in rain; trail brake gently.",
         },
         "braking_points": [
             (450, "Turn 2", "Massive braking from 335 km/h, 90-degree right overtaking spot"),
@@ -883,10 +1050,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (3400, "Turn 10", "Fast blind right"),
             (4600, "Turn 13", "Heavy stop from DRS back straight"),
             (5200, "Turn 14-15", "Technical chicane around barriers"),
-            (5600, "Turn 16-18", "Sequential 90-degree rights leading to pit straight")
-        ]
+            (5600, "Turn 16-18", "Sequential 90-degree rights leading to pit straight"),
+        ],
     },
-
     # 19: Autódromo Hermanos Rodríguez (Mexico)
     19: {
         "id": 19,
@@ -905,24 +1071,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 9, "rear_wing": 10},
             "transmission": {"diff_on_throttle": 62, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -2.80, "rear_camber": -1.40,
-                "front_toe": 0.07, "rear_toe": 0.22
+                "front_camber": -2.80,
+                "rear_camber": -1.40,
+                "front_toe": 0.07,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 57},
             "tyres": {
-                "front_right_pressure": 23.4, "front_left_pressure": 23.4,
-                "rear_right_pressure": 21.8, "rear_left_pressure": 21.8
+                "front_right_pressure": 23.4,
+                "front_left_pressure": 23.4,
+                "rear_right_pressure": 21.8,
+                "rear_left_pressure": 21.8,
             },
-            "notes": "Thin air cuts cooling and aero downforce by 25%. Run near-maximum wing while still reaching 350 km/h on main straight."
+            "notes": "Thin air cuts cooling and aero downforce by 25%. Run near-maximum wing while still reaching 350 km/h on main straight.",
         },
         "wet_adjustments": {
-            "front_wing": "+1", "rear_wing": "+1", "ride_height": "+2", "brake_bias": "55%",
-            "notes": "Low density air reduces rain clearing; keep wipers / visor tear-offs ready."
+            "front_wing": "+1",
+            "rear_wing": "+1",
+            "ride_height": "+2",
+            "brake_bias": "55%",
+            "notes": "Low density air reduces rain clearing; keep wipers / visor tear-offs ready.",
         },
         "braking_points": [
             (350, "Turn 1-3 Chicane", "Huge 360 km/h braking zone into tight chicane"),
@@ -930,10 +1106,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (1400, "Turn 6", "Hairpin-like right, gentle throttle on exit"),
             (1900, "Turn 7-11 Esses", "Fast technical esses, balance car through direction switches"),
             (3500, "Turn 12 Peraltada Entry", "Heavy brake into baseball stadium entrance"),
-            (4050, "Turn 13-16 Foro Sol", "Stadium stadium stadium! 1st gear tight slow complex")
-        ]
+            (4050, "Turn 13-16 Foro Sol", "Stadium stadium stadium! 1st gear tight slow complex"),
+        ],
     },
-
     # 20: Baku City Circuit (Azerbaijan)
     20: {
         "id": 20,
@@ -951,24 +1126,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 3, "rear_wing": 4},
             "transmission": {"diff_on_throttle": 60, "diff_off_throttle": 52},
             "suspension_geometry": {
-                "front_camber": -2.70, "rear_camber": -1.30,
-                "front_toe": 0.06, "rear_toe": 0.20
+                "front_camber": -2.70,
+                "rear_camber": -1.30,
+                "front_toe": 0.06,
+                "rear_toe": 0.20,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 100, "brake_bias": 57},
             "tyres": {
-                "front_right_pressure": 24.2, "front_left_pressure": 24.2,
-                "rear_right_pressure": 22.4, "rear_left_pressure": 22.4
+                "front_right_pressure": 24.2,
+                "front_left_pressure": 24.2,
+                "rear_right_pressure": 22.4,
+                "rear_left_pressure": 22.4,
             },
-            "notes": "Low wings are required to defend on the massive 2.2km front straight. Good mechanical grip required through castle."
+            "notes": "Low wings are required to defend on the massive 2.2km front straight. Good mechanical grip required through castle.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+3", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Baku in rain is chaotic; street paint becomes slippery glass."
+            "front_wing": "+2",
+            "rear_wing": "+3",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Baku in rain is chaotic; street paint becomes slippery glass.",
         },
         "braking_points": [
             (450, "Turn 1", "350 km/h braking into 90-degree left, major overtake spot"),
@@ -977,10 +1162,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (3200, "Turn 8-10 Castle Section", "Narrowest track width in F1 (7.6m), thread the needle"),
             (4150, "Turn 12", "Fast downhill sweep"),
             (4600, "Turn 15", "Heavy braking downhill, notorious lockup / barrier spot"),
-            (5400, "Turn 16", "Final 90-degree left, exit cleanly onto 2.2km flat out straight")
-        ]
+            (5400, "Turn 16", "Final 90-degree left, exit cleanly onto 2.2km flat out straight"),
+        ],
     },
-
     # 26: Circuit Zandvoort (Netherlands)
     26: {
         "id": 26,
@@ -998,36 +1182,49 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 9, "rear_wing": 10},
             "transmission": {"diff_on_throttle": 62, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -3.20, "rear_camber": -1.70,
-                "front_toe": 0.08, "rear_toe": 0.22
+                "front_camber": -3.20,
+                "rear_camber": -1.70,
+                "front_toe": 0.08,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 5, "rear_suspension": 4,
-                "front_anti_roll": 7, "rear_anti_roll": 5,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 5,
+                "rear_suspension": 4,
+                "front_anti_roll": 7,
+                "rear_anti_roll": 5,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 24.2, "front_left_pressure": 24.6,
-                "rear_right_pressure": 22.8, "rear_left_pressure": 22.8
+                "front_right_pressure": 24.2,
+                "front_left_pressure": 24.6,
+                "rear_right_pressure": 22.8,
+                "rear_left_pressure": 22.8,
             },
-            "notes": "Higher tyre pressures counter the extreme compression on the 18-degree banking. Front wing keeps nose pinned in Tarzan."
+            "notes": "Higher tyre pressures counter the extreme compression on the 18-degree banking. Front wing keeps nose pinned in Tarzan.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Banking drains water to the bottom; high lines around Hugenholtz are fast in wet."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Banking drains water to the bottom; high lines around Hugenholtz are fast in wet.",
         },
         "braking_points": [
             (300, "Tarzanbocht (Turn 1)", "Heavy braking into famous cambered hairpin"),
-            (900, "Gerlachbocht (Turn 2) & Hugenholtz (Turn 3)", "Downhill into steep 18-degree banking, take high line"),
+            (
+                900,
+                "Gerlachbocht (Turn 2) & Hugenholtz (Turn 3)",
+                "Downhill into steep 18-degree banking, take high line",
+            ),
             (1500, "Turn 7 Scheivlak", "High speed blind crest right, lift slightly and trust downforce"),
             (2000, "Turn 9", "Medium brake into technical right"),
             (2700, "Turn 11-12 Hans Ernst Chicane", "Hard stop for chicane"),
             (3500, "Turn 13 Kumhobocht", "Right-hand sweep into the final banking"),
-            (3900, "Turn 14 Arie Luyendyk", "Steep 18-degree banking, DRS wide open onto front straight")
-        ]
+            (3900, "Turn 14 Arie Luyendyk", "Steep 18-degree banking, DRS wide open onto front straight"),
+        ],
     },
-
     # 27: Autodromo Enzo e Dino Ferrari, Imola (Italy) [DLC]
     27: {
         "id": 27,
@@ -1045,37 +1242,50 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 7, "rear_wing": 8},
             "transmission": {"diff_on_throttle": 60, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -3.00, "rear_camber": -1.50,
-                "front_toe": 0.08, "rear_toe": 0.22
+                "front_camber": -3.00,
+                "rear_camber": -1.50,
+                "front_toe": 0.08,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 4, "rear_ride_height": 6
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 4,
+                "rear_ride_height": 6,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.4, "front_left_pressure": 23.8,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.4,
+                "front_left_pressure": 23.8,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Compliant ride height (4/6) is vital to launch over the Variante Alta chicane without destabilizing the car."
+            "notes": "Compliant ride height (4/6) is vital to launch over the Variante Alta chicane without destabilizing the car.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Imola kerbs become ice in the wet; avoid greedy kerb strikes at Tamburello."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Imola kerbs become ice in the wet; avoid greedy kerb strikes at Tamburello.",
         },
         "braking_points": [
             (300, "Tamburello (Turn 2-4)", "Brake from 325 km/h for left-right chicane"),
             (1050, "Villeneuve (Turn 5-6)", "Brake hard into chicane"),
             (1500, "Tosa (Turn 7)", "Downhill hairpin braking, 2nd gear"),
             (2100, "Piratella (Turn 9)", "Blind downhill left, small confidence brake"),
-            (2500, "Acque Minerali (Turn 11-13)", "Tricky double right downhill, easy to run wide into gravel"),
+            (
+                2500,
+                "Acque Minerali (Turn 11-13)",
+                "Tricky double right downhill, easy to run wide into gravel",
+            ),
             (3400, "Variante Alta (Turn 14-15)", "Aggressive kerb riding chicane at top of hill"),
             (4100, "Rivazza 1 (Turn 17)", "Heavy downhill braking zone"),
-            (4500, "Rivazza 2 (Turn 18)", "Square off exit for flat out blast to line")
-        ]
+            (4500, "Rivazza 2 (Turn 18)", "Square off exit for flat out blast to line"),
+        ],
     },
-
     # 28: Autódromo Internacional do Algarve, Portimão (Portugal) [DLC]
     28: {
         "id": 28,
@@ -1094,24 +1304,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 7, "rear_wing": 8},
             "transmission": {"diff_on_throttle": 62, "diff_off_throttle": 54},
             "suspension_geometry": {
-                "front_camber": -2.90, "rear_camber": -1.50,
-                "front_toe": 0.08, "rear_toe": 0.22
+                "front_camber": -2.90,
+                "rear_camber": -1.50,
+                "front_toe": 0.08,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 4, "rear_suspension": 3,
-                "front_anti_roll": 6, "rear_anti_roll": 4,
-                "front_ride_height": 3, "rear_ride_height": 5
+                "front_suspension": 4,
+                "rear_suspension": 3,
+                "front_anti_roll": 6,
+                "rear_anti_roll": 4,
+                "front_ride_height": 3,
+                "rear_ride_height": 5,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 56},
             "tyres": {
-                "front_right_pressure": 23.6, "front_left_pressure": 23.6,
-                "rear_right_pressure": 22.0, "rear_left_pressure": 22.0
+                "front_right_pressure": 23.6,
+                "front_left_pressure": 23.6,
+                "rear_right_pressure": 22.0,
+                "rear_left_pressure": 22.0,
             },
-            "notes": "Good front-end downforce provides confidence over blind crests. Rear stability prevents spins on the downhill plunge into Turn 1."
+            "notes": "Good front-end downforce provides confidence over blind crests. Rear stability prevents spins on the downhill plunge into Turn 1.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+2", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Dramatic elevation creates standing pools at the bottom of dips."
+            "front_wing": "+2",
+            "rear_wing": "+2",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Dramatic elevation creates standing pools at the bottom of dips.",
         },
         "braking_points": [
             (350, "Turn 1 Primeira", "Blind crest into steep downhill right-hander"),
@@ -1121,10 +1341,9 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (2900, "Turn 9", "Blind uphill left crest"),
             (3400, "Turn 11 Craig Jones", "Downhill plunge into technical right"),
             (4000, "Turn 13-14", "Slow technical chicane"),
-            (4350, "Turn 15 Galp", "Massive flat-out downhill right onto main straight")
-        ]
+            (4350, "Turn 15 Galp", "Massive flat-out downhill right onto main straight"),
+        ],
     },
-
     # 29: Jeddah Corniche Circuit (Saudi Arabia) [DLC]
     29: {
         "id": 29,
@@ -1142,24 +1361,34 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             "aerodynamics": {"front_wing": 4, "rear_wing": 5},
             "transmission": {"diff_on_throttle": 64, "diff_off_throttle": 56},
             "suspension_geometry": {
-                "front_camber": -2.80, "rear_camber": -1.40,
-                "front_toe": 0.07, "rear_toe": 0.22
+                "front_camber": -2.80,
+                "rear_camber": -1.40,
+                "front_toe": 0.07,
+                "rear_toe": 0.22,
             },
             "suspension": {
-                "front_suspension": 5, "rear_suspension": 4,
-                "front_anti_roll": 7, "rear_anti_roll": 5,
-                "front_ride_height": 2, "rear_ride_height": 4
+                "front_suspension": 5,
+                "rear_suspension": 4,
+                "front_anti_roll": 7,
+                "rear_anti_roll": 5,
+                "front_ride_height": 2,
+                "rear_ride_height": 4,
             },
             "brakes": {"brake_pressure": 98, "brake_bias": 57},
             "tyres": {
-                "front_right_pressure": 24.0, "front_left_pressure": 24.0,
-                "rear_right_pressure": 22.4, "rear_left_pressure": 22.4
+                "front_right_pressure": 24.0,
+                "front_left_pressure": 24.0,
+                "rear_right_pressure": 22.4,
+                "rear_left_pressure": 22.4,
             },
-            "notes": "Low downforce setup for 330+ km/h speeds across 3 DRS zones. Responsive front end needed for rapid chicane changes."
+            "notes": "Low downforce setup for 330+ km/h speeds across 3 DRS zones. Responsive front end needed for rapid chicane changes.",
         },
         "wet_adjustments": {
-            "front_wing": "+2", "rear_wing": "+3", "ride_height": "+2", "brake_bias": "54%",
-            "notes": "Night street race with walls inches away; increased rear wing gives stability."
+            "front_wing": "+2",
+            "rear_wing": "+3",
+            "ride_height": "+2",
+            "brake_bias": "54%",
+            "notes": "Night street race with walls inches away; increased rear wing gives stability.",
         },
         "braking_points": [
             (450, "Turn 1-2", "Heavy braking into chicane from start straight"),
@@ -1168,15 +1397,16 @@ TRACK_DATABASE: dict[int, dict[str, Any]] = {
             (3400, "Turn 16-17", "High-speed flick between concrete barriers"),
             (4200, "Turn 22-23 Chicane", "Heavy stop from 320 km/h, blind apex"),
             (5000, "Turn 25-26", "Fast sweeps leading to final corner"),
-            (6000, "Turn 27", "Heavy braking for final hairpin before pit straight")
-        ]
-    }
+            (6000, "Turn 27", "Heavy braking for final hairpin before pit straight"),
+        ],
+    },
 }
 
 
 # ──────────────────────────────────────────────
 # Public Accessors & Compatibility Interfaces
 # ──────────────────────────────────────────────
+
 
 def get_braking_points(track_id: int) -> list[tuple[float, str, str]]:
     """Retrieve corner braking points for a track ID."""
@@ -1203,7 +1433,7 @@ def get_setup_advice(track_id: int) -> dict[str, Any]:
             "brake_bias": f"{s['brakes']['brake_bias']}%",
             "front_tyre_pressure": f"{s['tyres']['front_left_pressure']} PSI",
             "rear_tyre_pressure": f"{s['tyres']['rear_left_pressure']} PSI",
-            "notes": s.get("notes", "Standard baseline setup.")
+            "notes": s.get("notes", "Standard baseline setup."),
         }
     # Default fallback
     return {
@@ -1215,7 +1445,7 @@ def get_setup_advice(track_id: int) -> dict[str, Any]:
         "brake_bias": "56%",
         "front_tyre_pressure": "23.5 PSI",
         "rear_tyre_pressure": "22.0 PSI",
-        "notes": "Balanced baseline setup."
+        "notes": "Balanced baseline setup.",
     }
 
 
@@ -1242,15 +1472,22 @@ def corner_zones(track_id: int, track_length: int = 0) -> list[dict[str, Any]]:
         start = max(0.0, distance - 110.0)
         end = distance + 170.0
         if index + 1 < len(points):
-            end = min(end, points[index + 1][0] - 111.0)      # stop before the next zone starts
+            end = min(end, points[index + 1][0] - 111.0)  # stop before the next zone starts
         if track_length:
             end = min(end, float(track_length) - 1.0)
         if index > 0:
             start = max(start, zones[-1]["end"] + 1.0) if zones else start
         if end - start < 80.0:
             continue
-        zones.append({"name": name, "start": round(start), "end": round(end),
-                      "ref_apex": None, "ref_brake": round(distance)})
+        zones.append(
+            {
+                "name": name,
+                "start": round(start),
+                "end": round(end),
+                "ref_apex": None,
+                "ref_brake": round(distance),
+            }
+        )
     return zones
 
 
@@ -1263,17 +1500,19 @@ def get_all_tracks() -> list[dict[str, Any]]:
     """Get list of all 24 tracks with basic info for dropdown menus."""
     tracks = []
     for tid, t in sorted(TRACK_DATABASE.items(), key=lambda x: x[1]["name"]):
-        tracks.append({
-            "id": tid,
-            "name": t["name"],
-            "short_name": t["short_name"],
-            "country": t["country"],
-            "length_m": t["length_m"],
-            "turns": t["turns"],
-            "downforce": t["downforce"],
-            "tyre_wear": t["tyre_wear"],
-            "aliases": t.get("aliases", [t["short_name"]])
-        })
+        tracks.append(
+            {
+                "id": tid,
+                "name": t["name"],
+                "short_name": t["short_name"],
+                "country": t["country"],
+                "length_m": t["length_m"],
+                "turns": t["turns"],
+                "downforce": t["downforce"],
+                "tyre_wear": t["tyre_wear"],
+                "aliases": t.get("aliases", [t["short_name"]]),
+            }
+        )
     return tracks
 
 
@@ -1284,9 +1523,11 @@ def get_track_setup(track_id: int, weather: str = "dry", session: str = "race") 
     is_wet = "wet" in weather.lower() or "rain" in weather.lower()
     if is_wet:
         from track_analysis import wet_setup  # lazy: track_analysis imports this module
+
         setup = wet_setup(setup, circuit.get("wet_adjustments"))
     from track_analysis import clamp_setup, normalize_session, qualifying_setup
     from track_profiles import get_profile
+
     session = normalize_session(session)
     if session == "qualifying":
         base = clamp_setup(setup)
@@ -1302,8 +1543,13 @@ def get_track_setup(track_id: int, weather: str = "dry", session: str = "race") 
         "session": session,
         "setup": setup,
         "wet_adjustments": circuit.get("wet_adjustments", {}) if is_wet else None,
-        "engineer_advice": (setup.get("notes") if session == "qualifying"
-                            else circuit.get("wet_adjustments", {}).get("notes") if is_wet else setup.get("notes"))
+        "engineer_advice": (
+            setup.get("notes")
+            if session == "qualifying"
+            else circuit.get("wet_adjustments", {}).get("notes")
+            if is_wet
+            else setup.get("notes")
+        ),
     }
 
 
@@ -1324,10 +1570,13 @@ Explain why this setup works for this specific track's layout and weather in 2-3
 Keep your output structured, technical, and realistic for F1 2021."""
 
 
-def build_setup_advisor_prompt(track_id: int, weather: str = "dry", handling_issue: str = "balanced") -> tuple[str, str]:
+def build_setup_advisor_prompt(
+    track_id: int, weather: str = "dry", handling_issue: str = "balanced"
+) -> tuple[str, str]:
     """Build system and user prompts for DeepSeek / AI model to advise on setup."""
     circuit = TRACK_DATABASE.get(resolve_track_id(track_id), TRACK_DATABASE[7])
     from track_analysis import model_analysis  # lazy: track_analysis imports this module
+
     tyre_deg = model_analysis(circuit["id"], weather)["tyre_degradation"]
     user_prompt = (
         f"Circuit: {circuit['name']} ({circuit['country']})\n"
@@ -1342,7 +1591,9 @@ def build_setup_advisor_prompt(track_id: int, weather: str = "dry", handling_iss
     return SETUP_SYSTEM_PROMPT, user_prompt
 
 
-def generate_ai_setup_recommendation(track_id: int, weather: str = "dry", handling_issue: str = "balanced", ai_client=None) -> dict[str, Any]:
+def generate_ai_setup_recommendation(
+    track_id: int, weather: str = "dry", handling_issue: str = "balanced", ai_client=None
+) -> dict[str, Any]:
     """Generate setup recommendation using AI model or fallback engineered baseline."""
     track_info = get_track_setup(track_id, weather)
     if ai_client is not None:

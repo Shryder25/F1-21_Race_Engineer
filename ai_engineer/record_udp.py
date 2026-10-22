@@ -36,11 +36,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Record raw F1 2021 UDP telemetry to a file')
     parser.add_argument('--port', type=int, default=20777, help='UDP port to listen on (default: 20777)')
     parser.add_argument('--host', default='0.0.0.0', help='Address to bind (default: 0.0.0.0)')
-    parser.add_argument('--out', type=Path, default=None,
-                        help='Output file (default: recordings/<date-time>.f1rec.gz; '
-                             'a name ending .gz is gzip-compressed)')
-    parser.add_argument('--duration', type=float, default=None,
-                        help='Stop after this many seconds (default: until Ctrl+C)')
+    parser.add_argument(
+        '--out',
+        type=Path,
+        default=None,
+        help='Output file (default: recordings/<date-time>.f1rec.gz; a name ending .gz is gzip-compressed)',
+    )
+    parser.add_argument(
+        '--duration', type=float, default=None, help='Stop after this many seconds (default: until Ctrl+C)'
+    )
     parser.add_argument('--note', default=None, help='Free text stored in the file metadata')
     parser.add_argument('--force', action='store_true', help='Overwrite the output file if it exists')
     args = parser.parse_args(argv)
@@ -78,8 +82,10 @@ def main(argv=None):
             record_socket(sock, writer, duration=args.duration, on_progress=progress)
         finally:
             sock.close()
-    print(f'\n[REC] Saved {writer.count} datagrams ({writer.bytes / 1e6:.1f} MB) '
-          f'over {time.monotonic() - started:.0f} s to {out}')
+    print(
+        f'\n[REC] Saved {writer.count} datagrams ({writer.bytes / 1e6:.1f} MB) '
+        f'over {time.monotonic() - started:.0f} s to {out}'
+    )
     return 0
 
 

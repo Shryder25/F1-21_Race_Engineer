@@ -94,9 +94,13 @@ class VoiceTests(unittest.TestCase):
 
     def test_priority_order_and_fifo_within_rank(self):
         self.block()
-        for message, rank in [('normal', Priority.NORMAL), ('sector one', Priority.TIMING),
-                              ('gap', Priority.RACE), ('pit', Priority.STRATEGY),
-                              ('sector two', Priority.TIMING)]:
+        for message, rank in [
+            ('normal', Priority.NORMAL),
+            ('sector one', Priority.TIMING),
+            ('gap', Priority.RACE),
+            ('pit', Priority.STRATEGY),
+            ('sector two', Priority.TIMING),
+        ]:
             self.assertTrue(self.voice.say(message, rank))
         self.release()
         self.wait_for(lambda: len(self.spoken) == 6)

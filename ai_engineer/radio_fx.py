@@ -24,8 +24,15 @@ def _tone(freq, seconds, sr, level):
     return tone
 
 
-def radio_filter(samples, sample_rate: int, *, drive: float = 2.2, noise_level: float = 0.012,
-                 beeps: bool = True, seed: int | None = None) -> np.ndarray:
+def radio_filter(
+    samples,
+    sample_rate: int,
+    *,
+    drive: float = 2.2,
+    noise_level: float = 0.012,
+    beeps: bool = True,
+    seed: int | None = None,
+) -> np.ndarray:
     """Return a float32 mono signal in [-1, 1] that sounds like a pit-to-car radio call."""
     x = np.asarray(samples, dtype=np.float64).reshape(-1)
     if x.size == 0:

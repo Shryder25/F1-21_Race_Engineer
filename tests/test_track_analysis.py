@@ -33,9 +33,9 @@ class TyreDegradationTests(unittest.TestCase):
         labels = {tid: model_analysis(tid, 'dry')['tyre_degradation'] for tid in TRACK_DATABASE}
         self.assertGreaterEqual(len(set(labels.values())), 3)
         self.assertLess(list(labels.values()).count('High'), len(labels) // 2)
-        self.assertEqual(labels[5], 'Low')                     # Monaco: smooth, slow
-        self.assertEqual(labels[20], 'Low')                    # Baku
-        for abrasive in (3, 7, 13):                            # Bahrain, Silverstone, Suzuka
+        self.assertEqual(labels[5], 'Low')  # Monaco: smooth, slow
+        self.assertEqual(labels[20], 'Low')  # Baku
+        for abrasive in (3, 7, 13):  # Bahrain, Silverstone, Suzuka
             self.assertGreaterEqual(ORDER[labels[abrasive]], ORDER['High'])
 
     def test_wet_analysis_uses_wet_tyres_and_its_own_degradation(self):
@@ -66,7 +66,7 @@ class StrategyTests(unittest.TestCase):
                     self.assertGreaterEqual(len({s['compound'] for s in best['stints']}), 2)
 
     def test_hard_to_pass_tracks_favour_fewer_stops(self):
-        self.assertEqual(model_analysis(5)['strategy']['best']['stops'], 1)      # Monaco
+        self.assertEqual(model_analysis(5)['strategy']['best']['stops'], 1)  # Monaco
         self.assertGreaterEqual(model_analysis(3)['strategy']['best']['stops'], 2)  # Bahrain
 
     def test_race_distance_scales_the_plan(self):
@@ -86,8 +86,10 @@ class SetupTests(unittest.TestCase):
             self.assertLess(wet['brakes']['brake_pressure'], dry['brakes']['brake_pressure'])
 
     def test_legacy_get_track_setup_also_changes_in_the_wet(self):
-        self.assertNotEqual(get_track_setup(11, 'dry')['setup']['aerodynamics'],
-                            get_track_setup(11, 'wet')['setup']['aerodynamics'])
+        self.assertNotEqual(
+            get_track_setup(11, 'dry')['setup']['aerodynamics'],
+            get_track_setup(11, 'wet')['setup']['aerodynamics'],
+        )
 
     def test_handling_preference_changes_the_setup(self):
         base = model_analysis(7, handling='balanced')['setup']
@@ -95,7 +97,7 @@ class SetupTests(unittest.TestCase):
         self.assertGreater(loose['aerodynamics']['rear_wing'], base['aerodynamics']['rear_wing'])
 
     def test_values_are_clamped_to_game_ranges(self):
-        wild = wet_setup(clamp_setup(TRACK_DATABASE[5]['setup']))   # Monaco already at max wing
+        wild = wet_setup(clamp_setup(TRACK_DATABASE[5]['setup']))  # Monaco already at max wing
         self.assertEqual(wild['aerodynamics']['front_wing'], 11)
         clamped = clamp_setup({'aerodynamics': {'front_wing': 40}, 'brakes': {'brake_bias': 10}})
         self.assertEqual(clamped['aerodynamics']['front_wing'], 11)
@@ -122,16 +124,24 @@ class QualifyingSetupTests(unittest.TestCase):
                 self.assertEqual(race['session'], 'race')
                 self.assertNotEqual(self._values(race['setup']), self._values(quali['setup']), (tid, weather))
                 self.assertEqual(quali['race_setup'], self._values(race['setup']))
-                self.assertEqual(quali['setup'], clamp_setup(quali['setup']) | {'notes': quali['setup']['notes']})
+                self.assertEqual(
+                    quali['setup'], clamp_setup(quali['setup']) | {'notes': quali['setup']['notes']}
+                )
 
     def test_dry_qualifying_is_a_one_lap_car(self):
         for tid in TRACK_DATABASE:
             race = model_analysis(tid, 'dry')['setup']
             quali = model_analysis(tid, 'dry', session='qualifying')['setup']
             self.assertGreaterEqual(race['transmission']['diff_on_throttle'], 50)
-            self.assertGreater(quali['transmission']['diff_on_throttle'], race['transmission']['diff_on_throttle'])
-            self.assertLessEqual(quali['suspension_geometry']['front_camber'], race['suspension_geometry']['front_camber'])
-            self.assertLessEqual(quali['suspension']['front_ride_height'], race['suspension']['front_ride_height'])
+            self.assertGreater(
+                quali['transmission']['diff_on_throttle'], race['transmission']['diff_on_throttle']
+            )
+            self.assertLessEqual(
+                quali['suspension_geometry']['front_camber'], race['suspension_geometry']['front_camber']
+            )
+            self.assertLessEqual(
+                quali['suspension']['front_ride_height'], race['suspension']['front_ride_height']
+            )
             self.assertEqual(quali['brakes']['brake_pressure'], 100)
             for key in race['tyres']:
                 self.assertLessEqual(quali['tyres'][key], race['tyres'][key])
@@ -140,15 +150,17 @@ class QualifyingSetupTests(unittest.TestCase):
         def change(tid):
             race = model_analysis(tid, 'dry')['setup']
             quali = model_analysis(tid, 'dry', session='qualifying')['setup']
-            return {f'{c}.{k}': round(quali[c][k] - race[c][k], 2)
-                    for c in SETUP_RANGES for k in race[c]}
+            return {f'{c}.{k}': round(quali[c][k] - race[c][k], 2) for c in SETUP_RANGES for k in race[c]}
+
         changes = {tid: change(tid) for tid in TRACK_DATABASE}
         self.assertGreaterEqual(len({tuple(sorted(c.items())) for c in changes.values()}), 4)
         # Monza-style power tracks trim rear wing; Monaco keeps it.
-        self.assertLess(changes[11]['aerodynamics.rear_wing'], 0)       # Monza
-        self.assertEqual(changes[5]['aerodynamics.rear_wing'], 0)       # Monaco
+        self.assertLess(changes[11]['aerodynamics.rear_wing'], 0)  # Monza
+        self.assertEqual(changes[5]['aerodynamics.rear_wing'], 0)  # Monaco
         # Hot tracks drop pressures less than cool ones (tyres would overheat).
-        self.assertGreater(changes[3]['tyres.front_left_pressure'], changes[7]['tyres.front_left_pressure'] - 1e-9)
+        self.assertGreater(
+            changes[3]['tyres.front_left_pressure'], changes[7]['tyres.front_left_pressure'] - 1e-9
+        )
 
     def test_wet_qualifying_keeps_a_wet_car(self):
         wet_race = model_analysis(7, 'wet')['setup']
@@ -156,14 +168,18 @@ class QualifyingSetupTests(unittest.TestCase):
         dry_quali = model_analysis(7, 'dry', session='qualifying')['setup']
         self.assertEqual(wet_quali['transmission'], wet_race['transmission'])
         self.assertEqual(wet_quali['suspension'], wet_race['suspension'])
-        self.assertGreater(wet_quali['suspension']['front_ride_height'], dry_quali['suspension']['front_ride_height'])
+        self.assertGreater(
+            wet_quali['suspension']['front_ride_height'], dry_quali['suspension']['front_ride_height']
+        )
 
     def test_qualifying_plan_is_track_specific(self):
-        plans = {tid: model_analysis(tid, 'dry', session='qualifying')['qualifying'] for tid in TRACK_DATABASE}
+        plans = {
+            tid: model_analysis(tid, 'dry', session='qualifying')['qualifying'] for tid in TRACK_DATABASE
+        }
         self.assertTrue(all(p['tyre'] == 'SOFT' for p in plans.values()))
         self.assertGreater(len({p['out_lap'] for p in plans.values()}), 1)
         self.assertGreater(len({p['push_laps_per_set'] for p in plans.values()}), 1)
-        self.assertIn('late', plans[5]['session_timing'])                # Monaco rubbers in a lot
+        self.assertIn('late', plans[5]['session_timing'])  # Monaco rubbers in a lot
         wet = model_analysis(7, 'wet', session='qualifying')['qualifying']
         self.assertEqual(wet['tyre'], 'INTERMEDIATE')
         self.assertIsNone(model_analysis(7, 'dry')['qualifying'])
@@ -188,18 +204,24 @@ class QualifyingSetupTests(unittest.TestCase):
         self.assertIn('Spa', user)
         self.assertIn('Qualifying baseline setup', user)
         self.assertNotIn('Pit-lane loss', user)
-        merged = merge_ai_analysis(model, {
-            'qualifying_plan': {'tyre': 'Soft', 'push_laps_per_set': 9, 'reasoning': 'Go late.'},
-            'setup': {'brakes': {'brake_bias': 58}},
-            'briefing': 'Send it through Pouhon.',
-        })
-        self.assertEqual(merged['qualifying']['ai'], {'tyre': 'Soft', 'reasoning': 'Go late.',
-                                                      'push_laps_per_set': 5})
+        merged = merge_ai_analysis(
+            model,
+            {
+                'qualifying_plan': {'tyre': 'Soft', 'push_laps_per_set': 9, 'reasoning': 'Go late.'},
+                'setup': {'brakes': {'brake_bias': 58}},
+                'briefing': 'Send it through Pouhon.',
+            },
+        )
+        self.assertEqual(
+            merged['qualifying']['ai'], {'tyre': 'Soft', 'reasoning': 'Go late.', 'push_laps_per_set': 5}
+        )
         self.assertEqual(merged['setup']['brakes']['brake_bias'], 58)
         self.assertEqual(merged['setup']['brakes']['brake_pressure'], 100)
         self.assertEqual(merged['engineer_advice'], 'Send it through Pouhon.')
         # A race analysis ignores a stray qualifying plan.
-        self.assertIsNone(merge_ai_analysis(model_analysis(10), {'qualifying_plan': {'tyre': 'Soft'}})['qualifying'])
+        self.assertIsNone(
+            merge_ai_analysis(model_analysis(10), {'qualifying_plan': {'tyre': 'Soft'}})['qualifying']
+        )
 
     def test_analyst_caches_race_and_qualifying_separately(self):
         prompts = []
@@ -245,7 +267,7 @@ class DeepSeekAnalysisTests(unittest.TestCase):
         self.assertEqual(merged['setup_notes'], {'aerodynamics': 'Trim for Hangar straight.'})
         self.assertEqual(merged['strategy']['ai']['stops'], 1)
         self.assertEqual(merged['engineer_advice'], 'Look after the front-left.')
-        self.assertEqual(model['analysis_source'], 'model')            # model untouched
+        self.assertEqual(model['analysis_source'], 'model')  # model untouched
 
     def test_invalid_label_keeps_the_model_verdict(self):
         model = model_analysis(5)
@@ -273,7 +295,7 @@ class DeepSeekAnalysisTests(unittest.TestCase):
         client = Client()
         analyst = TrackAnalyst(client)
         self.assertEqual(analyst.ai_client.timeout, 90.0)
-        self.assertEqual(client.timeout, 15.0)                      # caller's client untouched
+        self.assertEqual(client.timeout, 15.0)  # caller's client untouched
         first = analyst.analyze(7, 'dry')
         second = analyst.analyze(7, 'dry')
         self.assertEqual(first['analysis_source'], 'deepseek')
@@ -296,7 +318,7 @@ class DeepSeekAnalysisTests(unittest.TestCase):
         result = analyst.analyze(3, 'wet')
         self.assertEqual(result['analysis_source'], 'model')
         self.assertIn('connection refused', result['ai_error'])
-        analyst.analyze(3, 'wet')                                   # backs off, no second call
+        analyst.analyze(3, 'wet')  # backs off, no second call
         self.assertEqual(Down.attempts, 1)
 
         offline = TrackAnalyst(None).analyze(3)
@@ -322,11 +344,22 @@ class RealRaceCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(slope, 0.07, places=3)
 
     def test_summary_feeds_the_profile(self):
-        races = [{'name': f'20{y} British Grand Prix', 'race_laps': 52, 'rain': y == 21,
-                  'safety_car': True, 'pit_losses': [20.5, 21.0, 19.8], 'stops': [1, 1, 2],
-                  'stints': [self._stint('MEDIUM', 2, 20, 0.08), self._stint('HARD', 22, 30, 0.04),
-                             self._stint('SOFT', 2, 12, 0.13)]}
-                 for y in (19, 21, 22, 23)]
+        races = [
+            {
+                'name': f'20{y} British Grand Prix',
+                'race_laps': 52,
+                'rain': y == 21,
+                'safety_car': True,
+                'pit_losses': [20.5, 21.0, 19.8],
+                'stops': [1, 1, 2],
+                'stints': [
+                    self._stint('MEDIUM', 2, 20, 0.08),
+                    self._stint('HARD', 22, 30, 0.04),
+                    self._stint('SOFT', 2, 12, 0.13),
+                ],
+            }
+            for y in (19, 21, 22, 23)
+        ]
         summary = summarize_races(races)
         self.assertAlmostEqual(summary['deg_s_per_lap']['MEDIUM'], 0.08, places=3)
         self.assertEqual(summary['pit_loss_s'], 20.5)
@@ -356,11 +389,19 @@ class FastF1ConversionTests(unittest.TestCase):
                 pit_in = pd.Timedelta(seconds=100) if lap == 15 else pd.NaT
                 pit_out = pd.Timedelta(seconds=120) if lap == 16 else pd.NaT
                 extra = 12.0 if lap in (15, 16) else 0.0
-                rows.append({'Driver': driver, 'LapNumber': lap, 'Stint': stint,
-                             'Compound': 'MEDIUM' if stint == 1 else 'HARD', 'TyreLife': float(age),
-                             'LapTime': pd.Timedelta(seconds=90 + 0.05 * age + extra),
-                             'PitInTime': pit_in, 'PitOutTime': pit_out,
-                             'TrackStatus': '4' if lap == 10 else '1'})
+                rows.append(
+                    {
+                        'Driver': driver,
+                        'LapNumber': lap,
+                        'Stint': stint,
+                        'Compound': 'MEDIUM' if stint == 1 else 'HARD',
+                        'TyreLife': float(age),
+                        'LapTime': pd.Timedelta(seconds=90 + 0.05 * age + extra),
+                        'PitInTime': pit_in,
+                        'PitOutTime': pit_out,
+                        'TrackStatus': '4' if lap == 10 else '1',
+                    }
+                )
 
         class Session:
             laps = pd.DataFrame(rows)
@@ -373,12 +414,13 @@ class FastF1ConversionTests(unittest.TestCase):
         self.assertEqual(race['stops'], [1, 1])
         self.assertEqual(len(race['stints']), 4)
         self.assertTrue(all(10 <= loss <= 45 for loss in race['pit_losses']))
-        self.assertNotIn(10, [lap for lap, _a, _t in race['stints'][0]['laps']])   # SC lap dropped
+        self.assertNotIn(10, [lap for lap, _a, _t in race['stints'][0]['laps']])  # SC lap dropped
 
 
 class HudEndpointTests(unittest.TestCase):
     def setUp(self):
         import web_hud
+
         self.web_hud = web_hud
         self.server = web_hud.start_web_hud_server(port=0)
         self.addCleanup(self.server.server_close)
@@ -391,8 +433,12 @@ class HudEndpointTests(unittest.TestCase):
             return json.loads(response.read())
 
     def post(self, path, body):
-        request = urllib.request.Request(self.base + path, data=json.dumps(body).encode(), method='POST',
-                                         headers={'Content-Type': 'application/json'})
+        request = urllib.request.Request(
+            self.base + path,
+            data=json.dumps(body).encode(),
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+        )
         with urllib.request.urlopen(request, timeout=5) as response:
             return json.loads(response.read())
 

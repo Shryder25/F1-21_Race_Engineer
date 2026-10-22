@@ -83,15 +83,17 @@ class TelemetryHistory:
         ''')
         # speed_trap_kph was added after the initial lap_stats schema; ALTER a pre-existing
         # database that predates it rather than forcing users to delete their history file.
-        existing_columns = {row[1] for row in
-                            self.connection.execute('PRAGMA table_info(lap_stats)').fetchall()}
+        existing_columns = {
+            row[1] for row in self.connection.execute('PRAGMA table_info(lap_stats)').fetchall()
+        }
         if 'speed_trap_kph' not in existing_columns:
             self.connection.execute('ALTER TABLE lap_stats ADD COLUMN speed_trap_kph REAL')
             self.connection.commit()
         # player_car_index tells the player's car_laps rows apart from the rivals'; older
         # databases get the column empty.
-        session_columns = {row[1] for row in
-                           self.connection.execute('PRAGMA table_info(sessions)').fetchall()}
+        session_columns = {
+            row[1] for row in self.connection.execute('PRAGMA table_info(sessions)').fetchall()
+        }
         if 'player_car_index' not in session_columns:
             self.connection.execute('ALTER TABLE sessions ADD COLUMN player_car_index INTEGER')
             self.connection.commit()
@@ -106,39 +108,51 @@ class TelemetryHistory:
             self.connection.execute(
                 'INSERT INTO sessions(capture_id,game_uid,track_id,track_length,formula,weather_group,'
                 'session_type,player_car_index) VALUES (?,?,?,?,?,?,?,?)',
-                (capture_id, str(game_uid), session.track_id, session.track_length,
-                 session.formula, self.weather_group(session.weather), session.session_type,
-                 player_car_index))
+                (
+                    capture_id,
+                    str(game_uid),
+                    session.track_id,
+                    session.track_length,
+                    session.formula,
+                    self.weather_group(session.weather),
+                    session.session_type,
+                    player_car_index,
+                ),
+            )
         return capture_id
 
-    def record_lap(self, capture_id: str, lap_num: int, lap_time_ms: int,
-                   eligible: bool, recording: dict):
+    def record_lap(self, capture_id: str, lap_num: int, lap_time_ms: int, eligible: bool, recording: dict):
         with self.connection:
             self.connection.execute(
                 'INSERT INTO laps(capture_id,lap_num,lap_time_ms,eligible,recording) VALUES (?,?,?,?,?)',
-                (capture_id, lap_num, lap_time_ms, int(eligible), json.dumps(recording, allow_nan=False)))
+                (capture_id, lap_num, lap_time_ms, int(eligible), json.dumps(recording, allow_nan=False)),
+            )
 
     def best_reference(self, session) -> dict | None:
-        row = self.connection.execute('''
+        row = self.connection.execute(
+            '''
             SELECT l.recording FROM laps l JOIN sessions s USING(capture_id)
             WHERE s.track_id=? AND s.track_length=? AND s.formula=? AND s.weather_group=?
               AND l.eligible=1 AND l.lap_time_ms>0
             ORDER BY l.lap_time_ms, l.id DESC LIMIT 1
-        ''', (session.track_id, session.track_length, session.formula,
-              self.weather_group(session.weather))).fetchone()
+        ''',
+            (session.track_id, session.track_length, session.formula, self.weather_group(session.weather)),
+        ).fetchone()
         return json.loads(row[0]) if row else None
 
     def close(self):
         self.connection.close()
 
     def personal_sectors(self, session) -> dict[int, int]:
-        rows = self.connection.execute('''
+        rows = self.connection.execute(
+            '''
             SELECT json_extract(l.recording, '$.sectors')
             FROM laps l JOIN sessions s USING(capture_id)
             WHERE s.track_id=? AND s.track_length=? AND s.formula=? AND s.weather_group=?
               AND l.eligible=1
-        ''', (session.track_id, session.track_length, session.formula,
-              self.weather_group(session.weather)))
+        ''',
+            (session.track_id, session.track_length, session.formula, self.weather_group(session.weather)),
+        )
         best = {}
         for (sectors_json,) in rows:
             for sector, milliseconds in json.loads(sectors_json or '{}').items():
@@ -162,63 +176,99 @@ class TelemetryHistory:
                 'tyre_age_laps,wear_rl,wear_rr,wear_fl,wear_fr,fuel_start,fuel_end,'
                 's1_ms,s2_ms,s3_ms,s1_delta_ms,s2_delta_ms,s3_delta_ms,speed_trap_kph) '
                 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                (capture_id, stats['lap_num'], stats['lap_time_ms'], int(stats.get('eligible', False)),
-                 stats.get('compound'), stats.get('tyre_age_laps'),
-                 wear[0], wear[1], wear[2], wear[3],
-                 stats.get('fuel_start'), stats.get('fuel_end'),
-                 sectors.get(1), sectors.get(2), sectors.get(3),
-                 deltas.get(1), deltas.get(2), deltas.get(3),
-                 stats.get('speed_trap_kph')))
+                (
+                    capture_id,
+                    stats['lap_num'],
+                    stats['lap_time_ms'],
+                    int(stats.get('eligible', False)),
+                    stats.get('compound'),
+                    stats.get('tyre_age_laps'),
+                    wear[0],
+                    wear[1],
+                    wear[2],
+                    wear[3],
+                    stats.get('fuel_start'),
+                    stats.get('fuel_end'),
+                    sectors.get(1),
+                    sectors.get(2),
+                    sectors.get(3),
+                    deltas.get(1),
+                    deltas.get(2),
+                    deltas.get(3),
+                    stats.get('speed_trap_kph'),
+                ),
+            )
 
     def race_report(self, capture_id: str, limit: int = 100) -> list[dict]:
         """This session's completed laps for the HUD race-report table: lap number, lap
         time, each sector, speed trap and tyre compound — newest-first lap order is left
         to the caller; this returns laps in the order they were driven."""
-        rows = self.connection.execute('''
+        rows = self.connection.execute(
+            '''
             SELECT lap_num, lap_time_ms, eligible, compound, s1_ms, s2_ms, s3_ms, speed_trap_kph
             FROM lap_stats WHERE capture_id=? ORDER BY lap_num ASC LIMIT ?
-        ''', (capture_id, limit)).fetchall()
+        ''',
+            (capture_id, limit),
+        ).fetchall()
         return [
-            {'lap_num': lap_num, 'lap_time_ms': lap_time_ms, 'eligible': bool(eligible),
-             'compound': compound, 's1_ms': s1, 's2_ms': s2, 's3_ms': s3,
-             'speed_trap_kph': speed_trap_kph}
+            {
+                'lap_num': lap_num,
+                'lap_time_ms': lap_time_ms,
+                'eligible': bool(eligible),
+                'compound': compound,
+                's1_ms': s1,
+                's2_ms': s2,
+                's3_ms': s3,
+                'speed_trap_kph': speed_trap_kph,
+            }
             for lap_num, lap_time_ms, eligible, compound, s1, s2, s3, speed_trap_kph in rows
         ]
 
-    def tyre_wear_samples(self, session, compound: int, exclude_capture: str | None = None,
-                          limit: int = 400) -> list[tuple[int, float]]:
+    def tyre_wear_samples(
+        self, session, compound: int, exclude_capture: str | None = None, limit: int = 400
+    ) -> list[tuple[int, float]]:
         """(tyre age in laps, worst-tyre wear %) from earlier sessions on this track and compound."""
-        rows = self.connection.execute('''
+        rows = self.connection.execute(
+            '''
             SELECT l.tyre_age_laps, MAX(l.wear_rl, l.wear_rr, l.wear_fl, l.wear_fr)
             FROM lap_stats l JOIN sessions s USING(capture_id)
             WHERE s.track_id=? AND s.track_length=? AND s.formula=? AND l.compound=?
               AND l.tyre_age_laps IS NOT NULL AND l.wear_rl IS NOT NULL
               AND l.capture_id != ?
             ORDER BY l.id DESC LIMIT ?
-        ''', (session.track_id, session.track_length, session.formula, compound,
-              exclude_capture or '', limit)).fetchall()
+        ''',
+            (session.track_id, session.track_length, session.formula, compound, exclude_capture or '', limit),
+        ).fetchall()
         return [(int(age), float(wear)) for age, wear in rows]
 
-    def fuel_use_samples(self, session, exclude_capture: str | None = None,
-                         limit: int = 200) -> list[float]:
+    def fuel_use_samples(self, session, exclude_capture: str | None = None, limit: int = 200) -> list[float]:
         """Fuel burned per lap (kg) on completed laps at this track in earlier sessions."""
-        rows = self.connection.execute('''
+        rows = self.connection.execute(
+            '''
             SELECT l.fuel_start - l.fuel_end
             FROM lap_stats l JOIN sessions s USING(capture_id)
             WHERE s.track_id=? AND s.track_length=? AND s.formula=? AND l.eligible=1
               AND l.fuel_start IS NOT NULL AND l.fuel_end IS NOT NULL
               AND l.fuel_start > l.fuel_end AND l.capture_id != ?
             ORDER BY l.id DESC LIMIT ?
-        ''', (session.track_id, session.track_length, session.formula,
-              exclude_capture or '', limit)).fetchall()
+        ''',
+            (session.track_id, session.track_length, session.formula, exclude_capture or '', limit),
+        ).fetchall()
         return [float(kg) for (kg,) in rows]
 
     # ──────────────────────────────────────────
     # Every car: laps, tyre stints, classification, setups (session_history.py)
     # ──────────────────────────────────────────
 
-    def record_car_history(self, capture_id: str, car_index: int, laps: list[dict],
-                           stints: list[dict], num_laps: int | None = None, driver: str | None = None):
+    def record_car_history(
+        self,
+        capture_id: str,
+        car_index: int,
+        laps: list[dict],
+        stints: list[dict],
+        num_laps: int | None = None,
+        driver: str | None = None,
+    ):
         """Upsert one car's lap and stint rows (session_history.lap_rows / stint_rows).
 
         num_laps is the car's last completed lap; laps past it (and stints past the last one)
@@ -226,24 +276,58 @@ class TelemetryHistory:
         """
         with self.connection:
             if num_laps is not None:
-                self.connection.execute('DELETE FROM car_laps WHERE capture_id=? AND car_index=? AND lap_num>?',
-                                        (capture_id, car_index, num_laps))
-            self.connection.execute('DELETE FROM car_stints WHERE capture_id=? AND car_index=? AND stint_num>=?',
-                                    (capture_id, car_index, len(stints)))
+                self.connection.execute(
+                    'DELETE FROM car_laps WHERE capture_id=? AND car_index=? AND lap_num>?',
+                    (capture_id, car_index, num_laps),
+                )
+            self.connection.execute(
+                'DELETE FROM car_stints WHERE capture_id=? AND car_index=? AND stint_num>=?',
+                (capture_id, car_index, len(stints)),
+            )
             self.connection.executemany(
                 'INSERT OR REPLACE INTO car_laps(capture_id,car_index,lap_num,lap_time_ms,s1_ms,s2_ms,s3_ms,'
                 'valid,valid_flags,stint_num,actual_compound,visual_compound,tyre_age_laps,in_lap,out_lap) '
                 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                [(capture_id, car_index, r['lap_num'], r['lap_time_ms'], r['s1_ms'], r['s2_ms'], r['s3_ms'],
-                  int(r['valid']), r['valid_flags'], r['stint_num'], r['actual_compound'],
-                  r['visual_compound'], r['tyre_age_laps'], int(r['in_lap']), int(r['out_lap']))
-                 for r in laps])
+                [
+                    (
+                        capture_id,
+                        car_index,
+                        r['lap_num'],
+                        r['lap_time_ms'],
+                        r['s1_ms'],
+                        r['s2_ms'],
+                        r['s3_ms'],
+                        int(r['valid']),
+                        r['valid_flags'],
+                        r['stint_num'],
+                        r['actual_compound'],
+                        r['visual_compound'],
+                        r['tyre_age_laps'],
+                        int(r['in_lap']),
+                        int(r['out_lap']),
+                    )
+                    for r in laps
+                ],
+            )
             self.connection.executemany(
                 'INSERT OR REPLACE INTO car_stints(capture_id,car_index,stint_num,actual_compound,'
                 'visual_compound,start_lap,end_lap,laps,is_open,driver) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                [(capture_id, car_index, r['stint_num'], r['actual_compound'], r['visual_compound'],
-                  r['start_lap'], r['end_lap'], r['laps'], int(r['is_open']), driver)
-                 for r in stints])
+                [
+                    (
+                        capture_id,
+                        car_index,
+                        r['stint_num'],
+                        r['actual_compound'],
+                        r['visual_compound'],
+                        r['start_lap'],
+                        r['end_lap'],
+                        r['laps'],
+                        int(r['is_open']),
+                        driver,
+                    )
+                    for r in stints
+                ],
+            )
 
     def record_final_classification(self, capture_id: str, rows: list[dict]):
         with self.connection:
@@ -252,33 +336,57 @@ class TelemetryHistory:
                 'grid_position,points,num_pit_stops,result_status,best_lap_time_ms,total_race_time_s,'
                 'penalties_time_s,num_penalties,tyre_stints_actual,tyre_stints_visual,driver) '
                 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                [(capture_id, r['car_index'], r['position'], r['num_laps'], r['grid_position'],
-                  r['points'], r['num_pit_stops'], r['result_status'], r['best_lap_time_ms'],
-                  r['total_race_time_s'], r['penalties_time_s'], r['num_penalties'],
-                  json.dumps(r['tyre_stints_actual']), json.dumps(r['tyre_stints_visual']),
-                  r.get('driver'))
-                 for r in rows])
+                [
+                    (
+                        capture_id,
+                        r['car_index'],
+                        r['position'],
+                        r['num_laps'],
+                        r['grid_position'],
+                        r['points'],
+                        r['num_pit_stops'],
+                        r['result_status'],
+                        r['best_lap_time_ms'],
+                        r['total_race_time_s'],
+                        r['penalties_time_s'],
+                        r['num_penalties'],
+                        json.dumps(r['tyre_stints_actual']),
+                        json.dumps(r['tyre_stints_visual']),
+                        r.get('driver'),
+                    )
+                    for r in rows
+                ],
+            )
 
     def record_car_setup(self, capture_id: str, car_index: int, setup: dict):
         with self.connection:
             self.connection.execute(
                 'INSERT OR REPLACE INTO car_setups(capture_id,car_index,setup) VALUES (?,?,?)',
-                (capture_id, car_index, json.dumps(setup, allow_nan=False)))
+                (capture_id, car_index, json.dumps(setup, allow_nan=False)),
+            )
 
     def car_laps(self, capture_id: str, car_index: int | None = None) -> list[dict]:
-        where, args = ('AND car_index=?', (capture_id, car_index)) if car_index is not None else ('', (capture_id,))
+        where, args = (
+            ('AND car_index=?', (capture_id, car_index)) if car_index is not None else ('', (capture_id,))
+        )
         cursor = self.connection.execute(
             f'SELECT car_index,lap_num,lap_time_ms,s1_ms,s2_ms,s3_ms,valid,stint_num,actual_compound,'
             f'visual_compound,tyre_age_laps,in_lap,out_lap FROM car_laps WHERE capture_id=? {where} '
-            f'ORDER BY car_index, lap_num', args)
+            f'ORDER BY car_index, lap_num',
+            args,
+        )
         names = [d[0] for d in cursor.description]
         return [dict(zip(names, row, strict=False)) for row in cursor.fetchall()]
 
     def car_stints(self, capture_id: str, car_index: int | None = None) -> list[dict]:
-        where, args = ('AND car_index=?', (capture_id, car_index)) if car_index is not None else ('', (capture_id,))
+        where, args = (
+            ('AND car_index=?', (capture_id, car_index)) if car_index is not None else ('', (capture_id,))
+        )
         cursor = self.connection.execute(
             f'SELECT car_index,stint_num,actual_compound,visual_compound,start_lap,end_lap,laps,is_open,driver '
-            f'FROM car_stints WHERE capture_id=? {where} ORDER BY car_index, stint_num', args)
+            f'FROM car_stints WHERE capture_id=? {where} ORDER BY car_index, stint_num',
+            args,
+        )
         names = [d[0] for d in cursor.description]
         return [dict(zip(names, row, strict=False)) for row in cursor.fetchall()]
 
@@ -287,7 +395,8 @@ class TelemetryHistory:
             'SELECT car_index,position,num_laps,grid_position,points,num_pit_stops,result_status,'
             'best_lap_time_ms,total_race_time_s,penalties_time_s,num_penalties,tyre_stints_actual,'
             'tyre_stints_visual,driver FROM final_classification WHERE capture_id=? ORDER BY position',
-            (capture_id,))
+            (capture_id,),
+        )
         names = [d[0] for d in cursor.description]
         out = []
         for row in cursor.fetchall():
@@ -298,6 +407,7 @@ class TelemetryHistory:
         return out
 
     def car_setup(self, capture_id: str, car_index: int) -> dict | None:
-        row = self.connection.execute('SELECT setup FROM car_setups WHERE capture_id=? AND car_index=?',
-                                      (capture_id, car_index)).fetchone()
+        row = self.connection.execute(
+            'SELECT setup FROM car_setups WHERE capture_id=? AND car_index=?', (capture_id, car_index)
+        ).fetchone()
         return json.loads(row[0]) if row else None

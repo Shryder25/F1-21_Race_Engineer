@@ -28,6 +28,7 @@ from simulate_telemetry import (  # noqa: E402
 
 try:
     import pyarrow  # noqa: F401
+
     HAVE_PYARROW = True
 except ImportError:  # CI installs it; a local checkout may not have it yet
     HAVE_PYARROW = False
@@ -46,11 +47,37 @@ def with_uid(packet, uid):
 
 def motion_packet(t, frame, susp=(1.0, 2.0, 3.0, 4.0), wheel_speed=(50.0, 50.0, 51.0, 51.0)):
     header = build_header(0, t, frame)
-    player = struct.pack('<ffffffhhhhhhffffff', 10.0, 1.0, -20.0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                         1.5, -0.5, 1.0, 0.25, 0.01, 0.02)
+    player = struct.pack(
+        '<ffffffhhhhhhffffff', 10.0, 1.0, -20.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.5, -0.5, 1.0, 0.25, 0.01, 0.02
+    )
     cars = player + bytes(CAR_MOTION_SIZE * 21)
-    extra = struct.pack(MOTION_EX_FORMAT, *susp, 0, 0, 0, 0, 0, 0, 0, 0, *wheel_speed,
-                        0.01, 0.01, 0.02, 0.02, 0.3, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.1)
+    extra = struct.pack(
+        MOTION_EX_FORMAT,
+        *susp,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        *wheel_speed,
+        0.01,
+        0.01,
+        0.02,
+        0.02,
+        0.3,
+        0,
+        0,
+        0,
+        0.5,
+        0,
+        0,
+        0,
+        0,
+        0.1,
+    )
     return header + cars + extra
 
 
@@ -61,8 +88,10 @@ def flashback_packet(t, frame, restored_frame, restored_time):
 
 def sample(t, frame, dist, lap=1, speed=200, lap_ms=None):
     lap_ms = int(t * 1000) if lap_ms is None else lap_ms
-    return [build_lap_packet(t, frame, dist, lap_ms, lap_num=lap),
-            build_telemetry_packet(t, frame, speed, 0.8, 0.0, 6, 95)]
+    return [
+        build_lap_packet(t, frame, dist, lap_ms, lap_num=lap),
+        build_telemetry_packet(t, frame, speed, 0.8, 0.0, 6, 95),
+    ]
 
 
 def drive(logger, packets):
@@ -96,9 +125,13 @@ class ChannelLoggerTest(unittest.TestCase):
 
     def test_paired_lap_and_telemetry_frames_become_rows_with_every_source(self):
         log = self.logger()
-        packets = [build_session_packet(0.0, 1, track_id=7, track_length=5891),
-                   build_participants_packet(0.0, 1), build_car_status_packet(0.0, 1, fuel=50.0),
-                   build_car_damage_packet(0.0, 1, wear=(1.0, 2.0, 3.0, 4.0)), motion_packet(0.0, 1)]
+        packets = [
+            build_session_packet(0.0, 1, track_id=7, track_length=5891),
+            build_participants_packet(0.0, 1),
+            build_car_status_packet(0.0, 1, fuel=50.0),
+            build_car_damage_packet(0.0, 1, wear=(1.0, 2.0, 3.0, 4.0)),
+            motion_packet(0.0, 1),
+        ]
         for i in range(10):
             packets += sample(0.05 * (i + 1), i + 2, 100.0 + 10 * i)
         self.assertEqual(drive(log, packets), 10)
@@ -124,8 +157,11 @@ class ChannelLoggerTest(unittest.TestCase):
 
     def test_telemetry_without_a_lap_packet_for_the_same_frame_is_not_a_row(self):
         log = self.logger()
-        packets = [build_session_packet(0.0, 1),
-                   build_lap_packet(0.1, 2, 100.0, 100), build_telemetry_packet(0.1, 3, 200, 1, 0, 6, 90)]
+        packets = [
+            build_session_packet(0.0, 1),
+            build_lap_packet(0.1, 2, 100.0, 100),
+            build_telemetry_packet(0.1, 3, 200, 1, 0, 6, 90),
+        ]
         self.assertEqual(drive(log, packets), 0)
         log.close()
         self.assertEqual(log.files, [])  # nothing logged, no empty file left behind
@@ -141,8 +177,16 @@ class ChannelLoggerTest(unittest.TestCase):
 
     def test_repeated_session_time_is_dropped(self):
         log = self.logger()
-        self.assertEqual(drive(log, [build_session_packet(0.0, 1)] + sample(1.0, 2, 100.0)
-                               + sample(1.0, 3, 100.0) + sample(0.9, 4, 99.0)), 1)
+        self.assertEqual(
+            drive(
+                log,
+                [build_session_packet(0.0, 1)]
+                + sample(1.0, 2, 100.0)
+                + sample(1.0, 3, 100.0)
+                + sample(0.9, 4, 99.0),
+            ),
+            1,
+        )
         log.close()
 
     def test_garbage_datagrams_are_ignored_without_raising(self):
@@ -154,8 +198,7 @@ class ChannelLoggerTest(unittest.TestCase):
     def test_a_new_session_uid_closes_the_file_and_starts_another(self):
         log = self.logger()
         first = [build_session_packet(0.0, 1)] + sample(0.1, 2, 10.0) + sample(0.2, 3, 20.0)
-        second = [with_uid(p, 99) for p in [build_session_packet(0.0, 1, track_id=11)]
-                  + sample(0.1, 2, 30.0)]
+        second = [with_uid(p, 99) for p in [build_session_packet(0.0, 1, track_id=11)] + sample(0.1, 2, 30.0)]
         drive(log, first + second)
         self.assertEqual(len(log.files), 2)
         log.close()
@@ -165,6 +208,7 @@ class ChannelLoggerTest(unittest.TestCase):
 
     def test_laps_are_written_as_row_groups_once_two_newer_laps_exist(self):
         import pyarrow.parquet as pq
+
         log = self.logger()
         packets = [build_session_packet(0.0, 1)]
         frame, t = 2, 0.0
@@ -183,10 +227,10 @@ class ChannelLoggerTest(unittest.TestCase):
         packets = [build_session_packet(0.0, 1)]
         for i in range(10):  # t = 1..10 s, 100 m per second
             packets += sample(1.0 + i, 10 + i, 100.0 * (i + 1))
-        packets.append(flashback_packet(10.1, 30, 15, 5.5))   # rewind to t=5.5
-        packets += sample(9.5, 19, 950.0)                     # in flight from the old timeline
-        packets += sample(6.0, 31, 600.0)                     # new timeline
-        packets += sample(10.5, 20, 1050.0)                   # another stale one
+        packets.append(flashback_packet(10.1, 30, 15, 5.5))  # rewind to t=5.5
+        packets += sample(9.5, 19, 950.0)  # in flight from the old timeline
+        packets += sample(6.0, 31, 600.0)  # new timeline
+        packets += sample(10.5, 20, 1050.0)  # another stale one
         packets += sample(6.5, 32, 650.0)
         drive(log, packets)
         log.close()
@@ -198,10 +242,13 @@ class ChannelLoggerTest(unittest.TestCase):
     def test_rows_overwritten_after_they_reached_the_file_are_dropped_on_read(self):
         import pyarrow as pa
         import pyarrow.parquet as pq
+
         path = self.dir / 'overlap.parquet'
         schema = channel_store.arrow_schema()
-        rows = [{'session_time': t, 'lap': 1, 'lap_distance': d}
-                for t, d in [(1, 10), (2, 20), (3, 30), (2.5, 25), (4, 40)]]
+        rows = [
+            {'session_time': t, 'lap': 1, 'lap_distance': d}
+            for t, d in [(1, 10), (2, 20), (3, 30), (2.5, 25), (4, 40)]
+        ]
         pq.write_table(pa.Table.from_pylist(rows, schema=schema), path)
         cols, _ = read_session(path)
         np.testing.assert_allclose(cols['session_time'], [1, 2, 2.5, 4])
@@ -233,6 +280,7 @@ class FindSessionFileTest(unittest.TestCase):
 
     def make(self, name, mtime):
         import os
+
         path = self.dir / name
         log = ChannelLogger(self.dir, clock=lambda: 1_790_000_000.0)
         drive(log, [build_session_packet(0.0, 1)] + sample(0.1, 2, 10.0) + sample(0.2, 3, 20.0))
@@ -297,9 +345,16 @@ class LapAlignmentTest(unittest.TestCase):
         gear.append(1)
         last.append(45.5)
         f = lambda v: np.array(v, dtype=np.float32)  # noqa: E731
-        return {'session_time': np.array(t), 'lap': f(lap), 'lap_distance': f(dist),
-                'speed': f(speed), 'gear': f(gear), 'last_lap_time': f(last),
-                'pit_status': f([0] * len(t)), 'lap_invalid': f([0] * len(t))}
+        return {
+            'session_time': np.array(t),
+            'lap': f(lap),
+            'lap_distance': f(dist),
+            'speed': f(speed),
+            'gear': f(gear),
+            'last_lap_time': f(last),
+            'pit_status': f([0] * len(t)),
+            'lap_invalid': f([0] * len(t)),
+        }
 
     def test_laps_line_up_on_a_common_distance_grid(self):
         grid, laps = align_laps(self.cols(), [1, 2], ['speed', 'gear'], step_m=10.0)
@@ -344,16 +399,28 @@ class LdFormatTest(unittest.TestCase):
         speed = np.linspace(0, 300, 50)
         gear = np.array([1, 2, 3, 4, 5] * 10, dtype=float)
         start = datetime.datetime(2026, 10, 21, 14, 5, 9)
-        motec.write_ld(self.path, [motec.LdChannel('Ground Speed', 'Speed', 'km/h', 20, speed, 'float32'),
-                                   motec.LdChannel('Gear', 'Gear', '', 20, gear, 'int16')],
-                       driver='Anvit', vehicle='Mercedes F1 2021', venue='Silverstone',
-                       event='F1 2021 Race', session='Race', comment='hello',
-                       short_comment='abc', start=start, vehicle_type='F1 2021')
+        motec.write_ld(
+            self.path,
+            [
+                motec.LdChannel('Ground Speed', 'Speed', 'km/h', 20, speed, 'float32'),
+                motec.LdChannel('Gear', 'Gear', '', 20, gear, 'int16'),
+            ],
+            driver='Anvit',
+            vehicle='Mercedes F1 2021',
+            venue='Silverstone',
+            event='F1 2021 Race',
+            session='Race',
+            comment='hello',
+            short_comment='abc',
+            start=start,
+            vehicle_type='F1 2021',
+        )
         head, channels = motec.read_ld(self.path)
         self.assertEqual(head['marker'], 0x40)
         self.assertEqual((head['date'], head['time']), ('21/10/2026', '14:05:09'))
-        self.assertEqual((head['driver'], head['vehicle'], head['venue']),
-                         ('Anvit', 'Mercedes F1 2021', 'Silverstone'))
+        self.assertEqual(
+            (head['driver'], head['vehicle'], head['venue']), ('Anvit', 'Mercedes F1 2021', 'Silverstone')
+        )
         self.assertEqual((head['event'], head['session'], head['comment']), ('F1 2021 Race', 'Race', 'hello'))
         self.assertEqual(head['venue_block'], 'Silverstone')
         self.assertEqual(head['vehicle_type'], 'F1 2021')
@@ -361,9 +428,16 @@ class LdFormatTest(unittest.TestCase):
         self.assertEqual([c.freq for c in channels], [20, 20])
         np.testing.assert_allclose(channels[0].data, speed.astype(np.float32))
         np.testing.assert_array_equal(channels[1].data, gear)
-        self.assertEqual(self.path.stat().st_size,
-                         motec.HEADER_SIZE + motec.EVENT_SIZE + motec.VENUE_SIZE + motec.VEHICLE_SIZE
-                         + 2 * motec.CHANNEL_SIZE + 50 * 4 + 50 * 2)
+        self.assertEqual(
+            self.path.stat().st_size,
+            motec.HEADER_SIZE
+            + motec.EVENT_SIZE
+            + motec.VENUE_SIZE
+            + motec.VEHICLE_SIZE
+            + 2 * motec.CHANNEL_SIZE
+            + 50 * 4
+            + 50 * 2,
+        )
 
     def test_channel_metadata_is_a_doubly_linked_list_with_contiguous_data(self):
         chans = [motec.LdChannel(f'Ch {i}', f'C{i}', '', 10, np.arange(5.0), 'float32') for i in range(3)]
@@ -379,13 +453,18 @@ class LdFormatTest(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<I', blob, 86)[0], 3)  # channel count
 
     def test_integer_channels_are_rounded_and_clipped(self):
-        motec.write_ld(self.path, [motec.LdChannel('X', 'X', '', 1, np.array([1.6, 1e9, -1e9, np.nan]), 'int16')])
+        motec.write_ld(
+            self.path, [motec.LdChannel('X', 'X', '', 1, np.array([1.6, 1e9, -1e9, np.nan]), 'int16')]
+        )
         _, (ch,) = motec.read_ld(self.path)
         np.testing.assert_array_equal(ch.data, [2, 32767, -32768, 0])
 
     def test_long_text_is_truncated_to_its_field(self):
-        motec.write_ld(self.path, [motec.LdChannel('N' * 40, 'S' * 20, 'U' * 20, 1, np.zeros(2), 'float32')],
-                       driver='D' * 100)
+        motec.write_ld(
+            self.path,
+            [motec.LdChannel('N' * 40, 'S' * 20, 'U' * 20, 1, np.zeros(2), 'float32')],
+            driver='D' * 100,
+        )
         head, (ch,) = motec.read_ld(self.path)
         self.assertEqual((len(ch.name), len(ch.short_name), len(ch.unit)), (32, 8, 12))
         self.assertEqual(len(head['driver']), 64)
@@ -460,8 +539,9 @@ class RecordedReplayExportTest(unittest.TestCase):
         for raw_i in (50, 700, 1500):
             grid_i = int(round((self.cols['session_time'][raw_i] - t0) * 20))
             self.assertAlmostEqual(by_name['Ground Speed'].data[grid_i], self.cols['speed'][raw_i], places=2)
-            self.assertAlmostEqual(by_name['Throttle Pos'].data[grid_i],
-                                   100 * self.cols['throttle'][raw_i], places=2)
+            self.assertAlmostEqual(
+                by_name['Throttle Pos'].data[grid_i], 100 * self.cols['throttle'][raw_i], places=2
+            )
             self.assertEqual(by_name['Lap Number'].data[grid_i], self.cols['lap'][raw_i])
         self.assertTrue(set(np.unique(by_name['Gear'].data)) <= set(range(-1, 9)))
         root = ET.parse(result['ldx']).getroot()
@@ -484,10 +564,12 @@ class RecordedReplayExportTest(unittest.TestCase):
 
     def test_tools_cli(self):
         import channels as cli
+
         self.assertEqual(cli.main(['laps', str(self.files[0])]), 0)
         out = self.dir / 'cmp.csv'
-        self.assertEqual(cli.main(['compare', str(self.files[0]), '2', '3', '--channels', 'speed',
-                                   '--csv', str(out)]), 0)
+        self.assertEqual(
+            cli.main(['compare', str(self.files[0]), '2', '3', '--channels', 'speed', '--csv', str(out)]), 0
+        )
         self.assertEqual(out.read_text().splitlines()[0], 'lap_distance,speed_lap2,speed_lap3')
         self.assertEqual(cli.main(['motec', str(self.files[0]), '--out', str(self.dir / 'cli.ld')]), 0)
         self.assertTrue((self.dir / 'cli.ldx').exists())

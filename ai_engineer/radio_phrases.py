@@ -10,9 +10,28 @@ Numbers are written out as words so every text-to-speech engine says them the sa
 
 from __future__ import annotations
 
-_ONES = ('zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
-         'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
-         'seventeen', 'eighteen', 'nineteen')
+_ONES = (
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+    'thirteen',
+    'fourteen',
+    'fifteen',
+    'sixteen',
+    'seventeen',
+    'eighteen',
+    'nineteen',
+)
 _TENS = ('', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety')
 _ORDINAL_SECTOR = {1: 'one', 2: 'two', 3: 'three'}
 

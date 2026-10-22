@@ -17,10 +17,23 @@ from synth import Car, Scenario  # noqa: E402
 
 
 def snapshot(lap, **overrides):
-    snap = {'lap': lap, 't': lap * 80.0, 'stops_done': 0, 'pit_status': 0, 'compound': 'Soft',
-            'tyre_age': lap - 1, 'worst_wear': 3.0 * (lap - 1), 'safety_car': False,
-            'truth_gaps': {}, 'stop_counts': {0: 0, 5: 0}, 'pit_status_all': {},
-            'pit': {}, 'wear_pred': {}, 'race_pace_ms': None, 'gaps': []}
+    snap = {
+        'lap': lap,
+        't': lap * 80.0,
+        'stops_done': 0,
+        'pit_status': 0,
+        'compound': 'Soft',
+        'tyre_age': lap - 1,
+        'worst_wear': 3.0 * (lap - 1),
+        'safety_car': False,
+        'truth_gaps': {},
+        'stop_counts': {0: 0, 5: 0},
+        'pit_status_all': {},
+        'pit': {},
+        'wear_pred': {},
+        'race_pace_ms': None,
+        'gaps': [],
+    }
     snap.update(overrides)
     return snap
 
@@ -62,19 +75,21 @@ class GroundTruthTests(unittest.TestCase):
         truth.trajectories[2] = [(0.0, 1.0), (50.0, 2.0), (150.0, 3.0)]
         truth.positions = {0: 250.0, 1: 300.0, 2: 150.0}
         truth.session_time = 3.0
-        self.assertAlmostEqual(truth.gap(1), 0.5)       # car 1 passed 250 m at t=2.5
+        self.assertAlmostEqual(truth.gap(1), 0.5)  # car 1 passed 250 m at t=2.5
         truth.trajectories[0].append((250.0, 3.0))
-        self.assertAlmostEqual(truth.gap(2), -1.0)      # the player passed 150 m at t=2.0
+        self.assertAlmostEqual(truth.gap(2), -1.0)  # the player passed 150 m at t=2.0
         self.assertIsNone(truth.gap(0))
 
 
 class EvaluateTests(unittest.TestCase):
     def test_pit_lap_errors_and_outcomes(self):
-        snaps = [snapshot(1, pit={'strategy': 6, 'ml_ideal': 'none'}),
-                 snapshot(3, pit={'strategy': 4, 'game_window': 5}),
-                 snapshot(5, pit={'strategy': 5}),
-                 snapshot(7, stops_done=1, pit={'strategy': 'none', 'game_window': 5}),
-                 snapshot(8, stops_done=1, pit={'ml_ideal': 12})]
+        snaps = [
+            snapshot(1, pit={'strategy': 6, 'ml_ideal': 'none'}),
+            snapshot(3, pit={'strategy': 4, 'game_window': 5}),
+            snapshot(5, pit={'strategy': 5}),
+            snapshot(7, stops_done=1, pit={'strategy': 'none', 'game_window': 5}),
+            snapshot(8, stops_done=1, pit={'ml_ideal': 12}),
+        ]
         result = backtest.evaluate(segment(snaps, stops=[5]))
         self.assertEqual(errors(result, 'pit_lap', 'strategy'), [1, -1, 0])
         self.assertEqual(errors(result, 'pit_lap', 'game_window'), [0])
@@ -88,10 +103,10 @@ class EvaluateTests(unittest.TestCase):
 
     def test_wear_compared_within_the_same_stint_only(self):
         snaps = [snapshot(n) for n in range(1, 5)]
-        snaps[1]['wear_pred'] = {1: 6.5, 3: 12.0}          # lap 2: actual lap 3 = 6.0
+        snaps[1]['wear_pred'] = {1: 6.5, 3: 12.0}  # lap 2: actual lap 3 = 6.0
         snaps.append(snapshot(5, stops_done=1, worst_wear=1.0))
         result = backtest.evaluate(segment(snaps, stops=[4]))
-        self.assertEqual(errors(result, 'tyre_wear', 'ml_curve'), [0.5])   # +3 crosses the stop
+        self.assertEqual(errors(result, 'tyre_wear', 'ml_curve'), [0.5])  # +3 crosses the stop
         baseline = [s for s in result['samples'] if s['predictor'] == 'last_lap_rate']
         self.assertTrue(baseline)
         self.assertTrue(all(abs(s['error']) < 1e-9 for s in baseline))
@@ -103,19 +118,21 @@ class EvaluateTests(unittest.TestCase):
         laps = sorted({s['lap'] for s in result['samples'] if s['metric'] == 'lap_time'})
         self.assertEqual(laps, [2, 3, 6, 8, 9])
         last_lap = {s['lap']: s for s in result['samples'] if s['predictor'] == 'last_lap'}
-        self.assertEqual(sorted(last_lap), [3, 9])          # needs a clean lap before it too
+        self.assertEqual(sorted(last_lap), [3, 9])  # needs a clean lap before it too
         self.assertAlmostEqual(last_lap[3]['error'], -0.1)
 
     def test_gap_forecast_uses_pace_delta_and_skips_pit_windows(self):
         ahead = {'side': 'ahead', 'car': 5, 'engineer_gap': 2.0, 'rate_s_per_lap': -0.5, 'name': None}
-        snaps = [snapshot(1, truth_gaps={5: 2.1}, gaps=[ahead]),
-                 snapshot(2, truth_gaps={5: 1.4}),
-                 snapshot(3, truth_gaps={5: 1.0}),
-                 snapshot(4, truth_gaps={5: 0.6}, stop_counts={0: 0, 5: 1})]
+        snaps = [
+            snapshot(1, truth_gaps={5: 2.1}, gaps=[ahead]),
+            snapshot(2, truth_gaps={5: 1.4}),
+            snapshot(3, truth_gaps={5: 1.0}),
+            snapshot(4, truth_gaps={5: 0.6}, stop_counts={0: 0, 5: 1}),
+        ]
         result = backtest.evaluate(segment(snaps))
         self.assertEqual(errors(result, 'gap_now', 'engineer'), [-0.1])
         forecast = {s['horizon']: s['error'] for s in result['samples'] if s['predictor'] == 'pace_delta'}
-        self.assertEqual(forecast, {'+1 lap': 0.1})          # +3 laps crosses car 5's stop
+        self.assertEqual(forecast, {'+1 lap': 0.1})  # +3 laps crosses car 5's stop
         hold = [s['error'] for s in result['samples'] if s['predictor'] == 'hold']
         self.assertEqual(hold, [0.6])
 
@@ -130,11 +147,27 @@ class EvaluateTests(unittest.TestCase):
 def small_race():
     cars = [Car('Player', pace=0.3, compound='soft', grid=3, pits={4: 'hard'}, race_number=99)]
     for index, name in enumerate(['HAMILTON', 'VERSTAPPEN', 'BOTTAS', 'PEREZ', 'NORRIS'], start=1):
-        cars.append(Car(name, pace=0.15 * index, compound='medium' if index % 2 else 'soft',
-                        grid=index + (index >= 3), pits={3 + index % 3: 'hard'}, race_number=index))
-    return Scenario(name='backtest_test_race', track_id=17, track_length=4318, session_type=10,
-                    total_laps=7, cars=cars, fuel_kg=7 * 1.7 + 2, pit_window=(3, 5),
-                    description='Short test race')
+        cars.append(
+            Car(
+                name,
+                pace=0.15 * index,
+                compound='medium' if index % 2 else 'soft',
+                grid=index + (index >= 3),
+                pits={3 + index % 3: 'hard'},
+                race_number=index,
+            )
+        )
+    return Scenario(
+        name='backtest_test_race',
+        track_id=17,
+        track_length=4318,
+        session_type=10,
+        total_laps=7,
+        cars=cars,
+        fuel_kg=7 * 1.7 + 2,
+        pit_window=(3, 5),
+        description='Short test race',
+    )
 
 
 class EndToEndTests(unittest.TestCase):
@@ -161,14 +194,23 @@ class EndToEndTests(unittest.TestCase):
 
     def test_every_kind_of_prediction_is_scored(self):
         metrics = {(s['metric'], s['predictor']) for s in self.report['races'][0]['samples']}
-        for wanted in (('pit_lap', 'strategy'), ('pit_lap', 'game_window'), ('tyre_wear', 'last_lap_rate'),
-                       ('lap_time', 'race_pace'), ('lap_time', 'last_lap'), ('gap_now', 'engineer'),
-                       ('gap', 'hold')):
+        for wanted in (
+            ('pit_lap', 'strategy'),
+            ('pit_lap', 'game_window'),
+            ('tyre_wear', 'last_lap_rate'),
+            ('lap_time', 'race_pace'),
+            ('lap_time', 'last_lap'),
+            ('gap_now', 'engineer'),
+            ('gap', 'hold'),
+        ):
             self.assertIn(wanted, metrics)
 
     def test_live_gap_matches_the_ground_truth_on_clean_data(self):
-        rows = [r for r in self.report['aggregate']['summary']
-                if r['metric'] == 'gap_now' and r['horizon'] == 'all']
+        rows = [
+            r
+            for r in self.report['aggregate']['summary']
+            if r['metric'] == 'gap_now' and r['horizon'] == 'all'
+        ]
         self.assertEqual(len(rows), 1)
         self.assertLess(rows[0]['mae'], 0.05)
 

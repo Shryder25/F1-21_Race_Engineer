@@ -21,8 +21,14 @@ from track_data import TRACK_DATABASE, corner_zones, get_braking_points, get_tra
 
 class SessionModeTests(unittest.TestCase):
     def test_every_game_session_type_maps_to_a_mode(self):
-        expected = {**{i: 'practice' for i in (1, 2, 3, 4)}, **{i: 'qualifying' for i in (5, 6, 7, 8, 9)},
-                    **{i: 'race' for i in (10, 11, 12)}, 13: 'time_trial', 0: 'unknown', 99: 'unknown'}
+        expected = {
+            **{i: 'practice' for i in (1, 2, 3, 4)},
+            **{i: 'qualifying' for i in (5, 6, 7, 8, 9)},
+            **{i: 'race' for i in (10, 11, 12)},
+            13: 'time_trial',
+            0: 'unknown',
+            99: 'unknown',
+        }
         for session_type, mode in expected.items():
             self.assertEqual(session_modes.session_mode(session_type), mode, session_type)
         self.assertEqual(session_modes.mode_label(13), 'Time Trial')
@@ -58,17 +64,23 @@ class TrackAwarenessTests(unittest.TestCase):
         engine = AnalysisEngine(SilentVoice())
         seen = {}
         for track_id, session_type in ((11, 13), (5, 7), (3, 10), (7, 1)):
-            session = parse_session_data(build_session_packet(0, 1, track_id, session_type,
-                                                              TRACK_DATABASE[track_id]['length_m']))
+            session = parse_session_data(
+                build_session_packet(0, 1, track_id, session_type, TRACK_DATABASE[track_id]['length_m'])
+            )
             engine.update_session(session, 1000 + track_id, 0)
             state = web_hud.get_web_state()
-            seen[track_id] = (engine.track_name, engine.session_mode, state['track_id'], state['session_mode'],
-                              [c['name'] for c in engine.corners][:1])
+            seen[track_id] = (
+                engine.track_name,
+                engine.session_mode,
+                state['track_id'],
+                state['session_mode'],
+                [c['name'] for c in engine.corners][:1],
+            )
         self.assertEqual(seen[11][:4], ('Monza', 'time_trial', 11, 'time_trial'))
         self.assertEqual(seen[5][:4], ('Monaco', 'qualifying', 5, 'qualifying'))
         self.assertEqual(seen[3][:4], ('Bahrain', 'race', 3, 'race'))
         self.assertEqual(seen[7][:4], ('Silverstone', 'practice', 7, 'practice'))
-        for track_id in (11, 5, 3):               # not just Silverstone
+        for track_id in (11, 5, 3):  # not just Silverstone
             self.assertTrue(seen[track_id][4], track_id)
         self.assertEqual(web_hud.get_web_state()['session_label'], 'Free Practice')
 
@@ -82,28 +94,35 @@ class TrackAwarenessTests(unittest.TestCase):
         lap = parse_player_lap_data(build_lap_packet(1, 1, 500, 30_000, 3, 4), 0)
         telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 250, 1, 0, 7, 95), 0)
         engine.update_telemetry(telemetry, lap)
-        for weather in (3, 4):                      # light rain, then heavy rain
+        for weather in (3, 4):  # light rain, then heavy rain
             engine.update_session(replace(dry, weather=weather), 77, 0)
             engine.update_telemetry(telemetry, lap)
         spoken = [m[0] for m in voice.messages]
-        self.assertEqual(sum('Radio check' in m for m in spoken), 1, spoken)   # no new session
+        self.assertEqual(sum('Radio check' in m for m in spoken), 1, spoken)  # no new session
         self.assertTrue(any('Rain starting to fall' in m for m in spoken), spoken)
-        self.assertTrue(engine.race_control.lap_one_reported)                  # race state kept
-        self.assertEqual(engine.delta.best_lap_time_ms, 0)                     # dry PB is no yardstick
+        self.assertTrue(engine.race_control.lap_one_reported)  # race state kept
+        self.assertEqual(engine.delta.best_lap_time_ms, 0)  # dry PB is no yardstick
 
     def test_corner_analysis_works_on_a_non_silverstone_track(self):
         engine = AnalysisEngine(SilentVoice())
         engine.update_session(parse_session_data(build_session_packet(0, 1, 11, 13, 5793)), 5, 0)
-        zone = engine.corners[0]                   # Monza turn 1 chicane
+        zone = engine.corners[0]  # Monza turn 1 chicane
         lap = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 1), 0)
         telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 200, 1, 0, 6, 95), 0)
-        samples = [(zone['start'] - 20, 1000, 280, 0), (zone['start'] + 5, 1100, 270, 0),
-                   (zone['ref_brake'] - 5, 1400, 260, 0), (zone['ref_brake'] + 5, 1450, 250, 1),
-                   (zone['ref_brake'] + 60, 1700, 90, 1), (zone['end'] - 5, 2200, 150, 0),
-                   (zone['end'] + 20, 2300, 200, 0)]
+        samples = [
+            (zone['start'] - 20, 1000, 280, 0),
+            (zone['start'] + 5, 1100, 270, 0),
+            (zone['ref_brake'] - 5, 1400, 260, 0),
+            (zone['ref_brake'] + 5, 1450, 250, 1),
+            (zone['ref_brake'] + 60, 1700, 90, 1),
+            (zone['end'] - 5, 2200, 150, 0),
+            (zone['end'] + 20, 2300, 200, 0),
+        ]
         for distance, elapsed, speed, brake in samples:
-            engine.update_telemetry(replace(telemetry, speed=speed, brake=brake),
-                                    replace(lap, lap_distance=distance, current_lap_time_ms=elapsed))
+            engine.update_telemetry(
+                replace(telemetry, speed=speed, brake=brake),
+                replace(lap, lap_distance=distance, current_lap_time_ms=elapsed),
+            )
         diagnostics = engine.corner_diagnostics
         self.assertEqual(len(diagnostics), 1)
         self.assertEqual(diagnostics[0]['name'], zone['name'])
@@ -117,15 +136,21 @@ class SessionAwareAnswerTests(unittest.TestCase):
                 raise AssertionError('AI should not be asked')
 
         for mode, command, expected in (
-                ('time_trial', 'gap_ahead', 'No other cars in time trial.'),
-                ('qualifying', 'gap_behind', 'only tracked in the race'),
-                ('qualifying', 'pit_window', 'No pit stops in qualifying.'),
-                ('time_trial', 'pit_window', 'No pit stops in time trial.')):
+            ('time_trial', 'gap_ahead', 'No other cars in time trial.'),
+            ('qualifying', 'gap_behind', 'only tracked in the race'),
+            ('qualifying', 'pit_window', 'No pit stops in qualifying.'),
+            ('time_trial', 'pit_window', 'No pit stops in time trial.'),
+        ):
             brain = EngineerBrain(lambda m=mode: {'session_mode': m, 'gap_ahead_s': 1.0}, MustNotBeCalled())
             self.assertIn(expected, brain.answer(command))
-        practice = EngineerBrain(lambda: {'session_mode': 'practice', 'pit_prediction': {
-            'ideal_lap': 12, 'latest_lap': 16, 'finish_without_stop': False}}, None)
-        self.assertIn('lap 12', practice.answer('pit_window'))          # tyre planning still works
+        practice = EngineerBrain(
+            lambda: {
+                'session_mode': 'practice',
+                'pit_prediction': {'ideal_lap': 12, 'latest_lap': 16, 'finish_without_stop': False},
+            },
+            None,
+        )
+        self.assertIn('lap 12', practice.answer('pit_window'))  # tyre planning still works
         race = EngineerBrain(lambda: {'session_mode': 'race', 'gap_ahead_s': 2.43}, None)
         self.assertEqual(race.answer('gap_ahead'), 'Gap ahead is 2.4.')
 

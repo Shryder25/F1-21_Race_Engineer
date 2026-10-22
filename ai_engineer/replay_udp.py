@@ -36,17 +36,26 @@ def speed_arg(text):
 def print_info(path):
     info = summarize(path)
     started = datetime.fromtimestamp(info['start_unix_ns'] / 1e9, tz=UTC).astimezone()
-    print(f"File:        {info['path']}  (format v{info['format_version']}, "
-          f"{'gzip' if info['compressed'] else 'uncompressed'})")
+    print(
+        f"File:        {info['path']}  (format v{info['format_version']}, "
+        f"{'gzip' if info['compressed'] else 'uncompressed'})"
+    )
     print(f"Recorded:    {started:%Y-%m-%d %H:%M:%S %Z}")
     print(f"Datagrams:   {info['datagrams']}  ({info['payload_bytes'] / 1e6:.1f} MB)")
     print(f"Duration:    {info['duration_s']:.1f} s")
-    print('Packet ids:  ' + ', '.join(f'{k}: {v}' for k, v in sorted(
-        info['by_packet_id'].items(), key=lambda kv: (kv[0] is None, kv[0] or 0))))
+    print(
+        'Packet ids:  '
+        + ', '.join(
+            f'{k}: {v}'
+            for k, v in sorted(info['by_packet_id'].items(), key=lambda kv: (kv[0] is None, kv[0] or 0))
+        )
+    )
     print(f"Metadata:    {info['metadata']}")
     if info['truncated']:
-        print('Note:        the file ends part-way through a record (recorder was stopped abruptly); '
-              'everything before that is intact.')
+        print(
+            'Note:        the file ends part-way through a record (recorder was stopped abruptly); '
+            'everything before that is intact.'
+        )
 
 
 def main(argv=None):
@@ -54,8 +63,12 @@ def main(argv=None):
     parser.add_argument('recording', type=Path, help='Recording file (.f1rec or .f1rec.gz)')
     parser.add_argument('--host', default='127.0.0.1', help='Where to send (default: 127.0.0.1)')
     parser.add_argument('--port', type=int, default=20777, help='UDP port to send to (default: 20777)')
-    parser.add_argument('--speed', type=speed_arg, default=1.0,
-                        help='1 = real time (default), 10 = ten times faster, max = as fast as possible')
+    parser.add_argument(
+        '--speed',
+        type=speed_arg,
+        default=1.0,
+        help='1 = real time (default), 10 = ten times faster, max = as fast as possible',
+    )
     parser.add_argument('--info', action='store_true', help='Describe the recording and exit')
     args = parser.parse_args(argv)
 

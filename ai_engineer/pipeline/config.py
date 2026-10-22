@@ -23,9 +23,19 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / 'config.to
 # Callouts that break on-demand radio silence: critical events, and strategy calls that
 # cannot wait for the driver to ask (covering or taking an undercut is a this-lap decision).
 DEFAULT_PROACTIVE_KEYS = (
-    'tyre_temperature', 'safety_car', 'safety_car_in', 'weather_rain', 'critical_wear',
-    'wing_damage', 'penalty', 'flag_yellow', 'flag_red', 'rival_pit', 'undercut',
-    'rival_preempt', 'plan_b',
+    'tyre_temperature',
+    'safety_car',
+    'safety_car_in',
+    'weather_rain',
+    'critical_wear',
+    'wing_damage',
+    'penalty',
+    'flag_yellow',
+    'flag_red',
+    'rival_pit',
+    'undercut',
+    'rival_preempt',
+    'plan_b',
 )
 
 
@@ -35,66 +45,66 @@ class ConfigError(ValueError):
 
 @dataclass
 class TyreConfig:
-    high_c: int = 104                     # surface temp above this counts as running hot
-    low_c: int = 80                       # surface temp below this counts as running cold
-    critical_c: int = 112                 # critical overheat: the only mid-lap tyre call
-    rise_rate_c_per_s: float = 1.5        # a critical temp must also be climbing this fast
-    critical_sustain_s: float = 0.5       # ... for at least this long
-    alert_cooldown_s: float = 40.0        # seconds between two critical overheat calls
-    summary_min_s: float = 4.0            # seconds hot/cold in a lap before the summary says so
-    summary_repeat_laps: int = 3          # an unchanged summary is repeated at most this often
+    high_c: int = 104  # surface temp above this counts as running hot
+    low_c: int = 80  # surface temp below this counts as running cold
+    critical_c: int = 112  # critical overheat: the only mid-lap tyre call
+    rise_rate_c_per_s: float = 1.5  # a critical temp must also be climbing this fast
+    critical_sustain_s: float = 0.5  # ... for at least this long
+    alert_cooldown_s: float = 40.0  # seconds between two critical overheat calls
+    summary_min_s: float = 4.0  # seconds hot/cold in a lap before the summary says so
+    summary_repeat_laps: int = 3  # an unchanged summary is repeated at most this often
 
 
 @dataclass
 class RadioConfig:
-    on_demand: bool = True                # speak only when asked, except proactive_keys
+    on_demand: bool = True  # speak only when asked, except proactive_keys
     proactive_keys: tuple[str, ...] = DEFAULT_PROACTIVE_KEYS
-    busy_brake: float = 0.15              # driver is busy above this brake pressure (0-1)...
-    busy_steer: float = 0.20              # ... or this steering lock (0-1)...
-    busy_lateral_g: float = 1.2           # ... or this lateral G: non-urgent calls wait
+    busy_brake: float = 0.15  # driver is busy above this brake pressure (0-1)...
+    busy_steer: float = 0.20  # ... or this steering lock (0-1)...
+    busy_lateral_g: float = 1.2  # ... or this lateral G: non-urgent calls wait
     braking_warn_distance_m: float = 220.0  # braking-point call this far before the zone
-    delta_report_interval_s: float = 14.0   # seconds between live delta calls
+    delta_report_interval_s: float = 14.0  # seconds between live delta calls
 
 
 @dataclass
 class LapConfig:
-    delta_sample_interval_m: float = 10.0   # distance between speed-trace / delta samples
-    profile_refresh_laps: int = 3           # rebuild the driver profile every N clean laps
+    delta_sample_interval_m: float = 10.0  # distance between speed-trace / delta samples
+    profile_refresh_laps: int = 3  # rebuild the driver profile every N clean laps
 
 
 @dataclass
 class StrategyConfig:
-    rival_react_gap_s: float = 6.0        # only react to a rival's stop within this gap
-    rival_forecast_laps: int = 2          # say who is about to box when due within N laps
-    rival_preempt_laps: int = 1           # pre-empt an undercut due this lap or the next N
-    rival_preempt_prob: float = 0.5       # ... when the stop model gives it at least this chance
-    rival_summary_positions: int = 3      # cars this many places either side go in the summary
+    rival_react_gap_s: float = 6.0  # only react to a rival's stop within this gap
+    rival_forecast_laps: int = 2  # say who is about to box when due within N laps
+    rival_preempt_laps: int = 1  # pre-empt an undercut due this lap or the next N
+    rival_preempt_prob: float = 0.5  # ... when the stop model gives it at least this chance
+    rival_summary_positions: int = 3  # cars this many places either side go in the summary
 
 
 @dataclass
 class SimulationConfig:
-    enabled: bool = True                  # Monte Carlo race simulator (win chances, Plan B)
-    runs: int = 300                       # races simulated per update
-    plan_b_margin_s: float = 3.0          # Plan B must beat Plan A by this much race time...
-    plan_b_places: float = 0.5            # ... or by this many finishing places on average
+    enabled: bool = True  # Monte Carlo race simulator (win chances, Plan B)
+    runs: int = 300  # races simulated per update
+    plan_b_margin_s: float = 3.0  # Plan B must beat Plan A by this much race time...
+    plan_b_places: float = 0.5  # ... or by this many finishing places on average
 
 
 @dataclass
 class VoiceConfig:
-    tts: str = 'kokoro'                   # 'kokoro' (neural, offline) or 'system' (pyttsx3)
+    tts: str = 'kokoro'  # 'kokoro' (neural, offline) or 'system' (pyttsx3)
     kokoro_voice: str = 'bm_george'
     kokoro_speed: float = 1.1
-    radio_fx: bool = True                 # team-radio filter on the Kokoro voice
-    rate_wpm: int = 175                   # system voice speed
-    cooldown_s: float = 30.0              # default gap before the same callout repeats
+    radio_fx: bool = True  # team-radio filter on the Kokoro voice
+    rate_wpm: int = 175  # system voice speed
+    cooldown_s: float = 30.0  # default gap before the same callout repeats
 
 
 @dataclass
 class AIConfig:
-    base_url: str = ''                    # '' = $F1_AI_BASE_URL or local Ollama
-    model: str = ''                       # '' = $F1_AI_MODEL or deepseek-r1:8b
+    base_url: str = ''  # '' = $F1_AI_BASE_URL or local Ollama
+    model: str = ''  # '' = $F1_AI_MODEL or deepseek-r1:8b
     timeout_s: float = 30.0
-    autostart: bool = True                # start Ollama and pull/preload the model
+    autostart: bool = True  # start Ollama and pull/preload the model
 
 
 @dataclass
@@ -105,9 +115,9 @@ class NetworkConfig:
 
 @dataclass
 class LoggingConfig:
-    level: str = 'INFO'                   # DEBUG, INFO, WARNING, ERROR
-    format: str = 'text'                  # 'text' for the terminal, 'json' for machines
-    file: str = ''                        # also write logs (JSON lines) to this file
+    level: str = 'INFO'  # DEBUG, INFO, WARNING, ERROR
+    format: str = 'text'  # 'text' for the terminal, 'json' for machines
+    file: str = ''  # also write logs (JSON lines) to this file
 
 
 @dataclass
@@ -201,6 +211,5 @@ def apply_overrides(config: EngineConfig, overrides: dict[str, Any]) -> EngineCo
         if section not in sections or key not in {f.name for f in dataclasses.fields(sections[section])}:
             raise ConfigError(f'unknown setting {dotted!r}')
         hint = typing.get_type_hints(type(sections[section]))[key]
-        sections[section] = dataclasses.replace(sections[section],
-                                                **{key: _coerce(value, hint, dotted)})
+        sections[section] = dataclasses.replace(sections[section], **{key: _coerce(value, hint, dotted)})
     return EngineConfig(**sections)

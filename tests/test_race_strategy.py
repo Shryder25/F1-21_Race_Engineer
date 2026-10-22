@@ -16,7 +16,7 @@ from test_analysis import SilentVoice
 from voice_commands import match_command
 
 SOFT, MEDIUM, HARD = 16, 17, 18
-RACE = SessionData(0, 30, 20, 50, 5891, 10, 7, 0)   # Silverstone, race, 50 laps
+RACE = SessionData(0, 30, 20, 50, 5891, 10, 7, 0)  # Silverstone, race, 50 laps
 
 
 def car_status(compound=MEDIUM, age=0, fuel=60.0):
@@ -33,8 +33,8 @@ class CompoundAndTrackTests(unittest.TestCase):
         self.assertIsNone(rs.normalise_compound(None))
 
     def test_pit_loss_uses_track_and_short_layout_parent(self):
-        self.assertEqual(rs.pit_loss_s(12), 28.0)                     # Singapore: long pit lane
-        self.assertEqual(rs.pit_loss_s(22), rs.pit_loss_s(7))         # Silverstone Short -> Silverstone
+        self.assertEqual(rs.pit_loss_s(12), 28.0)  # Singapore: long pit lane
+        self.assertEqual(rs.pit_loss_s(22), rs.pit_loss_s(7))  # Silverstone Short -> Silverstone
         self.assertEqual(rs.pit_loss_s(-1), rs.DEFAULT_PIT_LOSS_S)
         self.assertEqual(rs.pit_loss_s(99), rs.DEFAULT_PIT_LOSS_S)
 
@@ -124,7 +124,7 @@ class PlanRaceTests(unittest.TestCase):
         curve = rs.tyre_curve('MEDIUM')
         lengths, _ = rs._allocate([curve, curve], [0.0, 0.0], 30)
         self.assertLessEqual(abs(lengths[0] - lengths[1]), 1)
-        self.assertIsNone(rs._allocate([curve], [0.0], 500))      # beyond any tyre's life
+        self.assertIsNone(rs._allocate([curve], [0.0], 500))  # beyond any tyre's life
         self.assertIsNone(rs._allocate([curve, curve], [0.0, 0.0], 1))
 
 
@@ -132,13 +132,22 @@ class UndercutOvercutTests(unittest.TestCase):
     def test_undercut_gain_grows_with_rival_tyre_age_and_degradation(self):
         young = rs.undercut_gain('Medium', 3, 'Hard')
         old = rs.undercut_gain('Medium', 25, 'Hard')
-        self.assertLess(young, 0)                  # nothing to gain against fresh tyres
+        self.assertLess(young, 0)  # nothing to gain against fresh tyres
         self.assertGreater(old, young)
         self.assertGreater(rs.undercut_gain('Medium', 25, 'Hard', deg_scale=3.0), old)
 
     def test_undercut_called_when_gain_beats_gap(self):
-        call = rs.undercut_opportunity(0.8, 'Medium', 24, 'Medium', 26, laps_to_planned_stop=1,
-                                       laps_remaining=25, deg_scale=2.5, rival_index=4)
+        call = rs.undercut_opportunity(
+            0.8,
+            'Medium',
+            24,
+            'Medium',
+            26,
+            laps_to_planned_stop=1,
+            laps_remaining=25,
+            deg_scale=2.5,
+            rival_index=4,
+        )
         self.assertIsNotNone(call)
         self.assertEqual(call.kind, 'undercut')
         self.assertEqual(call.car_index, 4)
@@ -146,8 +155,7 @@ class UndercutOvercutTests(unittest.TestCase):
         self.assertGreater(call.gain_s, call.gap_s)
 
     def test_no_undercut_when_gap_too_big_stop_far_or_race_ending(self):
-        args = dict(my_compound='Medium', my_age=24, rival_compound='Medium', rival_age=26,
-                    deg_scale=2.5)
+        args = dict(my_compound='Medium', my_age=24, rival_compound='Medium', rival_age=26, deg_scale=2.5)
         self.assertIsNone(rs.undercut_opportunity(5.0, laps_to_planned_stop=1, laps_remaining=25, **args))
         self.assertIsNone(rs.undercut_opportunity(0.8, laps_to_planned_stop=12, laps_remaining=25, **args))
         self.assertIsNone(rs.undercut_opportunity(0.8, laps_to_planned_stop=1, laps_remaining=2, **args))
@@ -175,7 +183,9 @@ class UndercutOvercutTests(unittest.TestCase):
         self.assertIn('hards', call.message)
 
     def test_rival_call_names_the_driver_and_never_guesses_the_compound(self):
-        call = rs.react_to_rival_stop('ahead', 1.5, 'Medium', 25, 'Medium', None, 30, 1, rival_name='Hamilton')
+        call = rs.react_to_rival_stop(
+            'ahead', 1.5, 'Medium', 25, 'Medium', None, 30, 1, rival_name='Hamilton'
+        )
         self.assertEqual(call.kind, 'stay_out')
         self.assertTrue(call.message.startswith('Hamilton ahead has boxed.'), call.message)
         self.assertNotIn('hards', call.message)
@@ -196,9 +206,14 @@ class RivalPitDetectionTests(unittest.TestCase):
         laps = [replace(self.base, car_position=0, result_status=0)] * 22
         cars = {0: (3, 20), 1: (2, 30), 2: (4, 10)}
         for index, (position, distance) in cars.items():
-            laps[index] = replace(self.base, car_position=position, total_distance=distance + offset,
-                                  result_status=2, current_lap_num=12,
-                                  pit_status=1 if index in pit_cars else 0)
+            laps[index] = replace(
+                self.base,
+                car_position=position,
+                total_distance=distance + offset,
+                result_status=2,
+                current_lap_num=12,
+                pit_status=1 if index in pit_cars else 0,
+            )
         self.radio.update_field(laps, player_index=0, session_time=now)
 
     def test_rival_entering_pits_queues_event_with_last_gap(self):
@@ -210,10 +225,10 @@ class RivalPitDetectionTests(unittest.TestCase):
         self.drive(11.5, 25, pit_cars=(2,))
         events = self.radio.pop_rival_pit_events()
         self.assertEqual([e['car_index'] for e in events], [2])
-        self.assertLess(events[0]['gap_s'], 0)              # behind the player
+        self.assertLess(events[0]['gap_s'], 0)  # behind the player
         self.assertEqual(events[0]['lap'], 12)
-        self.assertEqual(self.radio.pop_rival_pit_events(), [])   # consumed
-        self.drive(12, 30, pit_cars=(2,))                    # still in the pit lane: no repeat
+        self.assertEqual(self.radio.pop_rival_pit_events(), [])  # consumed
+        self.drive(12, 30, pit_cars=(2,))  # still in the pit lane: no repeat
         self.assertEqual(self.radio.pop_rival_pit_events(), [])
 
     def test_car_first_seen_in_pits_or_without_gap_is_ignored(self):
@@ -233,14 +248,19 @@ class AnalysisStrategyTests(unittest.TestCase):
         self.voice = SilentVoice()
         self.engine = AnalysisEngine(self.voice)
         self.engine.update_session(RACE, 1, 0)
-        self.lap = replace(parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 2), 0),
-                           current_lap_num=20, pit_status=0, num_pit_stops=0, car_position=3)
+        self.lap = replace(
+            parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 2), 0),
+            current_lap_num=20,
+            pit_status=0,
+            num_pit_stops=0,
+            car_position=3,
+        )
         self.engine.latest_lap = self.lap
         rivals = [car_status(MEDIUM, 5)] * 22
         rivals[1] = car_status(MEDIUM, 26)
         rivals[2] = car_status(MEDIUM, 2)
         self.engine.update_car_status(car_status(MEDIUM, 22), rivals)
-        self.voice.messages.clear()        # drop the session welcome line
+        self.voice.messages.clear()  # drop the session welcome line
 
     def spoken(self):
         return [m for m, _, _ in self.voice.messages]
@@ -255,7 +275,7 @@ class AnalysisStrategyTests(unittest.TestCase):
         self.assertIn('Race strategy model', format_context(ctx))
 
     def test_no_plan_outside_race(self):
-        self.engine.update_session(replace(RACE, session_type=5), 2, 0)   # qualifying
+        self.engine.update_session(replace(RACE, session_type=5), 2, 0)  # qualifying
         self.engine.latest_lap = self.lap
         self.engine.update_car_status(car_status(SOFT, 2))
         self.assertIsNone(self.engine.strategy_plan())
@@ -272,17 +292,23 @@ class AnalysisStrategyTests(unittest.TestCase):
         self.engine.on_demand = True
         self.engine._strategy_cache = None
         self.engine.strategy_plan()
-        self.engine._strategy_cache = (self.engine._strategy_cache[0], self.engine._strategy_cache[1], (2.5, 1.0))
-        self.engine.radio.rival_pit_events = [{'car_index': 2, 'gap_s': -0.8, 'lap': 20,
-                                               'position': 4, 'session_time': 100.0}]
+        self.engine._strategy_cache = (
+            self.engine._strategy_cache[0],
+            self.engine._strategy_cache[1],
+            (2.5, 1.0),
+        )
+        self.engine.radio.rival_pit_events = [
+            {'car_index': 2, 'gap_s': -0.8, 'lap': 20, 'position': 4, 'session_time': 100.0}
+        ]
         self.engine.update_strategy_calls(self.lap)
         self.assertTrue(any('undercut threat' in m for m in self.spoken()), self.spoken())
         self.assertEqual(self.engine.last_strategy_call['kind'], 'cover')
         self.assertEqual(self.engine.last_strategy_call['lap'], 20)
 
     def test_distant_rival_pitting_is_ignored(self):
-        self.engine.radio.rival_pit_events = [{'car_index': 2, 'gap_s': -15.0, 'lap': 20,
-                                               'position': 9, 'session_time': 100.0}]
+        self.engine.radio.rival_pit_events = [
+            {'car_index': 2, 'gap_s': -15.0, 'lap': 20, 'position': 9, 'session_time': 100.0}
+        ]
         self.engine.update_strategy_calls(self.lap)
         self.assertEqual(self.spoken(), [])
         self.assertEqual(self.engine.radio.rival_pit_events, [])
@@ -303,26 +329,43 @@ class AnalysisStrategyTests(unittest.TestCase):
         self.assertIn('Undercut on car ahead', format_context(self.engine.build_context()))
 
     def test_no_calls_while_player_is_in_pit_lane(self):
-        self.engine.radio.rival_pit_events = [{'car_index': 2, 'gap_s': -0.8, 'lap': 20,
-                                               'position': 4, 'session_time': 100.0}]
+        self.engine.radio.rival_pit_events = [
+            {'car_index': 2, 'gap_s': -0.8, 'lap': 20, 'position': 4, 'session_time': 100.0}
+        ]
         self.engine.update_strategy_calls(replace(self.lap, pit_status=1))
         self.assertEqual(self.spoken(), [])
 
 
 class StrategyVoiceAndStreamTests(unittest.TestCase):
     def test_strategy_phrases_match(self):
-        for phrase in ('Is the undercut on?', 'can we overcut him', 'what is the strategy',
-                       'how many stops', 'which tyres next', "what's the plan"):
+        for phrase in (
+            'Is the undercut on?',
+            'can we overcut him',
+            'what is the strategy',
+            'how many stops',
+            'which tyres next',
+            "what's the plan",
+        ):
             self.assertEqual(match_command(phrase), 'strategy', phrase)
         self.assertEqual(match_command('when do we box'), 'pit_window')
         self.assertEqual(match_command('tyre temperatures please'), 'tyre_temps')
 
     def test_rule_based_strategy_answer(self):
         plan = rs.plan_race(30, 'Medium', 10, 21)
-        ctx = {'session_mode': 'race',
-               'strategy': {**plan.as_dict(), 'radio': rs.describe_plan(plan),
-                            'undercut_on_car_ahead': {'works': True, 'gap_s': 0.5, 'gain_s': 1.4,
-                                                      'rival_compound': 'Medium', 'rival_tyre_age': 20}}}
+        ctx = {
+            'session_mode': 'race',
+            'strategy': {
+                **plan.as_dict(),
+                'radio': rs.describe_plan(plan),
+                'undercut_on_car_ahead': {
+                    'works': True,
+                    'gap_s': 0.5,
+                    'gain_s': 1.4,
+                    'rival_compound': 'Medium',
+                    'rival_tyre_age': 20,
+                },
+            },
+        }
         answer = rule_based_answer('strategy', ctx)
         self.assertIn('Plan is', answer)
         self.assertIn('Undercut on the car ahead is on', answer)
@@ -332,6 +375,7 @@ class StrategyVoiceAndStreamTests(unittest.TestCase):
     def test_stream_passes_every_cars_status_to_analysis(self):
         from simulate_telemetry import build_session_packet
         from telemetry_stream import TelemetryStream
+
         engine = AnalysisEngine(SilentVoice())
         stream = TelemetryStream(engine)
         stream.handle(build_session_packet(0, 1, 11), now=0)

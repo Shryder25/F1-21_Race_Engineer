@@ -67,8 +67,9 @@ class LauncherFlowTests(unittest.TestCase):
         self.statuses = []
 
     def launcher(self, server, **kwargs):
-        launcher = LocalAILauncher('http://localhost:11434/v1', 'deepseek-r1:8b',
-                                   on_status=self.statuses.append, **kwargs)
+        launcher = LocalAILauncher(
+            'http://localhost:11434/v1', 'deepseek-r1:8b', on_status=self.statuses.append, **kwargs
+        )
         launcher.root = f'http://127.0.0.1:{server.server_port}' if server else 'http://127.0.0.1:9'
         return launcher
 

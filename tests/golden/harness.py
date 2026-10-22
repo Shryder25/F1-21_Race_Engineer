@@ -57,6 +57,7 @@ DEFAULT_TOLERANCES = {'time_s': 0.25, 'number_abs': 0.011, 'number_rel': 0.0}
 # Simulated clock and recording voice
 # ──────────────────────────────────────────────
 
+
 class SimClock:
     """Stands in for the `time` module inside the engine modules during a replay."""
 
@@ -72,7 +73,7 @@ class SimClock:
     def perf_counter(self):
         return self.monotonic()
 
-    def __getattr__(self, name):              # sleep, strftime, ... fall through
+    def __getattr__(self, name):  # sleep, strftime, ... fall through
         return getattr(real_time, name)
 
 
@@ -99,11 +100,15 @@ class RecordingVoice:
             return False
         self._last[topic] = now
         short_key = topic.split(':', 1)[1] if ':' in topic else topic
-        self.calls.append({
-            't': round(self.session_time, 2), 'key': short_key,
-            'priority': getattr(priority, 'name', str(priority)),
-            'proactive': short_key in PROACTIVE_KEYS, 'text': message,
-        })
+        self.calls.append(
+            {
+                't': round(self.session_time, 2),
+                'key': short_key,
+                'priority': getattr(priority, 'name', str(priority)),
+                'proactive': short_key in PROACTIVE_KEYS,
+                'text': message,
+            }
+        )
         return True
 
     def say_immediate(self, message):
@@ -132,6 +137,7 @@ def simulated_time(clock: SimClock):
 # Transcript
 # ──────────────────────────────────────────────
 
+
 def _round(value, places=3):
     if isinstance(value, float):
         return None if not math.isfinite(value) else round(value, places)
@@ -151,27 +157,38 @@ def key_numbers(engine: AnalysisEngine) -> dict:
     strategy = ctx.get('strategy') or {}
     best = strategy.get('best') if isinstance(strategy, dict) else None
     threats = ctx.get('opponent_threats') or []
-    return _round({
-        'lap': ctx.get('lap'), 'position': ctx.get('position'),
-        'weather': ctx.get('weather'), 'safety_car': ctx.get('safety_car'),
-        'last_lap_ms': ctx.get('last_lap_ms'), 'best_lap_ms': ctx.get('best_lap_ms'),
-        'race_pace_ms': ctx.get('race_pace_ms'),
-        'gap_ahead_s': ctx.get('gap_ahead_s'), 'gap_behind_s': ctx.get('gap_behind_s'),
-        'car_ahead': ctx.get('car_ahead_name'), 'car_behind': ctx.get('car_behind_name'),
-        'compound': ctx.get('compound'), 'tyre_age_laps': ctx.get('tyre_age_laps'),
-        'worst_wear_pct': max((ctx.get('tyre_wear_pct') or {}).values(), default=None),
-        'fuel_kg': fuel.get('fuel_kg'), 'fuel_per_lap_kg': fuel.get('per_lap_kg'),
-        'fuel_margin_laps': fuel.get('margin_laps'),
-        'ml_pit_window': [pit.get('ideal_lap'), pit.get('latest_lap')] if pit else None,
-        'ml_wear_per_lap_pct': pit.get('wear_per_lap_pct'),
-        'tyre_health': tire.get('health_score'), 'tyre_remaining_laps': tire.get('remaining_laps'),
-        'pace_trend_s_per_lap': ctx.get('pace_trend_s_per_lap'),
-        'strategy_stops': best.get('stops') if isinstance(best, dict) else None,
-        'strategy_plan': best.get('compounds') if isinstance(best, dict) else None,
-        'strategy_pit_laps': best.get('pit_laps') if isinstance(best, dict) else None,
-        'top_threat': (threats[0]['driver_name'], threats[0]['threat_level']) if threats else None,
-        'race_report_laps': len(engine.session_lap_stats),
-    }, 3)
+    return _round(
+        {
+            'lap': ctx.get('lap'),
+            'position': ctx.get('position'),
+            'weather': ctx.get('weather'),
+            'safety_car': ctx.get('safety_car'),
+            'last_lap_ms': ctx.get('last_lap_ms'),
+            'best_lap_ms': ctx.get('best_lap_ms'),
+            'race_pace_ms': ctx.get('race_pace_ms'),
+            'gap_ahead_s': ctx.get('gap_ahead_s'),
+            'gap_behind_s': ctx.get('gap_behind_s'),
+            'car_ahead': ctx.get('car_ahead_name'),
+            'car_behind': ctx.get('car_behind_name'),
+            'compound': ctx.get('compound'),
+            'tyre_age_laps': ctx.get('tyre_age_laps'),
+            'worst_wear_pct': max((ctx.get('tyre_wear_pct') or {}).values(), default=None),
+            'fuel_kg': fuel.get('fuel_kg'),
+            'fuel_per_lap_kg': fuel.get('per_lap_kg'),
+            'fuel_margin_laps': fuel.get('margin_laps'),
+            'ml_pit_window': [pit.get('ideal_lap'), pit.get('latest_lap')] if pit else None,
+            'ml_wear_per_lap_pct': pit.get('wear_per_lap_pct'),
+            'tyre_health': tire.get('health_score'),
+            'tyre_remaining_laps': tire.get('remaining_laps'),
+            'pace_trend_s_per_lap': ctx.get('pace_trend_s_per_lap'),
+            'strategy_stops': best.get('stops') if isinstance(best, dict) else None,
+            'strategy_plan': best.get('compounds') if isinstance(best, dict) else None,
+            'strategy_pit_laps': best.get('pit_laps') if isinstance(best, dict) else None,
+            'top_threat': (threats[0]['driver_name'], threats[0]['threat_level']) if threats else None,
+            'race_report_laps': len(engine.session_lap_stats),
+        },
+        3,
+    )
 
 
 def answers(engine: AnalysisEngine) -> dict:
@@ -215,7 +232,8 @@ def replay(path, checkpoints_every_lap=True) -> dict:
             history.close()
     return {
         'transcript_version': TRANSCRIPT_VERSION,
-        'datagrams': datagrams, 'paired_frames': accepted,
+        'datagrams': datagrams,
+        'paired_frames': accepted,
         'calls': voice.calls,
         'race_control_feed': _round(race_control, 2),
         'laps': laps,
@@ -228,6 +246,7 @@ def replay(path, checkpoints_every_lap=True) -> dict:
 # ──────────────────────────────────────────────
 # Comparison
 # ──────────────────────────────────────────────
+
 
 def _numbers_equal(a, b, tol) -> bool:
     if isinstance(a, bool) or isinstance(b, bool):
@@ -254,9 +273,10 @@ def compare(expected: dict, actual: dict, tolerances: dict | None = None, limit=
     exp_lines = [f"[{c['key']}] {c['text']}" for c in exp_calls]
     act_lines = [f"[{c['key']}] {c['text']}" for c in act_calls]
     if exp_lines != act_lines:
-        diff = list(difflib.unified_diff(exp_lines, act_lines, 'expected calls', 'actual calls',
-                                         lineterm='', n=1))
-        problems.append('Radio calls changed:\n  ' + '\n  '.join(diff[:limit * 2]))
+        diff = list(
+            difflib.unified_diff(exp_lines, act_lines, 'expected calls', 'actual calls', lineterm='', n=1)
+        )
+        problems.append('Radio calls changed:\n  ' + '\n  '.join(diff[: limit * 2]))
     else:
         for e, a in zip(exp_calls, act_calls, strict=False):
             if abs(e['t'] - a['t']) > tol['time_s']:
@@ -276,11 +296,14 @@ def compare(expected: dict, actual: dict, tolerances: dict | None = None, limit=
     exp_laps, act_laps = expected.get('laps', []), actual.get('laps', [])
     if len(exp_laps) != len(act_laps):
         problems.append(f'Lap checkpoints: expected {len(exp_laps)}, got {len(act_laps)}')
+
     def compare_answers(label, exp, act):
         for command in sorted(set(exp) | set(act)):
             if exp.get(command) != act.get(command):
-                problems.append(f"{label} answer to '{command}' changed:\n    expected: {exp.get(command)!r}"
-                                f"\n    got:      {act.get(command)!r}")
+                problems.append(
+                    f"{label} answer to '{command}' changed:\n    expected: {exp.get(command)!r}"
+                    f"\n    got:      {act.get(command)!r}"
+                )
 
     for e, a in zip(exp_laps, act_laps, strict=False):
         label = f"After lap {e.get('lap_completed')}:"
@@ -294,9 +317,10 @@ def compare(expected: dict, actual: dict, tolerances: dict | None = None, limit=
     exp_feed = [f"{e.get('kind')}: {e.get('text')}" for e in expected.get('race_control_feed', [])]
     act_feed = [f"{e.get('kind')}: {e.get('text')}" for e in actual.get('race_control_feed', [])]
     if exp_feed != act_feed:
-        diff = list(difflib.unified_diff(exp_feed, act_feed, 'expected feed', 'actual feed',
-                                         lineterm='', n=0))
-        problems.append('Race control feed changed:\n  ' + '\n  '.join(diff[:limit * 2]))
+        diff = list(
+            difflib.unified_diff(exp_feed, act_feed, 'expected feed', 'actual feed', lineterm='', n=0)
+        )
+        problems.append('Race control feed changed:\n  ' + '\n  '.join(diff[: limit * 2]))
     return problems[:limit] + ([f'... and {len(problems) - limit} more'] if len(problems) > limit else [])
 
 

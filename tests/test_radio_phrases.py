@@ -13,7 +13,7 @@ class SpokenNumberTests(unittest.TestCase):
         self.assertEqual(say.lap_time(92456), 'one thirty-two five')
         self.assertEqual(say.lap_time(65040), 'one oh five zero')
         self.assertEqual(say.lap_time(31420), 'thirty-one four')
-        self.assertEqual(say.lap_time(119960), 'two oh zero zero')   # rounds up into the next minute
+        self.assertEqual(say.lap_time(119960), 'two oh zero zero')  # rounds up into the next minute
 
     def test_small_differences_are_tenths(self):
         self.assertEqual(say.time_amount(0.02), 'less than a tenth')
@@ -41,6 +41,7 @@ class SpokenNumberTests(unittest.TestCase):
 class RadioTimingTests(unittest.TestCase):
     def setUp(self):
         from race_radio import RaceRadio
+
         self.voice = SilentVoice()
         self.radio = RaceRadio(self.voice.say)
         self.radio.reset(SessionData(0, 30, 20, 53, 5793, 10, 11, 0))
@@ -49,8 +50,10 @@ class RadioTimingTests(unittest.TestCase):
     def _field(self, ahead_offset, t):
         # player P2 at distance 1000 + 50t; car ahead P1 leads by ahead_offset metres
         player = 1000 + 50 * t
-        return [replace(self.lap, car_position=1, total_distance=player + ahead_offset, result_status=2),
-                replace(self.lap, car_position=2, total_distance=player, result_status=2)]
+        return [
+            replace(self.lap, car_position=1, total_distance=player + ahead_offset, result_status=2),
+            replace(self.lap, car_position=2, total_distance=player, result_status=2),
+        ]
 
     def _keys(self):
         return [kw.get('key') for _, _, kw in self.voice.messages]
@@ -66,7 +69,7 @@ class RadioTimingTests(unittest.TestCase):
     def test_routine_gap_update_is_about_once_a_lap_not_every_twenty_seconds(self):
         for t in range(0, 60):
             self.radio.update_field(self._field(150, t), 1, float(t), now=float(t))
-        self.assertEqual(self._keys().count('traffic_gaps'), 2)    # t=1 and t=46
+        self.assertEqual(self._keys().count('traffic_gaps'), 2)  # t=1 and t=46
 
     def test_race_pace_summary_every_three_laps(self):
         for lap_num in range(1, 7):

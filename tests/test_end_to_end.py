@@ -1,4 +1,5 @@
 """Exercise the actual UDP listener and HTTP endpoint in a child process."""
+
 import json
 import pathlib
 import socket
@@ -34,12 +35,18 @@ app.start_web_hud_server = lambda port: original_server({http_port})
 sys.argv = ['main.py', '--no-voice', '--port', {str(udp_port)!r}, '--history-dir', {history_dir!r}]
 app.main()
 '''
-            process = subprocess.Popen([sys.executable, '-B', '-u', '-c', script],
-                                       cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            process = subprocess.Popen(
+                [sys.executable, '-B', '-u', '-c', script],
+                cwd=root,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
             try:
+
                 def read():
                     with urlopen(f'http://127.0.0.1:{http_port}/api/telemetry', timeout=1) as response:
                         return json.load(response)
+
                 deadline = time.monotonic() + 10
                 while True:
                     if process.poll() is not None:
@@ -57,7 +64,10 @@ app.main()
                     sender.sendto(b'invalid datagram', target)
                     for frame in range(2, 6):
                         sender.sendto(build_telemetry_packet(frame / 25, frame, 280, 1, 0, 8, 95), target)
-                        sender.sendto(build_lap_packet(frame / 25, frame, 1000 + frame * 10, 20000 + frame * 100), target)
+                        sender.sendto(
+                            build_lap_packet(frame / 25, frame, 1000 + frame * 10, 20000 + frame * 100),
+                            target,
+                        )
                         time.sleep(0.05)
                 state = read()
                 self.assertTrue(state['connected'])

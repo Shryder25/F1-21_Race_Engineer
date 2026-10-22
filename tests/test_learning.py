@@ -14,12 +14,22 @@ SILVERSTONE = SessionData(0, 30, 20, 20, 5891, 10, 7, 0)
 
 
 def lap_recording(lap_ms, s2_extra=0, stowe_extra=0):
-    return {'lap_time_ms': lap_ms, 'times': {}, 'speeds': [], 'samples': [],
-            'sectors': {'1': 29000, '2': 33000 + s2_extra, '3': lap_ms - 62000 - s2_extra},
-            'corners': {'Stowe': {'start_time_ms': 50000, 'end_time_ms': 53000 + stowe_extra,
-                                  'min_speed': 160, 'brake_point': 4000},
-                        'Copse': {'start_time_ms': 10000, 'end_time_ms': 12000,
-                                  'min_speed': 250, 'brake_point': 1000}}}
+    return {
+        'lap_time_ms': lap_ms,
+        'times': {},
+        'speeds': [],
+        'samples': [],
+        'sectors': {'1': 29000, '2': 33000 + s2_extra, '3': lap_ms - 62000 - s2_extra},
+        'corners': {
+            'Stowe': {
+                'start_time_ms': 50000,
+                'end_time_ms': 53000 + stowe_extra,
+                'min_speed': 160,
+                'brake_point': 4000,
+            },
+            'Copse': {'start_time_ms': 10000, 'end_time_ms': 12000, 'min_speed': 250, 'brake_point': 1000},
+        },
+    }
 
 
 class LearningTests(unittest.TestCase):
@@ -35,10 +45,19 @@ class LearningTests(unittest.TestCase):
         capture = self.history.start_session(SILVERSTONE, uid, 0)
         for n, (ms, s2, stowe) in enumerate(laps, 1):
             self.history.record_lap(capture, n, ms, True, lap_recording(ms, s2, stowe))
-            self.history.record_lap_stats(capture, {
-                'lap_num': n, 'lap_time_ms': ms, 'eligible': True, 'compound': compound,
-                'tyre_age_laps': n, 'wear': (2.0 * n, 2.1 * n, 2.4 * n, 2.5 * n),
-                'fuel_start': 50 - 1.5 * (n - 1), 'fuel_end': 50 - 1.5 * n})
+            self.history.record_lap_stats(
+                capture,
+                {
+                    'lap_num': n,
+                    'lap_time_ms': ms,
+                    'eligible': True,
+                    'compound': compound,
+                    'tyre_age_laps': n,
+                    'wear': (2.0 * n, 2.1 * n, 2.4 * n, 2.5 * n),
+                    'fuel_start': 50 - 1.5 * (n - 1),
+                    'fuel_end': 50 - 1.5 * n,
+                },
+            )
         return capture
 
     def test_profile_needs_a_few_laps(self):
@@ -47,7 +66,7 @@ class LearningTests(unittest.TestCase):
 
     def test_profile_finds_where_the_driver_loses_time(self):
         self.drive_session(1, [(90000, 0, 0), (90400, 300, 150), (90350, 300, 200)])
-        self.drive_session(2, [(90300, 250, 120), (99000, 0, 0)])     # 99 s lap = traffic, ignored
+        self.drive_session(2, [(90300, 250, 120), (99000, 0, 0)])  # 99 s lap = traffic, ignored
         profile = driver_profile.build_profile(self.history, SILVERSTONE)
         self.assertEqual((profile['laps'], profile['sessions'], profile['best_lap_ms']), (4, 2, 90000))
         self.assertEqual(profile['weakest_sector']['sector'], 2)
@@ -55,8 +74,9 @@ class LearningTests(unittest.TestCase):
         self.assertNotIn('Copse', [c['corner'] for c in profile['weakest_corners']])
         line = driver_profile.describe(profile)
         self.assertIn('most time left in sector 2', line)
-        self.assertIn("Driver's own history at this track: 4 clean laps",
-                      format_context({'driver_profile': line}))
+        self.assertIn(
+            "Driver's own history at this track: 4 clean laps", format_context({'driver_profile': line})
+        )
 
     def test_refit_learns_from_new_laps_only(self):
         self.drive_session(1, [(90000 + 100 * n, 0, 0) for n in range(8)])

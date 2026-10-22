@@ -38,7 +38,6 @@ class RaceRadio:
     def driver_name(self, index) -> str | None:
         return None if index is None else self.driver_names.get(index)
 
-
     def reset(self, session: Any) -> None:
         self.session = session
         self.trajectories = {}
@@ -56,13 +55,13 @@ class RaceRadio:
         self.last_safety_car = session.safety_car_status if session else 0
         self.last_weather = session.weather if session else 0
         self.last_critical_alert = 0.0
-        self.last_lap_times_ms: dict[int, int] = {}    # car index -> most recent completed lap time
+        self.last_lap_times_ms: dict[int, int] = {}  # car index -> most recent completed lap time
         self.opponent_threats: list = []
-        self.reported_gaps = (None, None)       # (ahead, behind) at the last routine gap call
+        self.reported_gaps = (None, None)  # (ahead, behind) at the last routine gap call
         self.drs_armed = {'ahead': True, 'behind': True}
         self.clean_race_laps = 0
         self.reported_race_pace_ms = None
-        self.rival_gaps: dict[int, tuple[float, float]] = {}   # car index -> (signed gap s, session time)
+        self.rival_gaps: dict[int, tuple[float, float]] = {}  # car index -> (signed gap s, session time)
         self.rival_in_pits: dict[int, bool] = {}
         self.rival_pit_events: list[dict] = []
 
@@ -82,11 +81,18 @@ class RaceRadio:
         if lap.current_lap_num == latest:
             phase, message = 'last', 'Box, box. Box this lap, last lap of the window.'
         elif ideal <= lap.current_lap_num < latest:
-            phase, message = 'open', (f'Pit window is open. Target lap {say.number_words(ideal)}, '
-                                      f'no later than {say.number_words(latest)}.')
+            phase, message = (
+                'open',
+                (
+                    f'Pit window is open. Target lap {say.number_words(ideal)}, '
+                    f'no later than {say.number_words(latest)}.'
+                ),
+            )
         elif lap.current_lap_num == ideal - 1:
-            phase, message = 'next', (f'Pit window opens next lap. Plan is to box '
-                                      f'lap {say.number_words(ideal)}.')
+            phase, message = (
+                'next',
+                (f'Pit window opens next lap. Plan is to box lap {say.number_words(ideal)}.'),
+            )
         else:
             return
         notice = (window, lap.num_pit_stops, phase)
@@ -105,17 +111,37 @@ class RaceRadio:
         prev = self.last_safety_car
         self.last_safety_car = safety_car_status
         if safety_car_status == 1:
-            self.speak("Safety Car, Safety Car. Keep the delta positive, no overtaking.",
-                       Priority.CRITICAL, key='safety_car', ttl=10, cooldown=10)
+            self.speak(
+                "Safety Car, Safety Car. Keep the delta positive, no overtaking.",
+                Priority.CRITICAL,
+                key='safety_car',
+                ttl=10,
+                cooldown=10,
+            )
         elif safety_car_status == 2:
-            self.speak("VSC, VSC. Virtual Safety Car deployed, keep the delta positive.",
-                       Priority.CRITICAL, key='safety_car', ttl=8, cooldown=10)
+            self.speak(
+                "VSC, VSC. Virtual Safety Car deployed, keep the delta positive.",
+                Priority.CRITICAL,
+                key='safety_car',
+                ttl=8,
+                cooldown=10,
+            )
         elif prev == 2 and safety_car_status == 0:
-            self.speak("VSC ending, VSC ending. Green flag, push now.",
-                       Priority.CRITICAL, key='safety_car_in', ttl=8, cooldown=10)
+            self.speak(
+                "VSC ending, VSC ending. Green flag, push now.",
+                Priority.CRITICAL,
+                key='safety_car_in',
+                ttl=8,
+                cooldown=10,
+            )
         elif prev == 1 and safety_car_status == 0:
-            self.speak("Safety Car in this lap. Get the tyres warm and be ready for the restart.",
-                       Priority.CRITICAL, key='safety_car_in', ttl=8, cooldown=10)
+            self.speak(
+                "Safety Car in this lap. Get the tyres warm and be ready for the restart.",
+                Priority.CRITICAL,
+                key='safety_car_in',
+                ttl=8,
+                cooldown=10,
+            )
 
     def update_weather_alert(self, weather_code: int):
         """Immediate priority interrupt on sudden rain arrival."""
@@ -126,8 +152,13 @@ class RaceRadio:
         self.last_weather = weather_code
         # 0=clear, 1=light cloud, 2=overcast, 3=light rain, 4=heavy rain, 5=storm
         if prev <= 2 and weather_code >= 3:
-            self.speak("Rain starting to fall. Grip will drop, stay off the kerbs and white lines.",
-                       Priority.CRITICAL, key='weather_rain', ttl=10, cooldown=30)
+            self.speak(
+                "Rain starting to fall. Grip will drop, stay off the kerbs and white lines.",
+                Priority.CRITICAL,
+                key='weather_rain',
+                ttl=10,
+                cooldown=30,
+            )
 
     def update_damage_alert(self, worst_tyre_wear: float, front_wing_damage: int, now=None):
         """Priority interrupt on severe tyre wear or front wing damage."""
@@ -136,13 +167,23 @@ class RaceRadio:
             return
         if worst_tyre_wear >= 75.0:
             self.last_critical_alert = now
-            self.speak(f"Box, box. Box this lap, tyres are finished. "
-                       f"{say.number_words(int(worst_tyre_wear))} percent wear.",
-                       Priority.CRITICAL, key='critical_wear', ttl=8, cooldown=20)
+            self.speak(
+                f"Box, box. Box this lap, tyres are finished. "
+                f"{say.number_words(int(worst_tyre_wear))} percent wear.",
+                Priority.CRITICAL,
+                key='critical_wear',
+                ttl=8,
+                cooldown=20,
+            )
         elif front_wing_damage >= 50:
             self.last_critical_alert = now
-            self.speak("We can see front wing damage. Box this lap for a new nose. Box, box.",
-                       Priority.CRITICAL, key='wing_damage', ttl=8, cooldown=25)
+            self.speak(
+                "We can see front wing damage. Box this lap for a new nose. Box, box.",
+                Priority.CRITICAL,
+                key='wing_damage',
+                ttl=8,
+                cooldown=25,
+            )
 
     @staticmethod
     def _crossing_time(history, distance):
@@ -170,8 +211,12 @@ class RaceRadio:
         self.last_session_time = session_time
         active = {}
         for index, lap in enumerate(laps):
-            if (lap.result_status != 2 or lap.car_position == 0
-                    or not math.isfinite(lap.total_distance) or lap.pit_status):
+            if (
+                lap.result_status != 2
+                or lap.car_position == 0
+                or not math.isfinite(lap.total_distance)
+                or lap.pit_status
+            ):
                 self.trajectories.pop(index, None)
                 continue
             active[index] = lap
@@ -218,8 +263,9 @@ class RaceRadio:
             opponent_best = self.last_lap_times_ms.get(index)
             if player_best and opponent_best:
                 pace_delta = (opponent_best - player_best) / 1000.0
-            threats.append(evaluate_opponent_threat(index, lap.car_position, gap, pace_delta,
-                                                   self.driver_name(index)))
+            threats.append(
+                evaluate_opponent_threat(index, lap.car_position, gap, pace_delta, self.driver_name(index))
+            )
         threats.sort(key=lambda t: t.threat_score, reverse=True)
         self.opponent_threats = threats[:5]
         self._call_drs_range(now)
@@ -237,15 +283,21 @@ class RaceRadio:
                 self.drs_armed[side] = False
                 amount = say.gap_value(gap)
                 if side == 'ahead':
-                    message = self.phrases.pick('drs_ahead', (
-                        f'You are within a second, {amount} to the car ahead. DRS is yours.',
-                        f'{amount.capitalize()} to the car ahead, you have DRS. Go get them.',
-                    ))
+                    message = self.phrases.pick(
+                        'drs_ahead',
+                        (
+                            f'You are within a second, {amount} to the car ahead. DRS is yours.',
+                            f'{amount.capitalize()} to the car ahead, you have DRS. Go get them.',
+                        ),
+                    )
                 else:
-                    message = self.phrases.pick('drs_behind', (
-                        f'Car behind is within a second, {amount}. Defend the braking zones.',
-                        f'Car behind has DRS, {amount}. Cover the inside.',
-                    ))
+                    message = self.phrases.pick(
+                        'drs_behind',
+                        (
+                            f'Car behind is within a second, {amount}. Defend the braking zones.',
+                            f'Car behind has DRS, {amount}. Cover the inside.',
+                        ),
+                    )
                 # Counts as a gap update so the routine call doesn't repeat it moments later.
                 self.last_gap_report = now
                 self.reported_gaps = (self.gap_ahead_s, self.gap_behind_s)
@@ -276,8 +328,9 @@ class RaceRadio:
         if messages:
             self.last_gap_report = now
             self.reported_gaps = (self.gap_ahead_s, self.gap_behind_s)
-            self.speak(' '.join(messages), Priority.RACE, key='traffic_gaps', ttl=5,
-                       cooldown=GAP_REPORT_INTERVAL_S)
+            self.speak(
+                ' '.join(messages), Priority.RACE, key='traffic_gaps', ttl=5, cooldown=GAP_REPORT_INTERVAL_S
+            )
 
     def _track_rival_stops(self, laps, player_index, session_time):
         """Queue an event when a nearby rival turns into the pit lane.
@@ -297,9 +350,15 @@ class RaceRadio:
             measured = self.rival_gaps.get(index)
             if measured is None or session_time - measured[1] > 2.0:
                 continue
-            self.rival_pit_events.append({'car_index': index, 'gap_s': measured[0],
-                                          'lap': lap.current_lap_num, 'position': lap.car_position,
-                                          'session_time': session_time})
+            self.rival_pit_events.append(
+                {
+                    'car_index': index,
+                    'gap_s': measured[0],
+                    'lap': lap.current_lap_num,
+                    'position': lap.car_position,
+                    'session_time': session_time,
+                }
+            )
 
     def pop_rival_pit_events(self) -> list[dict]:
         events, self.rival_pit_events = self.rival_pit_events, []
@@ -319,10 +378,13 @@ class RaceRadio:
             if abs(difference) < 0.05:
                 message = f'{name.capitalize()}, matching your best.'
             elif difference < 0:
-                message = self.phrases.pick('sector_up', (
-                    f'Green {name}, {amount} up.',
-                    f'{name.capitalize()}, {amount} quicker. Good.',
-                ))
+                message = self.phrases.pick(
+                    'sector_up',
+                    (
+                        f'Green {name}, {amount} up.',
+                        f'{name.capitalize()}, {amount} quicker. Good.',
+                    ),
+                )
             else:
                 message = f'{name.capitalize()}, {amount} down.'
         self.speak(message, Priority.TIMING, key=f'sector_{sector}', ttl=8, cooldown=0)

@@ -31,10 +31,9 @@ from voice_engine import Priority
 JSON = dict[str, Any]
 
 WHEEL_NAMES = ('Rear Left', 'Rear Right', 'Front Left', 'Front Right')
-WHEEL_CODES = ('RL', 'RR', 'FL', 'FR')   # same order as the telemetry tuples
+WHEEL_CODES = ('RL', 'RR', 'FL', 'FR')  # same order as the telemetry tuples
 
-WEATHER_NAMES = {0: 'clear', 1: 'light cloud', 2: 'overcast', 3: 'light rain',
-                 4: 'heavy rain', 5: 'storm'}
+WEATHER_NAMES = {0: 'clear', 1: 'light cloud', 2: 'overcast', 3: 'light rain', 4: 'heavy rain', 5: 'storm'}
 
 # Corner definitions for Silverstone (Track ID 7), with hand-measured apex speeds.
 SILVERSTONE_CORNERS: list[JSON] = [
@@ -54,8 +53,15 @@ SILVERSTONE_CORNERS: list[JSON] = [
 class VoiceOutput(Protocol):
     """What the engine needs from a voice: VoiceEngine live, a recorder in tests."""
 
-    def say(self, message: str, priority: Priority = ..., *, key: str | None = ...,
-            ttl: float = ..., cooldown: float | None = ...) -> bool: ...
+    def say(
+        self,
+        message: str,
+        priority: Priority = ...,
+        *,
+        key: str | None = ...,
+        ttl: float = ...,
+        cooldown: float | None = ...,
+    ) -> bool: ...
 
 
 def wheel_group(wheels: list[int]) -> str:
@@ -124,12 +130,18 @@ class DeltaTracker:
 class EngineState:
     """Every value the engine keeps, typed, with its starting default."""
 
-    def __init__(self, voice: VoiceOutput, history: TelemetryHistory | None = None,
-                 on_demand: bool = False, fitted: fitted_models.ModelStore | None = None,
-                 race_simulation: str = 'off', sim_runs: int = race_sim.DEFAULT_RUNS,
-                 track_store: track_maps.TrackMapStore | None = None,
-                 replan: strategy_replan.ReplanConfig | None = None,
-                 config: EngineConfig | None = None) -> None:
+    def __init__(
+        self,
+        voice: VoiceOutput,
+        history: TelemetryHistory | None = None,
+        on_demand: bool = False,
+        fitted: fitted_models.ModelStore | None = None,
+        race_simulation: str = 'off',
+        sim_runs: int = race_sim.DEFAULT_RUNS,
+        track_store: track_maps.TrackMapStore | None = None,
+        replan: strategy_replan.ReplanConfig | None = None,
+        config: EngineConfig | None = None,
+    ) -> None:
         self.config = config if config is not None else EngineConfig()
         self.voice = voice
         # Saved outline + pit lane per circuit (memory-only unless main.py gives it a file).
@@ -141,8 +153,8 @@ class EngineState:
         self.replanner = strategy_replan.Replanner(replan)
         # How wet the track is and where it is heading: weather physics + the field's lap times.
         self.wetness = track_wetness.TrackWetness()
-        self._last_sim_key: tuple[Any, ...] | None = None   # key of the last re-run sent
-        self._last_event_submit = -1e9           # monotonic time of the last event-only re-run
+        self._last_sim_key: tuple[Any, ...] | None = None  # key of the last re-run sent
+        self._last_event_submit = -1e9  # monotonic time of the last event-only re-run
         self.field_laps: list[LapData] | None = None
         self.player_index = 0
         # Tyre/fuel models fitted to the game (tools/fit_models.py); empty = built-in priors.
@@ -157,7 +169,7 @@ class EngineState:
         self.latest_lap: LapData | None = None
         self.latest_status: CarStatusData | None = None
         self.latest_damage: CarDamageData | None = None
-        self.all_status: list[CarStatusData] | None = None    # every car, for rival tyre age/compound
+        self.all_status: list[CarStatusData] | None = None  # every car, for rival tyre age/compound
         self.compounds_used: set[str] = set()
         # (key, plan, (deg_scale, life_scale), {'worse': plan, 'better': plan})
         self._strategy_cache: tuple[Any, ...] | None = None
@@ -230,11 +242,11 @@ class EngineState:
         self.current_lap_map_dists: list[float] = []
         self.current_lap_braking_dists: list[float] = []
         self.current_lap_ers_dists: list[float] = []
-        self.track_outline: list[list[float]] = []      # whole circuit, stored or first clean lap
+        self.track_outline: list[list[float]] = []  # whole circuit, stored or first clean lap
         self.pit_lane_points: list[list[float]] = []
         self.current_pit_points: list[list[float]] = []
         self.field_mapper: track_maps.FieldMapper | None = None
-        self.field_pit_points: dict[int, list[list[float]]] = {}   # other cars' pit runs
+        self.field_pit_points: dict[int, list[list[float]]] = {}  # other cars' pit runs
         self.car_teams: dict[int, int] = {}
         self.map_lap_has_pit = False
         self.map_rewind_pending = False

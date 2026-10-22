@@ -55,21 +55,21 @@ COMPOUNDS = {
 }
 SLICKS = ('soft', 'medium', 'hard')
 
-DT = 0.05                 # integration step (s)
-FRAME_EVERY = 4           # lap + telemetry packets every 4 steps -> 5 Hz (keeps files small)
-STATUS_EVERY = 10         # car status / damage / motion -> 2 Hz
-SESSION_EVERY = 20        # session packet -> 1 Hz
+DT = 0.05  # integration step (s)
+FRAME_EVERY = 4  # lap + telemetry packets every 4 steps -> 5 Hz (keeps files small)
+STATUS_EVERY = 10  # car status / damage / motion -> 2 Hz
+SESSION_EVERY = 20  # session packet -> 1 Hz
 PARTICIPANTS_EVERY = 100  # participants -> every 5 s
-PIT_SPEED = 80 / 3.6      # pit lane limiter (m/s)
-PIT_ENTRY_M = 250         # pit lane starts this far before the line and ends this far after it
+PIT_SPEED = 80 / 3.6  # pit lane limiter (m/s)
+PIT_ENTRY_M = 250  # pit lane starts this far before the line and ends this far after it
 PIT_STATIONARY_S = 2.4
-LAUNCH_ACCEL = 11.0       # m/s^2
+LAUNCH_ACCEL = 11.0  # m/s^2
 FUEL_PER_LAP_KG = 1.7
 FUEL_TIME_S_PER_KG = 0.03
-SC_PACE_FACTOR = 1.45     # Safety Car laps are this much slower than a racing lap
-SC_FOLLOW_M = 18.0        # minimum spacing behind the car ahead under the Safety Car
-FOLLOW_M = 14.0           # closest a car gets to the one ahead without passing (~0.2 s)
-OVERTAKE_DELTA_S = 0.4    # a car this much quicker per lap gets past
+SC_PACE_FACTOR = 1.45  # Safety Car laps are this much slower than a racing lap
+SC_FOLLOW_M = 18.0  # minimum spacing behind the car ahead under the Safety Car
+FOLLOW_M = 14.0  # closest a car gets to the one ahead without passing (~0.2 s)
+OVERTAKE_DELTA_S = 0.4  # a car this much quicker per lap gets past
 SESSION_UID = 0x60_1D_E0_00
 
 
@@ -77,13 +77,14 @@ SESSION_UID = 0x60_1D_E0_00
 # Scenario description
 # ──────────────────────────────────────────────
 
+
 @dataclass
 class Car:
     name: str
-    pace: float = 0.0                 # seconds off the track's reference lap (fresh mediums, no fuel)
+    pace: float = 0.0  # seconds off the track's reference lap (fresh mediums, no fuel)
     compound: str = 'medium'
-    grid: int = 0                     # starting position (1 = pole)
-    pits: dict = field(default_factory=dict)   # lap number -> compound fitted at the end of it
+    grid: int = 0  # starting position (1 = pole)
+    pits: dict = field(default_factory=dict)  # lap number -> compound fitted at the end of it
     race_number: int = 0
 
 
@@ -92,9 +93,9 @@ class Scenario:
     name: str
     track_id: int
     track_length: int
-    session_type: int                 # 10 race, 8 short qualifying
+    session_type: int  # 10 race, 8 short qualifying
     total_laps: int
-    cars: list                        # index 0 is the player
+    cars: list  # index 0 is the player
     weather: int = 0
     track_temp: int = 35
     air_temp: int = 24
@@ -103,17 +104,17 @@ class Scenario:
     # Scripted moments, each (player progress in laps from the start, kind, value...).
     # Progress 2.5 means half way round lap 3.
     script: list = field(default_factory=list)
-    end_after_laps: float | None = None   # stop early (qualifying), in player laps
+    end_after_laps: float | None = None  # stop early (qualifying), in player laps
     description: str = ''
     # Tyre/fuel behaviour (defaults reproduce the golden sessions byte for byte). Noise is
     # drawn from a generator seeded with `seed`, so a scenario still always gives the same bytes.
-    wear_scale: float = 1.0           # multiplies every compound's wear rate (track severity)
-    wear_growth: float = 0.0          # wear rate grows by this fraction per lap of tyre age
-    wear_noise: float = 0.0           # lap-to-lap wear scatter, relative sd
-    stint_noise: float = 0.0          # each set wears differently, relative sd of its rate
+    wear_scale: float = 1.0  # multiplies every compound's wear rate (track severity)
+    wear_growth: float = 0.0  # wear rate grows by this fraction per lap of tyre age
+    wear_noise: float = 0.0  # lap-to-lap wear scatter, relative sd
+    stint_noise: float = 0.0  # each set wears differently, relative sd of its rate
     fuel_per_lap_kg: float = FUEL_PER_LAP_KG
-    fuel_noise: float = 0.0           # lap-to-lap fuel burn scatter, kg sd
-    lap_noise_s: float = 0.0          # lap-to-lap pace scatter, s sd
+    fuel_noise: float = 0.0  # lap-to-lap fuel burn scatter, kg sd
+    lap_noise_s: float = 0.0  # lap-to-lap pace scatter, s sd
     seed: int = 0
     # Also send Session History (one car per frame), Car Setups and, at the end of a race,
     # Final Classification. Off by default so the checked-in golden recordings stay as they are.
@@ -129,15 +130,28 @@ def _q(metres: float) -> float:
 # Packet builders
 # ──────────────────────────────────────────────
 
+
 def header(packet_id, session_time, frame, player_index=0):
-    return struct.pack(HEADER_FORMAT, 2021, 1, 18, 1, packet_id, SESSION_UID,
-                       float(session_time), frame, player_index, 255)
+    return struct.pack(
+        HEADER_FORMAT, 2021, 1, 18, 1, packet_id, SESSION_UID, float(session_time), frame, player_index, 255
+    )
 
 
 def session_packet(sc: Scenario, t, frame, weather, safety_car):
     body = bytearray(625 - 24)
-    struct.pack_into('<BbbBHBbB', body, 0, weather, sc.track_temp, sc.air_temp, sc.total_laps,
-                     sc.track_length, sc.session_type, sc.track_id, 0)
+    struct.pack_into(
+        '<BbbBHBbB',
+        body,
+        0,
+        weather,
+        sc.track_temp,
+        sc.air_temp,
+        sc.total_laps,
+        sc.track_length,
+        sc.session_type,
+        sc.track_id,
+        0,
+    )
     body[124] = safety_car
     struct.pack_into('<BBB', body, 589, sc.pit_window[0], sc.pit_window[1], 0)
     return header(1, t, frame) + bytes(body)
@@ -154,8 +168,18 @@ def participants_packet(t, frame, cars):
     for index in range(22):
         car = cars[index] if index < len(cars) else None
         name = (car.name if car else '').encode('utf-8')[:47]
-        body += struct.pack(PARTICIPANT_FORMAT, int(index != 0), index, 0, index // 2, 0,
-                            car.race_number if car else 0, 0, name, 1)
+        body += struct.pack(
+            PARTICIPANT_FORMAT,
+            int(index != 0),
+            index,
+            0,
+            index // 2,
+            0,
+            car.race_number if car else 0,
+            0,
+            name,
+            1,
+        )
     return header(4, t, frame) + bytes(body)
 
 
@@ -163,14 +187,15 @@ def participants_packet(t, frame, cars):
 # Simulator
 # ──────────────────────────────────────────────
 
+
 class _CarState:
     def __init__(self, index, car: Car, start_distance, fuel):
         self.index = index
         self.car = car
-        self.total = start_distance       # metres from the start line (negative on the grid)
+        self.total = start_distance  # metres from the start line (negative on the grid)
         self.speed = 0.0
         self.lap_num = 1
-        self.lap_start_t = None           # set at lights out
+        self.lap_start_t = None  # set at lights out
         self.last_lap_ms = 0
         self.s1_ms = self.s2_ms = 0
         self.sector = 0
@@ -183,23 +208,23 @@ class _CarState:
         self.pit_timer_ms = 0
         self.stationary_left = 0.0
         self.pit_done_this_entry = False
-        self.result = 2                   # active
+        self.result = 2  # active
         self.position = car.grid
         self.lap_invalid = 0
         self.best_lap_ms = 0
         self.finish_t = None
-        self.stint_factor = 1.0           # this set's wear relative to the compound's rate
+        self.stint_factor = 1.0  # this set's wear relative to the compound's rate
         self.lap_jitter = 0.0
-        self.history_laps = []            # (lap ms, s1, s2, s3, valid flags) per completed lap
+        self.history_laps = []  # (lap ms, s1, s2, s3, valid flags) per completed lap
         visual, actual, *_ = COMPOUNDS[car.compound]
-        self.history_stints = [[255, actual, visual]]   # [end lap (255 = on the car), actual, visual]
+        self.history_stints = [[255, actual, visual]]  # [end lap (255 = on the car), actual, visual]
 
 
 class SessionSimulator:
     """Run a Scenario and yield (session_time, datagram) in arrival order."""
 
     def __init__(self, scenario: Scenario):
-        scenario = copy.deepcopy(scenario)        # script actions change car pace
+        scenario = copy.deepcopy(scenario)  # script actions change car pace
         self.sc = scenario
         self.length = scenario.track_length
         self.profile = self._speed_profile()
@@ -209,7 +234,7 @@ class SessionSimulator:
         self.safety_car = 0
         self.player_flag = 1 if self.is_race else 0
         self.wing_damage = 0
-        self.hot = None                  # (front_c, rear_c) while a hot-tyre window is open
+        self.hot = None  # (front_c, rear_c) while a hot-tyre window is open
         self.script = sorted(scenario.script, key=lambda item: item[0])
         self.frame = 0
         self.t = 0.0
@@ -241,7 +266,7 @@ class SessionSimulator:
         points = sorted(get_braking_points(self.sc.track_id), key=lambda p: p[0])
         corners = []
         for k, (distance, _name, _msg) in enumerate(points):
-            apex_kph = 75 + (k * 37) % 140            # varied corner speeds, 75-215 km/h
+            apex_kph = 75 + (k * 37) % 140  # varied corner speeds, 75-215 km/h
             corners.append((distance + 60.0, apex_kph / 3.6))
         v_max = 315 / 3.6
         profile = []
@@ -252,9 +277,9 @@ class SessionSimulator:
                 for shift in (-self.length, 0.0, self.length):
                     x = d - (apex + shift)
                     if x < 0:
-                        v = min(v, math.sqrt(v_c ** 2 + 2 * 38.0 * -x))
+                        v = min(v, math.sqrt(v_c**2 + 2 * 38.0 * -x))
                     else:
-                        v = min(v, math.sqrt(v_c ** 2 + 2 * 9.0 * x))
+                        v = min(v, math.sqrt(v_c**2 + 2 * 9.0 * x))
             profile.append(v)
         return profile
 
@@ -269,8 +294,14 @@ class SessionSimulator:
 
     def target_lap_s(self, car):
         _vis, _act, offset, deg, _wear = COMPOUNDS[car.compound]
-        lap = (self.base_lap_s + car.car.pace + offset + deg * car.age + FUEL_TIME_S_PER_KG * car.fuel
-               + car.lap_jitter)
+        lap = (
+            self.base_lap_s
+            + car.car.pace
+            + offset
+            + deg * car.age
+            + FUEL_TIME_S_PER_KG * car.fuel
+            + car.lap_jitter
+        )
         wet = self.weather >= 3
         if wet and car.compound in SLICKS:
             lap += 4.5 if self.weather == 3 else 10.0
@@ -351,12 +382,15 @@ class SessionSimulator:
 
     def _do_penalty(self, penalty_type, infringement, index, other=255, seconds=0):
         lap = self.cars[index].lap_num
-        self.emit(event_packet(self.t, self.frame, b'PENA', '<7B', penalty_type, infringement,
-                               index, other, seconds, lap, 0))
+        self.emit(
+            event_packet(
+                self.t, self.frame, b'PENA', '<7B', penalty_type, infringement, index, other, seconds, lap, 0
+            )
+        )
 
     def _do_invalidate(self):
         self.cars[0].lap_invalid = 1
-        self._do_penalty(10, 7, 0)          # lap invalidated for corner cutting
+        self._do_penalty(10, 7, 0)  # lap invalidated for corner cutting
 
     def _do_wing_damage(self, percent):
         self.wing_damage = percent
@@ -386,8 +420,10 @@ class SessionSimulator:
         # Following: a car can't drive through the one ahead. Under the Safety Car nobody
         # passes and the pack bunches up; otherwise a car only gets by when it is clearly
         # quicker (an overtake), else it sits in the dirty air just behind.
-        running = sorted((c for c in self.cars if c.result == 2 and not c.pit_status and c.total > 0),
-                         key=lambda c: -c.total)
+        running = sorted(
+            (c for c in self.cars if c.result == 2 and not c.pit_status and c.total > 0),
+            key=lambda c: -c.total,
+        )
         for ahead, car in zip(running, running[1:], strict=False):
             if self.safety_car:
                 limit = SC_FOLLOW_M
@@ -404,7 +440,8 @@ class SessionSimulator:
         lap_d = self.lap_distance(car)
         pit_planned = car.lap_num in car.car.pits
         in_pit_zone = (pit_planned and lap_d >= self.length - PIT_ENTRY_M) or (
-            car.pit_status and lap_d < PIT_ENTRY_M)
+            car.pit_status and lap_d < PIT_ENTRY_M
+        )
         if car.stationary_left > 0:
             car.stationary_left -= DT
             car.pit_status = 2
@@ -440,13 +477,17 @@ class SessionSimulator:
         if car.index == 0 and not car.pit_status and before < lap_start + self.trap_m <= car.total:
             self.emit(self.speed_trap())
         line = car.lap_num * self.length
-        if car.pit_status and car.lap_num in car.car.pits and not car.pit_done_this_entry \
-                and before < line - 5 <= car.total:
+        if (
+            car.pit_status
+            and car.lap_num in car.car.pits
+            and not car.pit_done_this_entry
+            and before < line - 5 <= car.total
+        ):
             # Pit box sits just before the line: stop, change tyres, carry on.
             car.total = line - 5
             car.stationary_left = PIT_STATIONARY_S
             car.pit_done_this_entry = True
-            car.history_stints[-1][0] = car.lap_num          # this is the in-lap
+            car.history_stints[-1][0] = car.lap_num  # this is the in-lap
             car.compound = car.car.pits[car.lap_num]
             visual, actual, *_ = COMPOUNDS[car.compound]
             car.history_stints.append([255, actual, visual])
@@ -455,7 +496,7 @@ class SessionSimulator:
             self._new_set(car)
             car.pit_stops += 1
             if car.index == 0:
-                self.wing_damage = 0                # new nose
+                self.wing_damage = 0  # new nose
             return
         if before < line <= car.total:
             self._complete_lap(car, elapsed_ms)
@@ -481,7 +522,7 @@ class SessionSimulator:
         car.fuel = max(0.0, car.fuel - burn)
         valid = not car.lap_invalid and not car.pit_status
         car.lap_invalid = 0
-        if self.is_race and valid and car.lap_num > 2:      # lap one is a standing start
+        if self.is_race and valid and car.lap_num > 2:  # lap one is a standing start
             if self.fastest_ms is None or elapsed_ms < self.fastest_ms:
                 self.fastest_ms = elapsed_ms
                 self.emit(event_packet(self.t, self.frame, b'FTLP', '<Bf', car.index, elapsed_ms / 1000))
@@ -535,18 +576,43 @@ class SessionSimulator:
             car = self.cars[index]
             lap_d = self.lap_distance(car)
             started = self.t >= self.lights_out_t
-            current_ms = int(round((self.t - car.lap_start_t) * 1000)) if started and car.lap_start_t is not None else 0
+            current_ms = (
+                int(round((self.t - car.lap_start_t) * 1000))
+                if started and car.lap_start_t is not None
+                else 0
+            )
             if car.result == 3:
                 current_ms = 0
             driver_status = 4 if self.is_race else (3 if car.lap_num == 1 else 1)
             if car.pit_status:
                 driver_status = 2 if car.stationary_left > 0 or self.lap_distance(car) > 0 else 4
             body += struct.pack(
-                LAP_DATA_FORMAT, car.last_lap_ms, current_ms, car.s1_ms if car.sector >= 1 else 0,
-                car.s2_ms if car.sector >= 2 else 0, _q(lap_d), _q(car.total),
-                0.0, car.position, car.lap_num, car.pit_status, car.pit_stops, car.sector,
-                car.lap_invalid, 0, 0, 0, 0, car.car.grid, driver_status, car.result,
-                int(bool(car.pit_status)), 0, car.pit_timer_ms if car.pit_status == 2 else 0, 0)
+                LAP_DATA_FORMAT,
+                car.last_lap_ms,
+                current_ms,
+                car.s1_ms if car.sector >= 1 else 0,
+                car.s2_ms if car.sector >= 2 else 0,
+                _q(lap_d),
+                _q(car.total),
+                0.0,
+                car.position,
+                car.lap_num,
+                car.pit_status,
+                car.pit_stops,
+                car.sector,
+                car.lap_invalid,
+                0,
+                0,
+                0,
+                0,
+                car.car.grid,
+                driver_status,
+                car.result,
+                int(bool(car.pit_status)),
+                0,
+                car.pit_timer_ms if car.pit_status == 2 else 0,
+                0,
+            )
         return header(2, self.t, self.frame) + bytes(body)
 
     def _player_inputs(self, car):
@@ -584,9 +650,36 @@ class SessionSimulator:
                 front, rear = self.hot
             inner = (rear - 4, rear - 4, front - 4, front - 4)
             body += struct.pack(
-                CAR_TELEMETRY_FORMAT, kph, throttle, steer, brake, 0, gear, rpm, 0,
-                min(100, kph // 3), 0, 450, 450, 520, 520,
-                rear, rear, front, front, *inner, 105, 22.0, 22.0, 23.5, 23.5, 0, 0, 0, 0)
+                CAR_TELEMETRY_FORMAT,
+                kph,
+                throttle,
+                steer,
+                brake,
+                0,
+                gear,
+                rpm,
+                0,
+                min(100, kph // 3),
+                0,
+                450,
+                450,
+                520,
+                520,
+                rear,
+                rear,
+                front,
+                front,
+                *inner,
+                105,
+                22.0,
+                22.0,
+                23.5,
+                23.5,
+                0,
+                0,
+                0,
+                0,
+            )
         return header(6, self.t, self.frame) + bytes(body) + b'\x00\x00\x00'
 
     def _status_packet(self):
@@ -599,9 +692,31 @@ class SessionSimulator:
             visual, actual, *_ = COMPOUNDS[car.compound]
             flag = self.player_flag if index == 0 else (1 if self.is_race else 0)
             body += struct.pack(
-                CAR_STATUS_FORMAT, 0, 0, 1, 56, int(bool(car.pit_status)), car.fuel, 110.0,
-                car.fuel / FUEL_PER_LAP_KG, 13000, 4000, 8, 0, 0, actual, visual, car.age, flag,
-                2_000_000.0, 1, 0.0, 0.0, 0.0, 0)
+                CAR_STATUS_FORMAT,
+                0,
+                0,
+                1,
+                56,
+                int(bool(car.pit_status)),
+                car.fuel,
+                110.0,
+                car.fuel / FUEL_PER_LAP_KG,
+                13000,
+                4000,
+                8,
+                0,
+                0,
+                actual,
+                visual,
+                car.age,
+                flag,
+                2_000_000.0,
+                1,
+                0.0,
+                0.0,
+                0.0,
+                0,
+            )
         return header(7, self.t, self.frame) + bytes(body)
 
     def _damage_packet(self):
@@ -612,24 +727,68 @@ class SessionSimulator:
                 continue
             car = self.cars[index]
             w = round(car.wear, 2)
-            wear = (w * 1.05, w * 1.08, w * 0.92, w)       # RL, RR, FL, FR
+            wear = (w * 1.05, w * 1.08, w * 0.92, w)  # RL, RR, FL, FR
             wing = self.wing_damage if index == 0 else 0
-            body += struct.pack(CAR_DAMAGE_FORMAT, *wear, 0, 0, 0, 0, 0, 0, 0, 0,
-                                wing, wing // 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            body += struct.pack(
+                CAR_DAMAGE_FORMAT,
+                *wear,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                wing,
+                wing // 2,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
         return header(10, self.t, self.frame) + bytes(body)
 
     def _motion_packet(self):
         body = bytearray()
         radius = self.length / (2 * math.pi)
         for index in range(22):
-            if index >= len(self.cars) or index != 0:      # only the player's motion is read
+            if index >= len(self.cars) or index != 0:  # only the player's motion is read
                 body += bytes(struct.calcsize(CAR_MOTION_FORMAT))
                 continue
             car = self.cars[index]
             angle = (max(self.lap_distance(car), 0.0) / self.length) * 2 * math.pi
             x, z = radius * math.cos(angle), radius * 0.6 * math.sin(angle)
-            body += struct.pack(CAR_MOTION_FORMAT, x, 0.0, z, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0,
-                                0.8 if car.speed < 50 else 0.3, 0.0, 1.0, angle, 0.0, 0.0)
+            body += struct.pack(
+                CAR_MOTION_FORMAT,
+                x,
+                0.0,
+                z,
+                0.0,
+                0.0,
+                0.0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0.8 if car.speed < 50 else 0.3,
+                0.0,
+                1.0,
+                angle,
+                0.0,
+                0.0,
+            )
         player_extra = bytes(1464 - 24 - len(body))
         return header(0, self.t, self.frame) + bytes(body) + player_extra
 
@@ -656,8 +815,31 @@ class SessionSimulator:
                 body += bytes(struct.calcsize(CAR_SETUP_FORMAT))
                 continue
             wing = 5 + index % 3
-            body += struct.pack(CAR_SETUP_FORMAT, wing, wing + 1, 60, 55, -3.0, -1.5, 0.05, 0.2,
-                                5, 4, 6, 5, 3, 6, 100, 56, 22.0, 22.0, 23.5, 23.5, 0, self.sc.fuel_kg)
+            body += struct.pack(
+                CAR_SETUP_FORMAT,
+                wing,
+                wing + 1,
+                60,
+                55,
+                -3.0,
+                -1.5,
+                0.05,
+                0.2,
+                5,
+                4,
+                6,
+                5,
+                3,
+                6,
+                100,
+                56,
+                22.0,
+                22.0,
+                23.5,
+                23.5,
+                0,
+                self.sc.fuel_kg,
+            )
         return header(5, self.t, self.frame) + bytes(body)
 
     def final_classification_packet(self):
@@ -672,16 +854,40 @@ class SessionSimulator:
             actual = [s[1] for s in stints] + [0] * (8 - len(stints))
             visual = [s[2] for s in stints] + [0] * (8 - len(stints))
             total = (car.finish_t or self.t) - self.lights_out_t
-            body += struct.pack(FINAL_CLASSIFICATION_FORMAT, car.position, len(car.history_laps),
-                                car.car.grid, 0, car.pit_stops, 3 if car.result == 3 else car.result,
-                                min(timed) if timed else 0, total, 0, 0, len(stints), *actual, *visual)
+            body += struct.pack(
+                FINAL_CLASSIFICATION_FORMAT,
+                car.position,
+                len(car.history_laps),
+                car.car.grid,
+                0,
+                car.pit_stops,
+                3 if car.result == 3 else car.result,
+                min(timed) if timed else 0,
+                total,
+                0,
+                0,
+                len(stints),
+                *actual,
+                *visual,
+            )
         return header(8, self.t, self.frame) + bytes(body)
 
     def speed_trap(self):
         """Speed trap ('SPTP') event as the player passes the fastest point of the lap."""
         car = self.cars[0]
-        return event_packet(self.t, self.frame, b'SPTP', SPEED_TRAP_FORMAT, 0,
-                            float(round(car.speed * 3.6, 1)), 1, 1, 0, 0.0, size=40)
+        return event_packet(
+            self.t,
+            self.frame,
+            b'SPTP',
+            SPEED_TRAP_FORMAT,
+            0,
+            float(round(car.speed * 3.6, 1)),
+            1,
+            1,
+            0,
+            0.0,
+            size=40,
+        )
 
 
 def simulate(scenario: Scenario):

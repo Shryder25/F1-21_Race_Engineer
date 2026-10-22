@@ -24,6 +24,7 @@ def header_change(packet, uid=None, packet_format=None, player=None):
 class StreamTests(unittest.TestCase):
     def setUp(self):
         from telemetry_stream import TelemetryStream
+
         self.engine = AnalysisEngine(SilentVoice())
         self.stream = TelemetryStream(self.engine)
         self.session = build_session_packet(0, 1, 11)

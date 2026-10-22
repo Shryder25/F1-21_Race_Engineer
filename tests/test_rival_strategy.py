@@ -18,9 +18,9 @@ from test_analysis import SilentVoice  # noqa: E402
 from voice_commands import match_command  # noqa: E402
 
 SOFT, MEDIUM, HARD, INTER = 16, 17, 18, 7
-ACTUAL = {SOFT: 17, MEDIUM: 18, HARD: 19, INTER: 7}           # C4, C3, C2, inter
+ACTUAL = {SOFT: 17, MEDIUM: 18, HARD: 19, INTER: 7}  # C4, C3, C2, inter
 SILVERSTONE = dict(track_id=7, track_length=5891)
-RACE = SessionData(0, 30, 20, 40, 5891, 10, 7, 0)             # Silverstone, 40-lap race
+RACE = SessionData(0, 30, 20, 40, 5891, 10, 7, 0)  # Silverstone, 40-lap race
 BASE_LAP = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 2), 0)
 
 
@@ -35,8 +35,14 @@ def damage(wear):
 def state(compound='MEDIUM', age=0, lap=None, **kw):
     lap = lap if lap is not None else age + 1
     actual = {'SOFT': 'C4', 'MEDIUM': 'C3', 'HARD': 'C2', 'INTERMEDIATE': 'INTER'}.get(compound)
-    return rv.RivalState(car_index=kw.pop('car_index', 1), compound=compound, tyre_age=age, current_lap=lap,
-                         actual_compound=actual, **kw)
+    return rv.RivalState(
+        car_index=kw.pop('car_index', 1),
+        compound=compound,
+        tyre_age=age,
+        current_lap=lap,
+        actual_compound=actual,
+        **kw,
+    )
 
 
 def ctx(total=40, **kw):
@@ -92,11 +98,13 @@ class PredictionTests(unittest.TestCase):
     def test_observed_fast_wear_brings_the_stop_forward(self):
         fitted = fitted_models.ModelStore()
         ages, incs = wear_stint(4.5, 6)
-        fast = rv.predict_rival(state('MEDIUM', 6, 7, wear_pct=27.0, wear_ages=ages, wear_increments=incs),
-                                ctx(), fitted)
+        fast = rv.predict_rival(
+            state('MEDIUM', 6, 7, wear_pct=27.0, wear_ages=ages, wear_increments=incs), ctx(), fitted
+        )
         ages, incs = wear_stint(1.5, 6)
-        slow = rv.predict_rival(state('MEDIUM', 6, 7, wear_pct=9.0, wear_ages=ages, wear_increments=incs),
-                                ctx(), fitted)
+        slow = rv.predict_rival(
+            state('MEDIUM', 6, 7, wear_pct=9.0, wear_ages=ages, wear_increments=incs), ctx(), fitted
+        )
         self.assertEqual(fast.basis, 'wear')
         self.assertIn('wear', fast.sources)
         self.assertLess(fast.stop_lap, slow.stop_lap)
@@ -123,19 +131,29 @@ class PredictionTests(unittest.TestCase):
 
     def test_overdue_car_is_expected_in_now(self):
         ages, incs = wear_stint(4.0, 5, 12)
-        p = rv.predict_rival(state('SOFT', 17, 18, wear_pct=78.0, wear_ages=ages, wear_increments=incs),
-                             ctx(), fitted_models.ModelStore())
+        p = rv.predict_rival(
+            state('SOFT', 17, 18, wear_pct=78.0, wear_ages=ages, wear_increments=incs),
+            ctx(),
+            fitted_models.ModelStore(),
+        )
         self.assertEqual(p.stop_lap, 18)
         self.assertLessEqual(p.stop_lap_sd, rv.OVERDUE_SD)
 
     def test_game_window_steers_the_first_stop(self):
         base = rv.predict_rival(state('MEDIUM', 0, 1), ctx())
-        early = rv.predict_rival(state('MEDIUM', 0, 1), ctx(game_window=(8, 12), player_start_compound='MEDIUM'))
+        early = rv.predict_rival(
+            state('MEDIUM', 0, 1), ctx(game_window=(8, 12), player_start_compound='MEDIUM')
+        )
         self.assertIn('game_window', early.sources)
         self.assertLess(early.stop_lap_mean, base.stop_lap_mean)
         # Not after our own stop, and not for a rival on its second set.
-        self.assertNotIn('game_window', rv.predict_rival(
-            state('MEDIUM', 0, 1), ctx(game_window=(8, 12), player_start_compound='MEDIUM', player_stops=1)).sources)
+        self.assertNotIn(
+            'game_window',
+            rv.predict_rival(
+                state('MEDIUM', 0, 1),
+                ctx(game_window=(8, 12), player_start_compound='MEDIUM', player_stops=1),
+            ).sources,
+        )
 
     def test_field_life_factor_moves_the_plan(self):
         stats = rv.FieldStats(life_ratio=[1.5] * 8)
@@ -157,7 +175,9 @@ class PredictionTests(unittest.TestCase):
         self.assertEqual(light.next_compound, 'INTERMEDIATE')
 
     def test_inters_on_a_dry_track_come_off_for_slicks(self):
-        p = rv.predict_rival(state('INTERMEDIATE', 8, 20, compounds_used=('MEDIUM', 'INTERMEDIATE')), ctx(weather=0))
+        p = rv.predict_rival(
+            state('INTERMEDIATE', 8, 20, compounds_used=('MEDIUM', 'INTERMEDIATE')), ctx(weather=0)
+        )
         self.assertTrue(p.will_stop)
         self.assertLessEqual(p.stop_lap, 23)
         self.assertIn(p.next_compound, rs.DRY_COMPOUNDS)
@@ -179,14 +199,16 @@ class PredictionTests(unittest.TestCase):
         p = rv.predict_rival(state('MEDIUM', 5, 6), ctx())
         laps = [rv.sample_stop_lap(p, rng) for _ in range(300)]
         self.assertTrue(all(lap is None or 6 <= lap <= 40 for lap in laps))
-        self.assertAlmostEqual(sum(lap for lap in laps if lap) / len([lap for lap in laps if lap]), p.stop_lap_mean, delta=1.0)
+        self.assertAlmostEqual(
+            sum(lap for lap in laps if lap) / len([lap for lap in laps if lap]), p.stop_lap_mean, delta=1.0
+        )
         sets = {rv.sample_next_compound(p, rng) for _ in range(200)}
         self.assertTrue(sets <= set(p.next_compound_probs))
         done = rv.predict_rival(state('HARD', 2, 36, compounds_used=('MEDIUM', 'HARD')), ctx())
         self.assertIsNone(rv.sample_stop_lap(done, rng))
 
     def test_track_priors(self):
-        self.assertLess(rv.track_life_scale(7, 5891), rv.track_life_scale(5, 3337))   # Silverstone vs Monaco
+        self.assertLess(rv.track_life_scale(7, 5891), rv.track_life_scale(5, 3337))  # Silverstone vs Monaco
         self.assertEqual(rv.track_life_scale(None, None), 1.0)
         self.assertGreater(rv.position_cost_s(5), rv.position_cost_s(3))
         sequence = rv.typical_sequence(17, 4318, 71)
@@ -207,8 +229,15 @@ class TrackerTests(unittest.TestCase):
         statuses = [status()] * 22
         damages = [damage(0.0)] * 22
         for index, car in self.cars.items():
-            laps[index] = replace(BASE_LAP, car_position=index + 1, result_status=2, current_lap_num=lap,
-                                  lap_distance=distance, pit_status=car['pit'], num_pit_stops=car['stops'])
+            laps[index] = replace(
+                BASE_LAP,
+                car_position=index + 1,
+                result_status=2,
+                current_lap_num=lap,
+                lap_distance=distance,
+                pit_status=car['pit'],
+                num_pit_stops=car['stops'],
+            )
             statuses[index] = status(car['compound'], car['age'])
             damages[index] = damage(car['wear'])
         self.tracker.update_status(statuses)
@@ -240,8 +269,8 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(prediction.name, 'HAMILTON')
         car = self.cars[1]
         car['pit'] = 1
-        self.frame(13, 5800.0)                         # pit entry at the end of lap 13
-        self.assertIsNone(self.tracker.predict(1, ctx()))          # in the pit lane
+        self.frame(13, 5800.0)  # pit entry at the end of lap 13
+        self.assertIsNone(self.tracker.predict(1, ctx()))  # in the pit lane
         self.assertIs(self.tracker.last_prediction(1), prediction)
         car.update(compound=HARD, age=0, wear=0.0, stops=1)
         self.frame(14, 50.0)
@@ -260,7 +289,7 @@ class TrackerTests(unittest.TestCase):
 
     def test_player_and_restricted_cars(self):
         self.cars[0] = dict(compound=MEDIUM, age=0, wear=0.0, pit=0, stops=0)
-        self.drive_laps(1, 4, 0.0)                     # rival wear stays at zero: restricted telemetry
+        self.drive_laps(1, 4, 0.0)  # rival wear stays at zero: restricted telemetry
         self.assertIsNone(self.tracker.state(1).wear_pct)
         preds = self.tracker.predict_all(ctx(), exclude=0)
         self.assertEqual([p.car_index for p in preds], [1])
@@ -289,16 +318,24 @@ class StrategyHookTests(unittest.TestCase):
         self.assertEqual(rs.cover_laps(0, 20), 1)
         self.assertEqual(rs.cover_laps(9, 20), rs.MAX_COVER_LAPS)
         self.assertEqual(rs.cover_laps(9, 4), 2)
-        kwargs = dict(gap_ahead_s=2.6, my_compound='MEDIUM', my_age=18, rival_compound='MEDIUM', rival_age=24,
-                      laps_to_planned_stop=2, laps_remaining=20)
+        kwargs = dict(
+            gap_ahead_s=2.6,
+            my_compound='MEDIUM',
+            my_age=18,
+            rival_compound='MEDIUM',
+            rival_age=24,
+            laps_to_planned_stop=2,
+            laps_remaining=20,
+        )
         self.assertIsNone(rs.undercut_opportunity(**kwargs))
         call = rs.undercut_opportunity(**kwargs, rival_stop_in_laps=4)
         self.assertIsNotNone(call)
         self.assertEqual(call.kind, 'undercut')
 
     def test_rival_stop_reaction_uses_the_predicted_tyre_without_naming_it(self):
-        guess = rs.react_to_rival_stop('behind', -1.2, 'MEDIUM', 20, 'MEDIUM', None, 20, 1,
-                                       assumed_new_compound='SOFT')
+        guess = rs.react_to_rival_stop(
+            'behind', -1.2, 'MEDIUM', 20, 'MEDIUM', None, 20, 1, assumed_new_compound='SOFT'
+        )
         default = rs.react_to_rival_stop('behind', -1.2, 'MEDIUM', 20, 'MEDIUM', None, 20, 1)
         self.assertNotEqual(guess.gain_s, default.gain_s)
         self.assertNotIn('soft', guess.message.lower())
@@ -311,8 +348,9 @@ class AnalysisRivalTests(unittest.TestCase):
         self.engine.update_session(RACE, 1, 0)
         self.engine.update_participants([])
         self.engine.radio.set_driver_names({1: 'Leclerc', 2: 'Hamilton'})
-        self.lap = replace(BASE_LAP, current_lap_num=10, pit_status=0, num_pit_stops=0, car_position=3,
-                           lap_distance=1500.0)
+        self.lap = replace(
+            BASE_LAP, current_lap_num=10, pit_status=0, num_pit_stops=0, car_position=3, lap_distance=1500.0
+        )
         self.voice.messages.clear()
 
     def feed(self, lap_num, rival_wear_rate=4.0, player_age=9):
@@ -322,8 +360,13 @@ class AnalysisRivalTests(unittest.TestCase):
         for lap in range(1, lap_num + 1):
             for distance in (100.0, 1500.0):
                 for index, position in ((0, 3), (1, 4), (2, 2)):
-                    laps[index] = replace(BASE_LAP, car_position=position, result_status=2,
-                                          current_lap_num=lap, lap_distance=distance)
+                    laps[index] = replace(
+                        BASE_LAP,
+                        car_position=position,
+                        result_status=2,
+                        current_lap_num=lap,
+                        lap_distance=distance,
+                    )
                     age = lap - 1
                     statuses[index] = status(MEDIUM, age if index else min(age, player_age))
                     damages[index] = damage(rival_wear_rate * age)
@@ -336,7 +379,7 @@ class AnalysisRivalTests(unittest.TestCase):
         self.feed(6)
         predictions = self.engine.rival_predictions()
         self.assertEqual({p.car_index for p in predictions}, {1, 2})
-        self.assertEqual(predictions[0].name, 'Hamilton')       # P2 first
+        self.assertEqual(predictions[0].name, 'Hamilton')  # P2 first
         self.engine.update_session(replace(RACE, session_type=5), 2, 0)
         self.assertEqual(self.engine.rival_predictions(), [])
 
@@ -356,11 +399,13 @@ class AnalysisRivalTests(unittest.TestCase):
         self.assertIn('Hamilton', answer)
         self.assertIn('Leclerc', answer)
         self.assertIn('No race strategy', rule_based_answer('rivals', {'session_mode': 'qualifying'}))
-        self.assertEqual(rule_based_answer('rivals', {'session_mode': 'race'}), 'No read on the other cars yet.')
+        self.assertEqual(
+            rule_based_answer('rivals', {'session_mode': 'race'}), 'No read on the other cars yet.'
+        )
 
     def test_car_behind_about_to_box_triggers_a_pre_emptive_call_once(self):
-        self.feed(14, rival_wear_rate=4.4, player_age=13)       # rival behind at ~57% wear: due now
-        self.engine.rivals.field.transitions[('MEDIUM', 'SOFT')] = 5   # the field is going onto softs
+        self.feed(14, rival_wear_rate=4.4, player_age=13)  # rival behind at ~57% wear: due now
+        self.engine.rivals.field.transitions[('MEDIUM', 'SOFT')] = 5  # the field is going onto softs
         self.engine.on_demand = True
         self.engine.radio.car_behind_index, self.engine.radio.gap_behind_s = 1, 1.0
         prediction = self.engine.rival_prediction(1)
@@ -399,11 +444,20 @@ class AnalysisRivalTests(unittest.TestCase):
 
 class RivalVoiceCommandTests(unittest.TestCase):
     def test_rival_questions_match(self):
-        for phrase in ('when will Hamilton box', 'what are the others doing on tyres', 'rival strategy',
-                       'is the car ahead pitting', 'when are they stopping', 'when is Leclerc going to pit'):
+        for phrase in (
+            'when will Hamilton box',
+            'what are the others doing on tyres',
+            'rival strategy',
+            'is the car ahead pitting',
+            'when are they stopping',
+            'when is Leclerc going to pit',
+        ):
             self.assertEqual(match_command(phrase), 'rivals', phrase)
-        for phrase, command in (('when do we box', 'pit_window'), ('when will I pit', 'pit_window'),
-                                ('what is the strategy', 'strategy')):
+        for phrase, command in (
+            ('when do we box', 'pit_window'),
+            ('when will I pit', 'pit_window'),
+            ('what is the strategy', 'strategy'),
+        ):
             self.assertEqual(match_command(phrase), command, phrase)
         self.assertNotEqual(match_command('will it stop raining'), 'rivals')
 

@@ -18,7 +18,6 @@ from voice_engine import Priority
 
 
 class LapsStage(OutputsStage):
-
     # ── Lap delta and sectors ──
 
     def update_delta(self, lap: LapData, telemetry: CarTelemetryData) -> None:
@@ -34,14 +33,19 @@ class LapsStage(OutputsStage):
             self._on_new_lap(lap)
 
         self.delta.current_lap_invalid |= bool(
-            lap.current_lap_invalid or lap.pit_status or lap.driver_status in (0, 2, 3)
-            or (self.session and self.session.safety_car_status))
+            lap.current_lap_invalid
+            or lap.pit_status
+            or lap.driver_status in (0, 2, 3)
+            or (self.session and self.session.safety_car_status)
+        )
         max_gap = max(100, (self.session.track_length if self.session else 0) * 0.025)
         if self.delta.last_distance is None:
             self.delta.recorded_from_start = dist <= 100 and elapsed_ms <= 5000
-        elif (dist < self.delta.last_distance - 1 or
-                dist - self.delta.last_distance > max_gap or
-                elapsed_ms < self.delta.last_elapsed_ms):
+        elif (
+            dist < self.delta.last_distance - 1
+            or dist - self.delta.last_distance > max_gap
+            or elapsed_ms < self.delta.last_elapsed_ms
+        ):
             self.delta.current_lap_invalid = True
         self.delta.last_distance = dist
         self.delta.last_elapsed_ms = elapsed_ms
@@ -67,13 +71,20 @@ class LapsStage(OutputsStage):
         self.delta.last_sample_distance = dist
         self.delta.current_lap_times[dist] = elapsed_ms
         self.delta.current_lap_speeds.append([round(dist, 1), telemetry.speed])
-        self.delta.current_lap_samples.append({
-            'distance': dist, 'elapsed_ms': elapsed_ms, 'speed': telemetry.speed,
-            'throttle': telemetry.throttle, 'brake': telemetry.brake, 'gear': telemetry.gear,
-            'rpm': telemetry.engine_rpm, 'tyre_surface_temps': list(telemetry.tyres_surface_temperature),
-            'tyre_inner_temps': list(telemetry.tyres_inner_temperature),
-            'tyre_pressures': list(telemetry.tyres_pressure),
-        })
+        self.delta.current_lap_samples.append(
+            {
+                'distance': dist,
+                'elapsed_ms': elapsed_ms,
+                'speed': telemetry.speed,
+                'throttle': telemetry.throttle,
+                'brake': telemetry.brake,
+                'gear': telemetry.gear,
+                'rpm': telemetry.engine_rpm,
+                'tyre_surface_temps': list(telemetry.tyres_surface_temperature),
+                'tyre_inner_temps': list(telemetry.tyres_inner_temperature),
+                'tyre_pressures': list(telemetry.tyres_pressure),
+            }
+        )
 
         # Calculate live delta if baseline exists
         reference = self.delta.best_lap_times
@@ -97,13 +108,27 @@ class LapsStage(OutputsStage):
         self.delta.last_delta_report_time = now
         amount = say.time_amount(delta_ms / 1000.0)
         if delta_ms < -100:
-            self.speak(self.phrases.pick('delta_up', (
-                f'{amount.capitalize()} up on your best. Keep it going.',
-                f"You're {amount} up, good lap so far.",
-            )), Priority.LOW, key='live_delta', ttl=6, cooldown=14)
+            self.speak(
+                self.phrases.pick(
+                    'delta_up',
+                    (
+                        f'{amount.capitalize()} up on your best. Keep it going.',
+                        f"You're {amount} up, good lap so far.",
+                    ),
+                ),
+                Priority.LOW,
+                key='live_delta',
+                ttl=6,
+                cooldown=14,
+            )
         elif delta_ms > 150:
-            self.speak(f'{amount.capitalize()} down on your best.', Priority.LOW,
-                       key='live_delta', ttl=6, cooldown=14)
+            self.speak(
+                f'{amount.capitalize()} down on your best.',
+                Priority.LOW,
+                key='live_delta',
+                ttl=6,
+                cooldown=14,
+            )
 
     def _on_sector_change(self, lap: LapData) -> None:
         """Announce sector timing and delta."""
@@ -111,8 +136,9 @@ class LapsStage(OutputsStage):
             return
         if lap.sector in (1, 2):
             milliseconds = lap.sector1_time_ms if lap.sector == 1 else lap.sector2_time_ms
-            self.radio.report_sector(lap.current_lap_num, lap.sector, milliseconds,
-                                     self.best_sector_times.get(lap.sector))
+            self.radio.report_sector(
+                lap.current_lap_num, lap.sector, milliseconds, self.best_sector_times.get(lap.sector)
+            )
 
     # ── Lap completion ──
 
@@ -129,9 +155,12 @@ class LapsStage(OutputsStage):
         # If previous lap completed with valid lap time
         track_length = self.session.track_length if self.session else 0
         complete = (
-            prev_lap_num > 0 and lap.current_lap_num == prev_lap_num + 1
-            and self.delta.recorded_from_start and not self.delta.current_lap_invalid
-            and track_length > 0 and self.delta.last_distance is not None
+            prev_lap_num > 0
+            and lap.current_lap_num == prev_lap_num + 1
+            and self.delta.recorded_from_start
+            and not self.delta.current_lap_invalid
+            and track_length > 0
+            and self.delta.last_distance is not None
             and self.delta.last_distance >= track_length - 100
             and lap.last_lap_time_ms >= self.delta.last_elapsed_ms
         )
@@ -142,8 +171,9 @@ class LapsStage(OutputsStage):
             self.last_lap_sectors = dict(sectors)
             self.last_lap_sector_refs = dict(self.best_sector_times)
         if prev_lap_num > 0 and lap.last_lap_time_ms > 0:
-            self._record_lap_stats(prev_lap_num, lap.last_lap_time_ms, complete, sectors,
-                                   self.current_lap_speed_trap_kph)
+            self._record_lap_stats(
+                prev_lap_num, lap.last_lap_time_ms, complete, sectors, self.current_lap_speed_trap_kph
+            )
         self.last_speed_trap_kph = self.current_lap_speed_trap_kph
         self.current_lap_speed_trap_kph = None
         if prev_lap_num > 0 and self.delta.current_lap_samples:
@@ -172,28 +202,35 @@ class LapsStage(OutputsStage):
         self.last_map_dist = -999.0
         self._map_revision += 1
 
-    def _save_lap_recording(self, lap: LapData, lap_num: int, complete: bool,
-                            sectors: dict[int, int]) -> None:
+    def _save_lap_recording(
+        self, lap: LapData, lap_num: int, complete: bool, sectors: dict[int, int]
+    ) -> None:
         """The finished lap's trace and corners go to the history database."""
         history, capture = self.history, self.capture_id
         if not (history and capture):
             return
         recording: JSON = {
-            'lap_time_ms': lap.last_lap_time_ms, 'lap_num': lap_num,
-            'times': self.delta.current_lap_times, 'speeds': self.delta.current_lap_speeds,
+            'lap_time_ms': lap.last_lap_time_ms,
+            'lap_num': lap_num,
+            'times': self.delta.current_lap_times,
+            'speeds': self.delta.current_lap_speeds,
             'samples': self.delta.current_lap_samples,
-            'corners': self.current_corner_data, 'sectors': sectors,
+            'corners': self.current_corner_data,
+            'sectors': sectors,
         }
-        self._write_history('lap', lambda: history.record_lap(
-            capture, lap_num, lap.last_lap_time_ms, complete, recording))
+        self._write_history(
+            'lap', lambda: history.record_lap(capture, lap_num, lap.last_lap_time_ms, complete, recording)
+        )
         if complete and lap_num % self.config.laps.profile_refresh_laps == 0:
-            self._refresh_driver_profile()     # learns from the laps just driven
+            self._refresh_driver_profile()  # learns from the laps just driven
 
     def _report_completed_lap(self, last_ms: int, lap_num: int, sectors: dict[int, int]) -> None:
         """A clean, complete lap: radio the time, and keep it as the reference if it's a best."""
         self.radio.completed_lap(last_ms, lap_num, sectors, self.best_sector_times)
         for sector, milliseconds in sectors.items():
-            self.best_sector_times[sector] = min(self.best_sector_times.get(sector, milliseconds), milliseconds)
+            self.best_sector_times[sector] = min(
+                self.best_sector_times.get(sector, milliseconds), milliseconds
+            )
         spoken = say.lap_time(last_ms)
 
         # Store as best if first completed lap or faster
@@ -208,10 +245,19 @@ class LapsStage(OutputsStage):
                 self.braking_zones_best = list(self.current_lap_braking_zones)
                 self.ers_zones_best = list(self.current_lap_ers_zones)
 
-            self.speak(self.phrases.pick('personal_best', (
-                f"Good lap! {spoken.capitalize()}, that's a personal best.",
-                f'{spoken.capitalize()}. Personal best, nice job.',
-            )), Priority.TIMING, key='lap_time', ttl=10, cooldown=0)
+            self.speak(
+                self.phrases.pick(
+                    'personal_best',
+                    (
+                        f"Good lap! {spoken.capitalize()}, that's a personal best.",
+                        f'{spoken.capitalize()}. Personal best, nice job.',
+                    ),
+                ),
+                Priority.TIMING,
+                key='lap_time',
+                ttl=10,
+                cooldown=0,
+            )
         else:
             diff_s = (last_ms - self.delta.best_lap_time_ms) / 1000.0
             if diff_s < 0.15:
@@ -251,8 +297,10 @@ class LapsStage(OutputsStage):
             c_end = c['end']
             if prev_dist <= c_start < dist and c_name not in self.current_corner_data:
                 self.current_corner_data[c_name] = {
-                    'min_speed': speed, 'brake_point': self.brake_start_distance,
-                    'start_time_ms': crossing_time(c_start), 'end_time_ms': None,
+                    'min_speed': speed,
+                    'brake_point': self.brake_start_distance,
+                    'start_time_ms': crossing_time(c_start),
+                    'end_time_ms': None,
                 }
             data = self.current_corner_data.get(c_name)
             if data is None or data['end_time_ms'] is not None:
@@ -271,7 +319,7 @@ class LapsStage(OutputsStage):
         end_t = current_data.get('end_time_ms', 0)
         curr_dur = (end_t - start_t) / 1000.0
 
-        ref_apex = ref_def.get('ref_apex')      # None for corners without a measured apex speed
+        ref_apex = ref_def.get('ref_apex')  # None for corners without a measured apex speed
         ref_brake = ref_def['ref_brake']
 
         curr_apex = current_data.get('min_speed', 0)
@@ -296,7 +344,7 @@ class LapsStage(OutputsStage):
             diff = ref_brake - curr_brake
             advice.append(f'Braked {diff}m before the {reference_source} braking point.')
         if best_apex is None:
-            pass        # no reference apex yet: this lap becomes the reference
+            pass  # no reference apex yet: this lap becomes the reference
         elif curr_apex < (best_apex - 8):
             diff = best_apex - curr_apex
             advice.append(f'Apex speed {diff} km/h below the {reference_source}.')
@@ -304,8 +352,11 @@ class LapsStage(OutputsStage):
             advice.append('Good apex speed maintained!')
 
         if not advice:
-            advice_text = ('Reference lap not set yet; this lap will be your benchmark.'
-                           if best_apex is None else 'Good execution through corner.')
+            advice_text = (
+                'Reference lap not set yet; this lap will be your benchmark.'
+                if best_apex is None
+                else 'Good execution through corner.'
+            )
         else:
             advice_text = ' '.join(advice)
 
@@ -321,7 +372,9 @@ class LapsStage(OutputsStage):
         }
 
         # Keep latest corner diagnostics
-        existing_idx = next((i for i, item in enumerate(self.corner_diagnostics) if item['name'] == c_name), None)
+        existing_idx = next(
+            (i for i, item in enumerate(self.corner_diagnostics) if item['name'] == c_name), None
+        )
         if existing_idx is not None:
             self.corner_diagnostics[existing_idx] = diag_entry
         else:

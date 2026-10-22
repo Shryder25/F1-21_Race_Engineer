@@ -29,7 +29,6 @@ def write_toml(text: str) -> pathlib.Path:
 
 
 class ConfigFileTests(unittest.TestCase):
-
     def test_shipped_config_is_exactly_the_built_in_defaults(self):
         self.assertEqual(cfg.load_config(ROOT / 'config.toml', required=True), cfg.EngineConfig())
 
@@ -56,8 +55,14 @@ class ConfigFileTests(unittest.TestCase):
         self.assertEqual(loaded.network, cfg.NetworkConfig())
 
     def test_typos_and_wrong_types_are_errors(self):
-        for text in ('[radio]\nbusy_lateral_gee = 1.0\n', '[radios]\n', '[tyres]\ncritical_c = "hot"\n',
-                     '[radio]\non_demand = 1\n', '[radio]\nproactive_keys = "plan_b"\n', 'not toml ['):
+        for text in (
+            '[radio]\nbusy_lateral_gee = 1.0\n',
+            '[radios]\n',
+            '[tyres]\ncritical_c = "hot"\n',
+            '[radio]\non_demand = 1\n',
+            '[radio]\nproactive_keys = "plan_b"\n',
+            'not toml [',
+        ):
             with self.subTest(text=text), self.assertRaises(cfg.ConfigError):
                 cfg.load_config(write_toml(text))
 
@@ -65,24 +70,25 @@ class ConfigFileTests(unittest.TestCase):
         base = cfg.load_config(write_toml('[network]\nudp_port = 30000\n[simulation]\nruns = 50\n'))
         merged = cfg.apply_overrides(base, {'network.udp_port': 20888, 'simulation.runs': None})
         self.assertEqual((merged.network.udp_port, merged.simulation.runs), (20888, 50))
-        self.assertEqual(base.network.udp_port, 30000)          # the original is untouched
+        self.assertEqual(base.network.udp_port, 30000)  # the original is untouched
         with self.assertRaises(cfg.ConfigError):
             cfg.apply_overrides(base, {'network.nope': 1})
 
 
 class CommandLineTests(unittest.TestCase):
-
     def settings(self, *argv):
         return app.settings_from(app.build_parser().parse_args(list(argv)))
 
     def test_flags_override_the_config_file(self):
-        path = write_toml('[network]\nudp_port = 30000\n[radio]\non_demand = true\n'
-                          '[logging]\nlevel = "WARNING"\n')
-        settings = self.settings('--config', str(path), '--chatty', '--log-level', 'debug',
-                                 '--sim-runs', '40', '--no-race-sim')
-        self.assertEqual(settings.network.udp_port, 30000)        # from the file
-        self.assertFalse(settings.radio.on_demand)                # --chatty
-        self.assertEqual(settings.logging.level, 'DEBUG')         # --log-level, case-insensitive
+        path = write_toml(
+            '[network]\nudp_port = 30000\n[radio]\non_demand = true\n[logging]\nlevel = "WARNING"\n'
+        )
+        settings = self.settings(
+            '--config', str(path), '--chatty', '--log-level', 'debug', '--sim-runs', '40', '--no-race-sim'
+        )
+        self.assertEqual(settings.network.udp_port, 30000)  # from the file
+        self.assertFalse(settings.radio.on_demand)  # --chatty
+        self.assertEqual(settings.logging.level, 'DEBUG')  # --log-level, case-insensitive
         self.assertEqual(settings.simulation.runs, 40)
         self.assertFalse(settings.simulation.enabled)
 
@@ -97,7 +103,6 @@ class CommandLineTests(unittest.TestCase):
 
 
 class EngineConfigTests(unittest.TestCase):
-
     def test_busy_filter_reads_the_lateral_g_threshold(self):
         motion = SimpleNamespace(g_force_lateral=1.5)
         telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 200, 1, 0, 6, 90), 0)
@@ -117,7 +122,6 @@ class EngineConfigTests(unittest.TestCase):
 
 
 class LoggingTests(unittest.TestCase):
-
     def tearDown(self):
         root = logging.getLogger(log_setup.ROOT)
         for handler in list(root.handlers):
@@ -134,8 +138,10 @@ class LoggingTests(unittest.TestCase):
         lines = stream.getvalue().splitlines()
         self.assertEqual(len(lines), 1)
         entry = json.loads(lines[0])
-        self.assertEqual((entry['level'], entry['logger'], entry['msg'], entry['lap']),
-                         ('WARNING', 'f1.history', 'Could not save lap', 12))
+        self.assertEqual(
+            (entry['level'], entry['logger'], entry['msg'], entry['lap']),
+            ('WARNING', 'f1.history', 'Could not save lap', 12),
+        )
         self.assertTrue(entry['ts'].endswith('Z'))
 
     def test_text_lines_are_short_and_readable(self):

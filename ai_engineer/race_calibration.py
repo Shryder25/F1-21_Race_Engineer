@@ -26,7 +26,7 @@ FUEL_EFFECT_S_PER_KG = 0.032
 STARTING_FUEL_KG = 110.0
 WARMUP_LAPS = {'SOFT': 1, 'MEDIUM': 2, 'HARD': 3, 'INTERMEDIATE': 2, 'WET': 2}
 MIN_STINT_LAPS = 6
-NEUTRAL_DEG = {'SOFT': 0.100, 'MEDIUM': 0.055, 'HARD': 0.032}   # matches track_analysis.BASE_DEG
+NEUTRAL_DEG = {'SOFT': 0.100, 'MEDIUM': 0.055, 'HARD': 0.032}  # matches track_analysis.BASE_DEG
 
 
 def theil_sen_slope(x: Sequence[float], y: Sequence[float]) -> float | None:

@@ -38,8 +38,9 @@ def describe(session, player_flag: int = 0, sector_starts: dict | None = None) -
         return dict(CLEAR)
     zones = getattr(session, 'marshal_zones', ()) or ()
     yellow = [start for start, flag in zones if flag == FLAG_YELLOW]
-    sectors = sorted({s for s in (zone_sector(start, session.track_length, sector_starts or {})
-                                  for start in yellow) if s})
+    sectors = sorted(
+        {s for s in (zone_sector(start, session.track_length, sector_starts or {}) for start in yellow) if s}
+    )
     if any(flag == FLAG_RED for _, flag in zones) or player_flag == FLAG_RED:
         state = 'RED'
     elif session.safety_car_status == 1:

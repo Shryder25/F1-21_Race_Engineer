@@ -44,7 +44,7 @@ class AILatencyTests(unittest.TestCase):
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         root = f'http://127.0.0.1:{self.server.server_port}'
         self.client = AIClient(root + '/v1', 'deepseek-r1:8b', timeout=2)
-        self.client.ollama_root = root          # pretend it's the local Ollama on 11434
+        self.client.ollama_root = root  # pretend it's the local Ollama on 11434
 
     def tearDown(self):
         self.server.shutdown()
@@ -52,8 +52,9 @@ class AILatencyTests(unittest.TestCase):
 
     def test_radio_answers_switch_thinking_off_with_a_small_budget(self):
         brain = EngineerBrain(lambda: {'gap_ahead_s': 1.4}, self.client)
-        self.assertEqual(brain.answer_question('Can I catch the car ahead?'),
-                         'Gap ahead one point four, you are catching.')
+        self.assertEqual(
+            brain.answer_question('Can I catch the car ahead?'), 'Gap ahead one point four, you are catching.'
+        )
         path, body = FakeServer.bodies[0]
         self.assertEqual(path, '/api/chat')
         self.assertIs(body['think'], False)
@@ -73,7 +74,7 @@ class AILatencyTests(unittest.TestCase):
         brain = EngineerBrain(lambda: {'gap_ahead_s': 1.4, 'session_mode': 'race'}, self.client)
         started = time.monotonic()
         answer = brain.answer('gap_ahead')
-        self.assertLess(time.monotonic() - started, 1.2)    # one wait, not three
+        self.assertLess(time.monotonic() - started, 1.2)  # one wait, not three
         self.assertEqual(brain.last_source, 'fallback')
         self.assertIn('Gap ahead', answer)
         self.assertEqual(len(FakeServer.bodies), 1)

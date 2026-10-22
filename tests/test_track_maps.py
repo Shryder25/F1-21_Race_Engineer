@@ -36,8 +36,13 @@ class Driver:
 
     def at(self, distance, lap_num=1, pit_status=0, xz=None):
         x, z = xz if xz is not None else position(distance)
-        lap = replace(self.lap, lap_distance=distance, current_lap_num=lap_num,
-                      current_lap_time_ms=100 + int(distance * 50), pit_status=pit_status)
+        lap = replace(
+            self.lap,
+            lap_distance=distance,
+            current_lap_num=lap_num,
+            current_lap_time_ms=100 + int(distance * 50),
+            pit_status=pit_status,
+        )
         self.engine.update_telemetry(self.telemetry, lap)
         self.engine.update_motion(parse_player_motion(build_motion_packet(1.0, 1, x, z), 0))
 
@@ -68,7 +73,7 @@ class OutlineBuildingTests(unittest.TestCase):
             again = track_maps.TrackMapStore(path)
             self.assertEqual(again.get(11, 5810)['outline'], [[0, 0], [1, 1]])
             self.assertEqual(again.get(11, 5810)['pit_lane'], [[2, 2], [3, 3]])
-            self.assertEqual(again.get(11, 4000)['outline'], [])       # different layout
+            self.assertEqual(again.get(11, 4000)['outline'], [])  # different layout
             again.forget(11)
             self.assertEqual(json.loads(path.read_text()), {})
 
@@ -110,7 +115,7 @@ class TrackMapRecordingTests(unittest.TestCase):
 
     def test_pit_lane_is_recorded_separately_and_kept(self):
         self.driver.lap_from(0, 900)
-        for i in range(30):                      # drive down the pit lane, off the racing line
+        for i in range(30):  # drive down the pit lane, off the racing line
             self.driver.at(900 + i * 3, pit_status=1, xz=(900.0 + i * 5, -50.0))
         self.driver.at(990)
         pit_lane = web_hud.get_web_state(now=0)['pit_lane']
@@ -126,7 +131,7 @@ class TrackMapRecordingTests(unittest.TestCase):
         self.driver.lap_from(600, 1000)
         self.driver.at(2, lap_num=2)
         self.assertEqual(self.engine.track_outline, [])
-        self.driver.lap_from(5, 1000, lap_num=2)     # a clean lap maps the circuit
+        self.driver.lap_from(5, 1000, lap_num=2)  # a clean lap maps the circuit
         self.driver.at(2, lap_num=3)
         self.assertTrue(self.engine.track_outline)
         self.assertNotIn([500.0, -50.0], self.engine.track_outline)
@@ -168,23 +173,32 @@ class FieldMappingTests(unittest.TestCase):
         self.store = track_maps.TrackMapStore()
         self.engine = AnalysisEngine(SilentVoice(), track_store=self.store)
         self.engine.update_session(SESSION)
-        self.engine.update_participants([type('P', (), {'team_id': i % 10, 'radio_name': '',
-                                                        'name': ''})() for i in range(22)])
+        self.engine.update_participants(
+            [type('P', (), {'team_id': i % 10, 'radio_name': '', 'name': ''})() for i in range(22)]
+        )
         self.driver = Driver(self.engine)
         self.driver.at(0)
         self.motion = parse_player_motion(build_motion_packet(1.0, 1, 0.0, 0.0), 0)
 
     def field_at(self, distances, pit=()):
-        laps = [replace(self.driver.lap, lap_distance=d, result_status=2, driver_status=4,
-                        car_position=i + 1, pit_status=1 if i in pit else 0)
-                for i, d in enumerate(distances)]
+        laps = [
+            replace(
+                self.driver.lap,
+                lap_distance=d,
+                result_status=2,
+                driver_status=4,
+                car_position=i + 1,
+                pit_status=1 if i in pit else 0,
+            )
+            for i, d in enumerate(distances)
+        ]
         laps += [replace(self.driver.lap, result_status=0)] * (22 - len(laps))
         self.engine.update_field(laps, 0, 1.0)
         positions = [position(d) for d in distances] + [(0.0, 0.0)] * (22 - len(distances))
         self.engine.update_motion(self.motion, positions)
 
     def test_field_spread_round_the_lap_maps_the_whole_circuit(self):
-        for step in range(0, 46, 1):                  # 22 cars 45 m apart, each moving 1 m
+        for step in range(0, 46, 1):  # 22 cars 45 m apart, each moving 1 m
             self.field_at([i * 45 + step for i in range(22)])
         self.assertTrue(self.engine.track_outline)
         state = web_hud.get_web_state(now=0)
@@ -194,7 +208,7 @@ class FieldMappingTests(unittest.TestCase):
     def test_partly_mapped_circuit_is_shown_with_holes_not_chords(self):
         for step in range(0, 20):
             self.field_at([0 + step, 500 + step])
-        self.driver.at(5)                             # a paired frame streams the map
+        self.driver.at(5)  # a paired frame streams the map
         trail = web_hud.get_web_state(now=0)['track_map']
         self.assertIn(None, trail)
         self.assertFalse(self.engine.track_outline)
@@ -204,13 +218,13 @@ class FieldMappingTests(unittest.TestCase):
         self.driver.at(6)
         cars = web_hud.get_web_state(now=0)['cars']
         self.assertEqual(len(cars), 3)
-        self.assertEqual(cars[0][4], 1)               # the player is flagged
+        self.assertEqual(cars[0][4], 1)  # the player is flagged
         self.assertEqual([c[2] for c in cars], [0, 1, 2])
 
     def test_another_cars_pit_stop_maps_the_pit_lane(self):
-        for i in range(30):                           # car 2 drives down the pit lane
+        for i in range(30):  # car 2 drives down the pit lane
             self.field_at([100, 850 + i * 5], pit={1})
-        self.field_at([100, 20])                      # and rejoins
+        self.field_at([100, 20])  # and rejoins
         self.assertGreaterEqual(len(self.engine.pit_lane_points), track_maps.MIN_PIT_POINTS)
         self.assertTrue(self.store.get(11, TRACK_LENGTH)['pit_lane'])
 
@@ -218,6 +232,7 @@ class FieldMappingTests(unittest.TestCase):
 class FlashbackStreamTests(unittest.TestCase):
     def test_flashback_event_tells_the_map_to_rewind(self):
         from telemetry_stream import TelemetryStream
+
         engine = AnalysisEngine(SilentVoice())
         stream = TelemetryStream(engine)
         stream.handle(build_session_packet(0, 1, 11), now=0)

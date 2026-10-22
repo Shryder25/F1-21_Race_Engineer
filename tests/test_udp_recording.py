@@ -28,10 +28,12 @@ from udp_recording import (
     summarize,
 )
 
-PACKETS = [build_session_packet(0.0, 1, 11),
-           build_telemetry_packet(0.04, 2, 280, 1, 0, 8, 95),
-           build_lap_packet(0.04, 2, 1000, 20000),
-           b'not an F1 packet']  # junk is recorded too
+PACKETS = [
+    build_session_packet(0.0, 1, 11),
+    build_telemetry_packet(0.04, 2, 280, 1, 0, 8, 95),
+    build_lap_packet(0.04, 2, 1000, 20000),
+    b'not an F1 packet',
+]  # junk is recorded too
 
 
 class FakeClock:
@@ -76,12 +78,12 @@ class FormatTests(RecordingTestCase):
         raw = path.read_bytes()
         magic, version, flags, start_ns, meta_len = FILE_HEADER.unpack_from(raw)
         self.assertEqual((magic, version, flags), (b'F1UDPREC', 1, 0))
-        self.assertLess(abs(start_ns - time.time_ns()), 60 * 10 ** 9)
+        self.assertLess(abs(start_ns - time.time_ns()), 60 * 10**9)
         self.assertEqual(FILE_HEADER.size, 24)
         self.assertEqual(RECORD_HEADER.size, 14)
         offset = FILE_HEADER.size + meta_len
         t_ns, length, crc = RECORD_HEADER.unpack_from(raw, offset)
-        payload = raw[offset + 14:offset + 14 + length]
+        payload = raw[offset + 14 : offset + 14 + length]
         self.assertEqual((t_ns, payload, crc), (0, PACKETS[0], zlib.crc32(PACKETS[0])))
         with RecordingReader(path) as reader:
             self.assertEqual(reader.metadata['game'], 'F1 2021')
@@ -116,7 +118,7 @@ class FormatTests(RecordingTestCase):
         with RecordingReader(path) as reader:
             records = list(reader)
         self.assertGreaterEqual(len(records), 0)
-        self.assertEqual([r.data for r in records], PACKETS[:len(records)])
+        self.assertEqual([r.data for r in records], PACKETS[: len(records)])
 
     def test_corrupt_payload_raises(self):
         path = self.make()
@@ -211,6 +213,7 @@ class ReplayTests(RecordingTestCase):
 
             def handle(self, data, now=None):
                 self.calls.append((data, now))
+
         stream = Stream()
         self.assertEqual(replay_into(stream, self.make()), 4)
         self.assertEqual([d for d, _ in stream.calls], PACKETS)
@@ -277,6 +280,7 @@ class RecorderTests(RecordingTestCase):
             from analysis import AnalysisEngine
             from telemetry_stream import TelemetryStream
             from test_analysis import SilentVoice
+
             stream = TelemetryStream(AnalysisEngine(SilentVoice()))
         except Exception as e:  # the engine itself is broken on some branches; not this module
             self.skipTest(f'AnalysisEngine unavailable: {e}')

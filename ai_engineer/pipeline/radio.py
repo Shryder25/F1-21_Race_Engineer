@@ -23,7 +23,6 @@ from voice_engine import Priority
 
 
 class RadioStage(EngineState):
-
     def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> None:
         """Queue speech; priority interrupts in the proactive keys break on-demand silence."""
         topic = options.get('key', message)
@@ -86,11 +85,19 @@ class RadioStage(EngineState):
                 state.hot_since[i] = 0.0
 
         # Mid-lap: one short call per lap, and only for a genuine, still-climbing overheat.
-        if (critical_wheels and not self.tyre_state.critical_called_this_lap
-                and now - self.tyre_state.last_critical_alert_time >= cfg.alert_cooldown_s):
+        if (
+            critical_wheels
+            and not self.tyre_state.critical_called_this_lap
+            and now - self.tyre_state.last_critical_alert_time >= cfg.alert_cooldown_s
+        ):
             pronoun = 'it' if len(critical_wheels) == 1 else 'them'
-            self.speak(f'{wheel_group(critical_wheels)} overheating, cool {pronoun}.',
-                       Priority.CRITICAL, key='tyre_temperature', ttl=4, cooldown=25)
+            self.speak(
+                f'{wheel_group(critical_wheels)} overheating, cool {pronoun}.',
+                Priority.CRITICAL,
+                key='tyre_temperature',
+                ttl=4,
+                cooldown=25,
+            )
             self.tyre_state.critical_called_this_lap = True
             self.tyre_state.last_critical_alert_time = now
             self.tyre_state.last_alert_time = now
@@ -112,8 +119,10 @@ class RadioStage(EngineState):
         state = self.tyre_state
         summary = self.tyre_lap_summary()
         state.laps_since_summary += 1
-        if summary and (summary.split(',')[0] != (state.last_summary or '').split(',')[0]
-                        or state.laps_since_summary >= self.config.tyres.summary_repeat_laps):
+        if summary and (
+            summary.split(',')[0] != (state.last_summary or '').split(',')[0]
+            or state.laps_since_summary >= self.config.tyres.summary_repeat_laps
+        ):
             self.speak(summary, Priority.LOW, key='tyre_summary', ttl=10, cooldown=0)
             state.laps_since_summary = 0
         state.last_summary = summary
@@ -140,5 +149,6 @@ class RadioStage(EngineState):
             if 0 < approach_dist <= warn and corner_name not in self.announced_braking:
                 self.announced_braking.add(corner_name)
                 dist_rnd = int(round(approach_dist / 10.0) * 10)
-                self.speak(f'{message}, {dist_rnd} metres.', Priority.CRITICAL,
-                           key='braking', ttl=1.0, cooldown=0)
+                self.speak(
+                    f'{message}, {dist_rnd} metres.', Priority.CRITICAL, key='braking', ttl=1.0, cooldown=0
+                )

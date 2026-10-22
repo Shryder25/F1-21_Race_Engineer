@@ -7,21 +7,38 @@ from __future__ import annotations
 
 PRACTICE, QUALIFYING, RACE, TIME_TRIAL, UNKNOWN = 'practice', 'qualifying', 'race', 'time_trial', 'unknown'
 
-_MODES = {1: PRACTICE, 2: PRACTICE, 3: PRACTICE, 4: PRACTICE,
-          5: QUALIFYING, 6: QUALIFYING, 7: QUALIFYING, 8: QUALIFYING, 9: QUALIFYING,
-          10: RACE, 11: RACE, 12: RACE, 13: TIME_TRIAL}
+_MODES = {
+    1: PRACTICE,
+    2: PRACTICE,
+    3: PRACTICE,
+    4: PRACTICE,
+    5: QUALIFYING,
+    6: QUALIFYING,
+    7: QUALIFYING,
+    8: QUALIFYING,
+    9: QUALIFYING,
+    10: RACE,
+    11: RACE,
+    12: RACE,
+    13: TIME_TRIAL,
+}
 
-MODE_LABELS = {PRACTICE: 'Free Practice', QUALIFYING: 'Qualifying', RACE: 'Race',
-               TIME_TRIAL: 'Time Trial', UNKNOWN: 'Session'}
+MODE_LABELS = {
+    PRACTICE: 'Free Practice',
+    QUALIFYING: 'Qualifying',
+    RACE: 'Race',
+    TIME_TRIAL: 'Time Trial',
+    UNKNOWN: 'Session',
+}
 
 # What each mode makes meaningful.
 _FEATURES = {
     #              rival gaps, pit window, race pace
-    RACE:        (True,  True,  True),
-    PRACTICE:    (False, True,  False),   # long runs: tyre wear still matters
-    QUALIFYING:  (False, False, False),
-    TIME_TRIAL:  (False, False, False),   # alone on track, no stops
-    UNKNOWN:     (False, False, False),
+    RACE: (True, True, True),
+    PRACTICE: (False, True, False),  # long runs: tyre wear still matters
+    QUALIFYING: (False, False, False),
+    TIME_TRIAL: (False, False, False),  # alone on track, no stops
+    UNKNOWN: (False, False, False),
 }
 
 

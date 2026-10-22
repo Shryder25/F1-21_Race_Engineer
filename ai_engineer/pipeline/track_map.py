@@ -17,7 +17,6 @@ from pipeline.strategy import StrategyStage
 
 
 class TrackMapStage(StrategyStage):
-
     def _record_trail_point(self, x: float, z: float) -> None:
         """One Motion packet's player position: extend the live trail, pit lane and zones."""
         if not (self.latest_lap and self.latest_telemetry and not self.map_rewind_pending):
@@ -31,10 +30,10 @@ class TrackMapStage(StrategyStage):
         if self.current_pit_points:
             self._finish_pit_lane()
         if self.delta.current_lap_num and lap.current_lap_num != self.delta.current_lap_num:
-            return                        # lap change not processed yet: keep last lap intact
+            return  # lap change not processed yet: keep last lap intact
         dist = lap.lap_distance
         if dist < self.last_map_dist - 30.0:
-            self._trim_trail(dist)        # car went backwards along the lap: a rewind
+            self._trim_trail(dist)  # car went backwards along the lap: a rewind
         if abs(dist - self.last_map_dist) >= 6.0:
             self.last_map_dist = dist
             self.current_lap_map_points.append([x, z])
@@ -56,15 +55,26 @@ class TrackMapStage(StrategyStage):
             return
         cars: list[list[float]] = []
         grew = False
-        for index, (x, z) in enumerate(positions[:len(laps)]):
+        for index, (x, z) in enumerate(positions[: len(laps)]):
             lap = laps[index]
-            if (lap.result_status not in (2, 3) or (x == 0 and z == 0)
-                    or not (math.isfinite(x) and math.isfinite(z))):
+            if (
+                lap.result_status not in (2, 3)
+                or (x == 0 and z == 0)
+                or not (math.isfinite(x) and math.isfinite(z))
+            ):
                 continue
-            cars.append([round(x, 1), round(z, 1), self.car_teams.get(index, -1), lap.car_position,
-                         int(index == self.player_index), int(bool(lap.pit_status))])
+            cars.append(
+                [
+                    round(x, 1),
+                    round(z, 1),
+                    self.car_teams.get(index, -1),
+                    lap.car_position,
+                    int(index == self.player_index),
+                    int(bool(lap.pit_status)),
+                ]
+            )
             if self.track_outline and self.pit_lane_points:
-                continue                                   # nothing left to map
+                continue  # nothing left to map
             if lap.pit_status:
                 track_maps.append_pit_point(self.field_pit_points.setdefault(index, []), x, z)
                 continue
@@ -93,9 +103,13 @@ class TrackMapStage(StrategyStage):
         self._push_track_map()
 
     def _push_track_map(self) -> None:
-        web_hud.update_web_state({'track_outline': self.track_outline,
-                                  'pit_lane': self.pit_lane_points,
-                                  'track_map_source': 'stored' if self.track_outline else 'recording'})
+        web_hud.update_web_state(
+            {
+                'track_outline': self.track_outline,
+                'pit_lane': self.pit_lane_points,
+                'track_map_source': 'stored' if self.track_outline else 'recording',
+            }
+        )
 
     def _clear_trail_distances(self) -> None:
         self.current_lap_map_dists.clear()
@@ -110,9 +124,11 @@ class TrackMapStage(StrategyStage):
 
     def _trim_trail(self, dist: float) -> None:
         """Drop every trail point recorded beyond `dist` on this lap (the rewound future)."""
-        for points, dists in ((self.current_lap_map_points, self.current_lap_map_dists),
-                              (self.current_lap_braking_zones, self.current_lap_braking_dists),
-                              (self.current_lap_ers_zones, self.current_lap_ers_dists)):
+        for points, dists in (
+            (self.current_lap_map_points, self.current_lap_map_dists),
+            (self.current_lap_braking_zones, self.current_lap_braking_dists),
+            (self.current_lap_ers_zones, self.current_lap_ers_dists),
+        ):
             keep = next((i for i, d in enumerate(dists) if d > dist), len(dists))
             del points[keep:], dists[keep:]
         self.last_map_dist = self.current_lap_map_dists[-1] if self.current_lap_map_dists else -999.0
@@ -129,11 +145,11 @@ class TrackMapStage(StrategyStage):
 
     def _capture_outline(self, lap_num: int, new_lap_num: int) -> None:
         """After a full lap, store it as the circuit outline if this track has none yet."""
-        if (self.track_outline or self.map_lap_has_pit or not self.session
-                or new_lap_num != lap_num + 1):
+        if self.track_outline or self.map_lap_has_pit or not self.session or new_lap_num != lap_num + 1:
             return
-        outline = track_maps.build_outline(self.current_lap_map_dists, self.current_lap_map_points,
-                                           self.session.track_length)
+        outline = track_maps.build_outline(
+            self.current_lap_map_dists, self.current_lap_map_points, self.session.track_length
+        )
         if outline:
             self.track_outline = outline
             self.track_store.save(self.track_id, self.session.track_length, outline=outline)
@@ -184,9 +200,8 @@ class TrackMapStage(StrategyStage):
             return {}
         self._sent_map_revision = self._map_revision
         trail = [] if self.track_outline else (self.track_map_points or self.current_lap_map_points)
-        if (not self.track_outline and self.field_mapper
-                and len(self.field_mapper.bins) * 1.3 > len(trail)):
-            trail = self.field_mapper.partial()      # the field has seen more of the track
+        if not self.track_outline and self.field_mapper and len(self.field_mapper.bins) * 1.3 > len(trail):
+            trail = self.field_mapper.partial()  # the field has seen more of the track
         return {
             'track_map': trail,
             'current_lap_trail': self.current_lap_map_points,

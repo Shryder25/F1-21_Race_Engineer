@@ -21,17 +21,18 @@ from log_setup import get_logger
 
 log = get_logger('track_maps')
 
-OUTLINE_BIN_M = 8.0          # one outline point per 8 m of lap distance
-MAX_LINE_GAP_M = 40.0        # a lap with a bigger hole in it (rewind, glitch) is not used
-START_TOLERANCE_M = 60.0     # the lap must start this close to the line...
-END_TOLERANCE_M = 80.0       # ...and reach this close to the end of the lap
-LENGTH_TOLERANCE_M = 50.0    # stored map must match the session's track length
+OUTLINE_BIN_M = 8.0  # one outline point per 8 m of lap distance
+MAX_LINE_GAP_M = 40.0  # a lap with a bigger hole in it (rewind, glitch) is not used
+START_TOLERANCE_M = 60.0  # the lap must start this close to the line...
+END_TOLERANCE_M = 80.0  # ...and reach this close to the end of the lap
+LENGTH_TOLERANCE_M = 50.0  # stored map must match the session's track length
 MIN_PIT_POINTS = 15
 PIT_POINT_SPACING_M = 4.0
 
 
-def build_outline(dists: list[float], points: list[list[float]], track_length: float,
-                  bin_m: float = OUTLINE_BIN_M) -> list[list[float]] | None:
+def build_outline(
+    dists: list[float], points: list[list[float]], track_length: float, bin_m: float = OUTLINE_BIN_M
+) -> list[list[float]] | None:
     """Resample one lap's (distance, [x, z]) trail into an outline, or None if it is not a
     full lap: it must start at the line, reach the end, and have no hole in it."""
     if track_length <= 0 or len(dists) != len(points) or len(points) < 10:
@@ -52,8 +53,9 @@ def build_outline(dists: list[float], points: list[list[float]], track_length: f
     return outline
 
 
-def append_pit_point(points: list[list[float]], x: float, z: float,
-                     spacing: float = PIT_POINT_SPACING_M) -> bool:
+def append_pit_point(
+    points: list[list[float]], x: float, z: float, spacing: float = PIT_POINT_SPACING_M
+) -> bool:
     """Add a pit lane point when the car has moved far enough from the last one."""
     if points and math.hypot(x - points[-1][0], z - points[-1][1]) < spacing:
         return False
@@ -78,18 +80,20 @@ class TrackMapStore:
     def get(self, track_id, track_length: float) -> dict:
         """{'outline': [...], 'pit_lane': [...]} for this track ([] where not mapped yet)."""
         entry = self.maps.get(str(track_id))
-        if (not entry or track_length <= 0
-                or abs(entry.get('track_length', 0) - track_length) > LENGTH_TOLERANCE_M):
+        if (
+            not entry
+            or track_length <= 0
+            or abs(entry.get('track_length', 0) - track_length) > LENGTH_TOLERANCE_M
+        ):
             return {'outline': [], 'pit_lane': []}
-        return {'outline': list(entry.get('outline') or []),
-                'pit_lane': list(entry.get('pit_lane') or [])}
+        return {'outline': list(entry.get('outline') or []), 'pit_lane': list(entry.get('pit_lane') or [])}
 
     def save(self, track_id, track_length: float, outline=None, pit_lane=None):
         """Store a new outline and/or pit lane for a track (None leaves that part as is)."""
         key = str(track_id)
         entry = dict(self.maps.get(key) or {})
         if abs(entry.get('track_length', track_length) - track_length) > LENGTH_TOLERANCE_M:
-            entry = {}       # different layout under the same id: start over
+            entry = {}  # different layout under the same id: start over
         entry['track_length'] = track_length
         if outline is not None:
             entry['outline'] = outline
@@ -116,8 +120,8 @@ class TrackMapStore:
             log.warning(f'Could not save {self.path}: {error}')
 
 
-FIELD_COVERAGE_NEEDED = 0.97   # share of 8 m bins that must be seen before the outline is used
-FIELD_MAX_MISSING_BINS = 5     # and no hole longer than this (40 m)
+FIELD_COVERAGE_NEEDED = 0.97  # share of 8 m bins that must be seen before the outline is used
+FIELD_MAX_MISSING_BINS = 5  # and no hole longer than this (40 m)
 FIELD_SAMPLES_PER_BIN = 8
 
 

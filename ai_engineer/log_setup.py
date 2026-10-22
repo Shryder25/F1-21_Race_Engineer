@@ -40,7 +40,7 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         entry: dict[str, Any] = {
             'ts': time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(record.created))
-                  + f'.{int(record.msecs):03d}Z',
+            + f'.{int(record.msecs):03d}Z',
             'level': record.levelname,
             'logger': record.name,
             'msg': record.getMessage(),
@@ -66,8 +66,9 @@ class TextFormatter(logging.Formatter):
         return line
 
 
-def configure(level: str = 'INFO', fmt: str = 'text', file: str | None = None,
-              stream: TextIO | None = None) -> logging.Logger:
+def configure(
+    level: str = 'INFO', fmt: str = 'text', file: str | None = None, stream: TextIO | None = None
+) -> logging.Logger:
     """Set up the engineer's loggers. Safe to call more than once (handlers are replaced).
 
     Logs go to stderr, so they never tangle with the live console dashboard on stdout.

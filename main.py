@@ -2,6 +2,7 @@
 F1 2021 AI Race Engineer - Root Launcher
 Redirects execution into ai_engineer/main.py
 """
+
 import os
 import sys
 

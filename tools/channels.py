@@ -42,13 +42,23 @@ def cmd_build(args):
 
 def cmd_laps(args):
     cols, meta = channel_store.read_session(args.file)
-    print(f"{meta.get('track', '?')} {meta.get('session', '')}  driver {meta.get('driver', '?')}  "
-          f"{len(cols['session_time'])} samples")
+    print(
+        f"{meta.get('track', '?')} {meta.get('session', '')}  driver {meta.get('driver', '?')}  "
+        f"{len(cols['session_time'])} samples"
+    )
     print(f"{'lap':>4} {'time':>10} {'samples':>8}  notes")
     for lap in channel_store.lap_summary(cols):
         time_text = motec.format_lap_time(lap['lap_time']) if lap['lap_time'] else '-'
-        notes = [n for n, on in (('clean', lap['clean']), ('invalid', lap['invalid']),
-                                 ('pit', lap['pit']), ('partial', not lap['complete'])) if on]
+        notes = [
+            n
+            for n, on in (
+                ('clean', lap['clean']),
+                ('invalid', lap['invalid']),
+                ('pit', lap['pit']),
+                ('partial', not lap['complete']),
+            )
+            if on
+        ]
         print(f"{lap['lap']:>4} {time_text:>10} {lap['samples']:>8}  {', '.join(notes)}")
     return 0
 
@@ -75,8 +85,10 @@ def cmd_compare(args):
 
 def cmd_motec(args):
     result = motec.export_session(args.file, args.out, rate_hz=args.rate, fmt=args.format)
-    print(f"Wrote {result['path']} ({result['channels']} channels, {result['samples']} samples "
-          f"at {result['rate_hz']} Hz, {result['laps']} laps)")
+    print(
+        f"Wrote {result['path']} ({result['channels']} channels, {result['samples']} samples "
+        f"at {result['rate_hz']} Hz, {result['laps']} laps)"
+    )
     if result.get('ldx'):
         print(f"Wrote {result['ldx']} (lap markers; keep it next to the .ld)")
     return 0

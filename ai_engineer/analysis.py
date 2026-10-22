@@ -55,13 +55,33 @@ RIVAL_SUMMARY_POSITIONS = _DEFAULTS.strategy.rival_summary_positions
 TIMED_MODULES = (radio, strategy, outputs, laps, ingest)
 
 __all__ = [
-    'AnalysisEngine', 'DeltaTracker', 'TyreState', 'EngineConfig', 'PROACTIVE_KEYS',
-    'SILVERSTONE_CORNERS', 'WEATHER_NAMES', 'WHEEL_CODES', 'WHEEL_NAMES', '_wheel_group',
-    'TYRE_TEMP_HIGH', 'TYRE_TEMP_LOW', 'TYRE_TEMP_CRITICAL', 'TYRE_TEMP_RISE_RATE_C_PER_S',
-    'TYRE_TEMP_ALERT_COOLDOWN_SECS', 'TYRE_CRITICAL_SUSTAIN_SECS', 'TYRE_SUMMARY_MIN_SECS',
-    'TYRE_SUMMARY_REPEAT_LAPS', 'PROFILE_REFRESH_LAPS', 'BRAKING_WARN_DISTANCE',
-    'DELTA_SAMPLE_INTERVAL', 'DELTA_REPORT_INTERVAL', 'RIVAL_REACT_GAP_S', 'RIVAL_FORECAST_LAPS',
-    'RIVAL_PREEMPT_LAPS', 'RIVAL_PREEMPT_PROB', 'RIVAL_SUMMARY_POSITIONS',
+    'AnalysisEngine',
+    'DeltaTracker',
+    'TyreState',
+    'EngineConfig',
+    'PROACTIVE_KEYS',
+    'SILVERSTONE_CORNERS',
+    'WEATHER_NAMES',
+    'WHEEL_CODES',
+    'WHEEL_NAMES',
+    '_wheel_group',
+    'TYRE_TEMP_HIGH',
+    'TYRE_TEMP_LOW',
+    'TYRE_TEMP_CRITICAL',
+    'TYRE_TEMP_RISE_RATE_C_PER_S',
+    'TYRE_TEMP_ALERT_COOLDOWN_SECS',
+    'TYRE_CRITICAL_SUSTAIN_SECS',
+    'TYRE_SUMMARY_MIN_SECS',
+    'TYRE_SUMMARY_REPEAT_LAPS',
+    'PROFILE_REFRESH_LAPS',
+    'BRAKING_WARN_DISTANCE',
+    'DELTA_SAMPLE_INTERVAL',
+    'DELTA_REPORT_INTERVAL',
+    'RIVAL_REACT_GAP_S',
+    'RIVAL_FORECAST_LAPS',
+    'RIVAL_PREEMPT_LAPS',
+    'RIVAL_PREEMPT_PROB',
+    'RIVAL_SUMMARY_POSITIONS',
 ]
 
 
@@ -96,7 +116,7 @@ class AnalysisEngine(IngestStage):
         if self.latest_damage:
             self.radio.update_damage_alert(
                 self.latest_damage.worst_tyre_wear,
-                self.latest_damage.front_left_wing + self.latest_damage.front_right_wing
+                self.latest_damage.front_left_wing + self.latest_damage.front_right_wing,
             )
 
         # Outputs: the web HUD snapshot

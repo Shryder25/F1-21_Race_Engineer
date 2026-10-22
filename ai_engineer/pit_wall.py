@@ -27,13 +27,22 @@ from __future__ import annotations
 
 import math
 
-LOOP_SPACING_M = 100.0       # timing loops every ~100 m of race distance
-MAX_INTERPOLATE_LOOPS = 40   # a bigger jump (teleport, data gap) is not interpolated
+LOOP_SPACING_M = 100.0  # timing loops every ~100 m of race distance
+MAX_INTERPOLATE_LOOPS = 40  # a bigger jump (teleport, data gap) is not interpolated
 MAX_INTERPOLATE_S = 3.0
 
 RESULT_LABELS = {3: 'FIN', 4: 'DSQ', 5: 'NC', 6: 'DNF', 7: 'DNF'}
-COMPOUND_LETTERS = {'soft': 'S', 'medium': 'M', 'hard': 'H', 'inter': 'I', 'intermediate': 'I',
-                    'wet': 'W', 'super soft': 'S', 'ultra soft': 'S', 'hyper soft': 'S'}
+COMPOUND_LETTERS = {
+    'soft': 'S',
+    'medium': 'M',
+    'hard': 'H',
+    'inter': 'I',
+    'intermediate': 'I',
+    'wet': 'W',
+    'super soft': 'S',
+    'ultra soft': 'S',
+    'hyper soft': 'S',
+}
 
 
 def compound_letter(name) -> str | None:
@@ -58,14 +67,14 @@ class PitWall:
         self.race = race
         self.loops_per_lap = max(1, round(self.track_length / LOOP_SPACING_M)) if self.track_length > 0 else 0
         self.loop_m = self.track_length / self.loops_per_lap if self.loops_per_lap else 0.0
-        self.crossings: dict[int, dict[int, float]] = {}   # car -> loop -> session time
-        self.first_crossing: dict[int, float] = {}          # loop -> earliest session time
+        self.crossings: dict[int, dict[int, float]] = {}  # car -> loop -> session time
+        self.first_crossing: dict[int, float] = {}  # loop -> earliest session time
         self.last_point: dict[int, tuple[float, float]] = {}  # car -> (race distance, time)
         self.last_loop: dict[int, int] = {}
         self.oldest_loop = 0
-        self.gap_history: dict[int, dict[int, float]] = {}   # car -> completed lap -> gap s
+        self.gap_history: dict[int, dict[int, float]] = {}  # car -> completed lap -> gap s
         self.best_lap_ms: dict[int, int] = {}
-        self.status_stints: dict[int, list] = {}            # fallback stints from Car Status
+        self.status_stints: dict[int, list] = {}  # fallback stints from Car Status
         self.last_session_time = None
         self.rows: list[dict] = []
         self.history_revision = 0
@@ -75,8 +84,16 @@ class PitWall:
 
     # ── feeding it ──
 
-    def update(self, laps, session_time: float, player_index: int, statuses=None,
-               names: dict | None = None, teams: dict | None = None, histories: dict | None = None):
+    def update(
+        self,
+        laps,
+        session_time: float,
+        player_index: int,
+        statuses=None,
+        names: dict | None = None,
+        teams: dict | None = None,
+        histories: dict | None = None,
+    ):
         """One Lap Data frame for every car (plus the latest Car Status and Session History)."""
         if not laps:
             return
@@ -107,7 +124,7 @@ class PitWall:
         if not math.isfinite(dist) or lap.current_lap_num <= 0:
             return None
         if dist < 0:
-            return None                   # before the line on the grid / formation lap
+            return None  # before the line on the grid / formation lap
         return (lap.current_lap_num - 1) * self.track_length + dist
 
     def _advance(self, index: int, lap, now: float):
@@ -124,10 +141,10 @@ class PitWall:
         prev_loop = self.last_loop.get(index, int(prev_dist // self.loop_m))
         if loop <= prev_loop or dist <= prev_dist:
             if loop < prev_loop:
-                self.last_loop[index] = loop      # went backwards (flashback on one car)
+                self.last_loop[index] = loop  # went backwards (flashback on one car)
             return
         if loop - prev_loop > MAX_INTERPOLATE_LOOPS or now - prev_time > MAX_INTERPOLATE_S:
-            self.last_loop[index] = loop          # can't vouch for the loops in between
+            self.last_loop[index] = loop  # can't vouch for the loops in between
             return
         mine = self.crossings.setdefault(index, {})
         for k in range(prev_loop + 1, loop + 1):
@@ -213,14 +230,21 @@ class PitWall:
             status = statuses[index] if statuses and index < len(statuses) else None
             best = self.best_lap_ms.get(index)
             row = {
-                'index': index, 'position': lap.car_position, 'name': names.get(index),
-                'team_id': teams.get(index), 'is_player': index == player_index,
-                'gap_s': None, 'laps_down': 0, 'interval_s': None,
-                'last_lap_ms': lap.last_lap_time_ms or None, 'best_lap_ms': best,
+                'index': index,
+                'position': lap.car_position,
+                'name': names.get(index),
+                'team_id': teams.get(index),
+                'is_player': index == player_index,
+                'gap_s': None,
+                'laps_down': 0,
+                'interval_s': None,
+                'last_lap_ms': lap.last_lap_time_ms or None,
+                'best_lap_ms': best,
                 'fastest_lap': bool(best and best == fastest),
                 'compound': compound_letter(status.compound_name) if status else None,
                 'tyre_age': status.tyres_age_laps if status else None,
-                'stops': lap.num_pit_stops, 'pit': lap.pit_status,
+                'stops': lap.num_pit_stops,
+                'pit': lap.pit_status,
                 'penalties_s': lap.penalties,
                 'status': 'RUN' if lap.result_status == 2 else RESULT_LABELS.get(lap.result_status, 'OUT'),
             }
@@ -264,7 +288,7 @@ class PitWall:
                 # Like the Session History packet: the old set ends on the in-lap and the
                 # new one starts on the next lap.
                 if stints[-1][1] > lap_num:
-                    stints.pop()                  # changed again before its first lap
+                    stints.pop()  # changed again before its first lap
                 if stints:
                     stints[-1][2] = lap_num
                 stints.append([letter, lap_num + 1, lap_num + 1, lap.num_pit_stops])
@@ -272,8 +296,10 @@ class PitWall:
                 stints[-1][2] = max(stints[-1][1], lap_num)
 
     def _stints_key(self):
-        hist = tuple((i, tuple((s.start_lap, s.end_lap, s.visual_compound) for s in h.stints))
-                     for i, h in sorted(self.histories.items()))
+        hist = tuple(
+            (i, tuple((s.start_lap, s.end_lap, s.visual_compound) for s in h.stints))
+            for i, h in sorted(self.histories.items())
+        )
         status = tuple((i, tuple(s[:3] for s in st)) for i, st in sorted(self.status_stints.items()))
         order = tuple(row['index'] for row in self.rows)
         return hist, status, order
@@ -291,19 +317,40 @@ class PitWall:
                     letter = compound_letter(s.compound_name)
                     if letter is None:
                         continue
-                    sets.append({'compound': letter, 'start_lap': s.start_lap,
-                                 'end_lap': max(s.start_lap, s.end_lap), 'open': bool(s.is_open)})
+                    sets.append(
+                        {
+                            'compound': letter,
+                            'start_lap': s.start_lap,
+                            'end_lap': max(s.start_lap, s.end_lap),
+                            'open': bool(s.is_open),
+                        }
+                    )
             else:
                 fallback = self.status_stints.get(index, [])
                 for n, (letter, start, end, _stops) in enumerate(fallback):
-                    sets.append({'compound': letter, 'start_lap': start, 'end_lap': max(start, end),
-                                 'open': n == len(fallback) - 1})
-            out.append({'index': index, 'name': row['name'], 'team_id': row['team_id'],
-                        'is_player': row['is_player'], 'position': row['position'], 'stints': sets})
+                    sets.append(
+                        {
+                            'compound': letter,
+                            'start_lap': start,
+                            'end_lap': max(start, end),
+                            'open': n == len(fallback) - 1,
+                        }
+                    )
+            out.append(
+                {
+                    'index': index,
+                    'name': row['name'],
+                    'team_id': row['team_id'],
+                    'is_player': row['is_player'],
+                    'position': row['position'],
+                    'stints': sets,
+                }
+            )
         return out
 
-    def gap_chart(self, names: dict | None = None, teams: dict | None = None,
-                  player_index: int | None = None) -> list[dict]:
+    def gap_chart(
+        self, names: dict | None = None, teams: dict | None = None, player_index: int | None = None
+    ) -> list[dict]:
         """Each car's gap to the leader at the line, lap by lap: [{index, name, team_id,
         is_player, points: [[lap, gap s], ...]}]."""
         names, teams = names or {}, teams or {}
@@ -313,9 +360,15 @@ class PitWall:
             history = self.gap_history[index]
             if not history:
                 continue
-            out.append({'index': index, 'name': names.get(index), 'team_id': teams.get(index),
-                        'is_player': index == player_index,
-                        'points': [[lap, history[lap]] for lap in sorted(history)]})
+            out.append(
+                {
+                    'index': index,
+                    'name': names.get(index),
+                    'team_id': teams.get(index),
+                    'is_player': index == player_index,
+                    'points': [[lap, history[lap]] for lap in sorted(history)],
+                }
+            )
         return out
 
 
@@ -325,18 +378,36 @@ def strategy_odds(result, history: list | None = None) -> dict | None:
         return None
     top = result.outcomes[0]
     return {
-        'lap': result.lap, 'laps_to_go': result.laps_to_go, 'runs': result.runs,
+        'lap': result.lap,
+        'laps_to_go': result.laps_to_go,
+        'runs': result.runs,
         'recommended': top.label,
-        'p_win': top.p_win, 'p_podium': top.p_podium, 'p_points': top.p_points,
-        'mean_position': top.mean_position, 'position_range': top.position_range,
+        'p_win': top.p_win,
+        'p_podium': top.p_podium,
+        'p_points': top.p_points,
+        'mean_position': top.mean_position,
+        'position_range': top.position_range,
         'position_probs': top.position_probs,
-        'plans': [{'label': o.label, 'stops': o.stops, 'compounds': o.compounds, 'pit_laps': o.pit_laps,
-                   'p_best': o.p_best, 'p_win': o.p_win, 'p_podium': o.p_podium, 'p_points': o.p_points,
-                   'mean_position': o.mean_position, 'position_range': o.position_range,
-                   'time_vs_best_s': o.time_vs_best_s}
-                  for o in result.outcomes],
+        'plans': [
+            {
+                'label': o.label,
+                'stops': o.stops,
+                'compounds': o.compounds,
+                'pit_laps': o.pit_laps,
+                'p_best': o.p_best,
+                'p_win': o.p_win,
+                'p_podium': o.p_podium,
+                'p_points': o.p_points,
+                'mean_position': o.mean_position,
+                'position_range': o.position_range,
+                'time_vs_best_s': o.time_vs_best_s,
+            }
+            for o in result.outcomes
+        ],
         'field': [dict(f) for f in result.field[:10]],
-        'p_safety_car': result.p_safety_car, 'p_vsc': result.p_vsc, 'p_rain': result.p_rain,
+        'p_safety_car': result.p_safety_car,
+        'p_vsc': result.p_vsc,
+        'p_rain': result.p_rain,
         'pit_loss_s': result.pit_loss_s,
         'history': list(history or []),
     }

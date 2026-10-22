@@ -39,10 +39,18 @@ class HistoryStatsTests(unittest.TestCase):
         self.session = SessionData(0, 30, 20, 53, 5793, 10, 11, 0)
 
     def stats(self, lap, age, wear, fuel_start):
-        return {'lap_num': lap, 'lap_time_ms': 90000, 'eligible': True, 'compound': 17,
-                'tyre_age_laps': age, 'wear': (wear - 1, wear - 1, wear, wear - 2),
-                'fuel_start': fuel_start, 'fuel_end': fuel_start - 1.9,
-                'sectors': {1: 30000, 2: 31000, 3: 29000}, 'sector_deltas': {1: -120, 2: 40}}
+        return {
+            'lap_num': lap,
+            'lap_time_ms': 90000,
+            'eligible': True,
+            'compound': 17,
+            'tyre_age_laps': age,
+            'wear': (wear - 1, wear - 1, wear, wear - 2),
+            'fuel_start': fuel_start,
+            'fuel_end': fuel_start - 1.9,
+            'sectors': {1: 30000, 2: 31000, 3: 29000},
+            'sector_deltas': {1: -120, 2: 40},
+        }
 
     def test_lap_stats_are_logged_and_queried_by_track_and_compound(self):
         old = self.history.start_session(self.session, 1)
@@ -50,13 +58,14 @@ class HistoryStatsTests(unittest.TestCase):
         for lap in range(1, 4):
             self.history.record_lap_stats(old, self.stats(lap, lap, lap * 2.0, 100 - 1.9 * lap))
         self.history.record_lap_stats(new, self.stats(1, 1, 2.0, 100))
-        self.history.record_lap_stats(old, self.stats(2, 2, 4.5, 96))   # re-logging replaces, not duplicates
+        self.history.record_lap_stats(old, self.stats(2, 2, 4.5, 96))  # re-logging replaces, not duplicates
         samples = self.history.tyre_wear_samples(self.session, 17, exclude_capture=new)
         self.assertEqual(sorted(samples), [(1, 2.0), (2, 4.5), (3, 6.0)])
         self.assertEqual(self.history.tyre_wear_samples(self.session, 18), [])
         self.assertEqual(len(self.history.fuel_use_samples(self.session, exclude_capture=new)), 3)
         row = self.history.connection.execute(
-            'SELECT s1_delta_ms, s3_delta_ms FROM lap_stats WHERE capture_id=? AND lap_num=1', (old,)).fetchone()
+            'SELECT s1_delta_ms, s3_delta_ms FROM lap_stats WHERE capture_id=? AND lap_num=1', (old,)
+        ).fetchone()
         self.assertEqual(row, (-120, None))
 
 
@@ -72,10 +81,12 @@ class AnalysisIntegrationTests(unittest.TestCase):
 
     def feed_laps(self, count, rate=2.5, start_fuel=100.0):
         for lap in range(1, count + 1):
-            self.engine.update_car_status(parse_player_car_status(
-                build_car_status_packet(0, 1, start_fuel - 1.9 * lap, 17, lap), 0))
-            self.engine.update_car_damage(parse_player_car_damage(
-                build_car_damage_packet(0, 1, (rate * lap,) * 4), 0))
+            self.engine.update_car_status(
+                parse_player_car_status(build_car_status_packet(0, 1, start_fuel - 1.9 * lap, 17, lap), 0)
+            )
+            self.engine.update_car_damage(
+                parse_player_car_damage(build_car_damage_packet(0, 1, (rate * lap,) * 4), 0)
+            )
             self.engine.lap_start_fuel = start_fuel - 1.9 * (lap - 1)
             self.engine._record_lap_stats(lap, 90000 + 80 * lap, True, {1: 30000, 2: 31000, 3: 29000})
 
@@ -89,7 +100,7 @@ class AnalysisIntegrationTests(unittest.TestCase):
         soonest, _expected, latest = prediction.ideal_lap_range
         self.assertLessEqual(soonest, 25)
         self.assertGreaterEqual(latest, 25)
-        self.assertEqual(prediction.basis, 'prior')           # no fitted models: this stint only
+        self.assertEqual(prediction.basis, 'prior')  # no fitted models: this stint only
         fuel = self.engine.fuel_prediction()
         self.assertAlmostEqual(fuel['per_lap_kg'], 1.9, places=1)
         self.assertAlmostEqual(fuel['laps_of_fuel'], (100 - 1.9 * 8) / 1.9, delta=0.5)
@@ -124,7 +135,7 @@ class AnalysisIntegrationTests(unittest.TestCase):
         self.assertIn('tyre_temperature', PROACTIVE_KEYS)
 
     def test_default_mode_keeps_existing_callouts(self):
-        self.voice.messages.clear()   # drop the session welcome
+        self.voice.messages.clear()  # drop the session welcome
         self.engine.speak('Lap complete.', Priority.TIMING, key='lap_time')
         self.assertEqual(len(self.voice.messages), 1)
 
@@ -166,7 +177,9 @@ class AIClientTests(unittest.TestCase):
         answer = client.chat('sys', 'user')
         self.assertEqual(answer, 'Gap ahead is two point four, keep pushing.')
         path, auth, body = FakeAIHandler.seen[0]
-        self.assertEqual((path, auth, body['model']), ('/v1/chat/completions', 'Bearer secret', 'deepseek-r1:8b'))
+        self.assertEqual(
+            (path, auth, body['model']), ('/v1/chat/completions', 'Bearer secret', 'deepseek-r1:8b')
+        )
         self.assertEqual([m['role'] for m in body['messages']], ['system', 'user'])
 
     def test_errors_raise_ai_unavailable(self):
@@ -178,20 +191,34 @@ class AIClientTests(unittest.TestCase):
 
 
 class BrainTests(unittest.TestCase):
-    CONTEXT = {'track': 'Monza', 'gap_ahead_s': 2.43, 'gap_behind_s': None, 'weather': 'light rain',
-               'track_temp_c': 28, 'air_temp_c': 21,
-               'tyre_surface_c': {'FL': 98, 'FR': 101, 'RL': 95, 'RR': 96},
-               'tyre_wear_pct': {'FL': 31.0, 'FR': 33.0, 'RL': 28.0, 'RR': 29.0},
-               'pit_prediction': {'wear_now_pct': 33.0, 'wear_per_lap_pct': 2.5, 'ideal_lap': 18,
-                                  'latest_lap': 24, 'finish_without_stop': False, 'samples': 9},
-               'last_lap_ms': 83456, 'delta_to_best_ms': 350, 'pace_trend_s_per_lap': 0.12}
+    CONTEXT = {
+        'track': 'Monza',
+        'gap_ahead_s': 2.43,
+        'gap_behind_s': None,
+        'weather': 'light rain',
+        'track_temp_c': 28,
+        'air_temp_c': 21,
+        'tyre_surface_c': {'FL': 98, 'FR': 101, 'RL': 95, 'RR': 96},
+        'tyre_wear_pct': {'FL': 31.0, 'FR': 33.0, 'RL': 28.0, 'RR': 29.0},
+        'pit_prediction': {
+            'wear_now_pct': 33.0,
+            'wear_per_lap_pct': 2.5,
+            'ideal_lap': 18,
+            'latest_lap': 24,
+            'finish_without_stop': False,
+            'samples': 9,
+        },
+        'last_lap_ms': 83456,
+        'delta_to_best_ms': 350,
+        'pace_trend_s_per_lap': 0.12,
+    }
 
     def test_prompt_contains_live_stats_and_ml_prediction(self):
         system, user = build_prompt('pit_window', self.CONTEXT)
         self.assertIn('two short sentences', system)
         self.assertIn('ideal stop lap 18', user)
         self.assertIn('Gap to car ahead (s): 2.4', user)
-        self.assertNotIn('Gap to car behind', user)       # missing data is omitted, not invented
+        self.assertNotIn('Gap to car behind', user)  # missing data is omitted, not invented
         self.assertIn('When is my pit window?', user)
 
     def test_fallback_answers_without_ai(self):
@@ -212,7 +239,9 @@ class BrainTests(unittest.TestCase):
                 raise AIUnavailable('timeout')
 
         brain = EngineerBrain(lambda: self.CONTEXT, Good())
-        self.assertEqual(brain.answer('gap_ahead'), 'Gap ahead is two point four. Tyres are good, keep pushing.')
+        self.assertEqual(
+            brain.answer('gap_ahead'), 'Gap ahead is two point four. Tyres are good, keep pushing.'
+        )
         self.assertEqual(brain.last_source, 'ai')
         brain = EngineerBrain(lambda: self.CONTEXT, Down())
         self.assertEqual(brain.answer('gap_ahead'), 'Gap ahead is 2.4.')
@@ -228,12 +257,18 @@ class BrainTests(unittest.TestCase):
 class CommandMatchingTests(unittest.TestCase):
     def test_all_supported_commands(self):
         cases = {
-            'Weather report': 'weather', 'what is the weather doing': 'weather',
-            'Tire temps': 'tyre_temps', 'tyre temperatures please': 'tyre_temps',
-            'Pit window': 'pit_window', 'when do we box': 'pit_window',
-            'Gap to car ahead': 'gap_ahead', 'gap to the car in front': 'gap_ahead',
-            'Gap to car behind': 'gap_behind', "how far is the car behind": 'gap_behind',
-            'Pace update': 'pace', 'Engineer, give me a pace update.': 'pace',
+            'Weather report': 'weather',
+            'what is the weather doing': 'weather',
+            'Tire temps': 'tyre_temps',
+            'tyre temperatures please': 'tyre_temps',
+            'Pit window': 'pit_window',
+            'when do we box': 'pit_window',
+            'Gap to car ahead': 'gap_ahead',
+            'gap to the car in front': 'gap_ahead',
+            'Gap to car behind': 'gap_behind',
+            "how far is the car behind": 'gap_behind',
+            'Pace update': 'pace',
+            'Engineer, give me a pace update.': 'pace',
             'what is the pit window for these tyres': 'pit_window',
         }
         for phrase, expected in cases.items():
@@ -283,8 +318,8 @@ class DispatcherTests(unittest.TestCase):
         self.addCleanup(dispatcher.shutdown)
         started = time.monotonic()
         self.assertEqual(dispatcher.handle_text('Engineer, gap to car ahead'), 'gap_ahead')
-        self.assertLess(time.monotonic() - started, 0.2)             # handle_text does not block on the AI
-        self.assertEqual(voice.said[0][0], ACK_TEXT)                  # cue is queued immediately
+        self.assertLess(time.monotonic() - started, 0.2)  # handle_text does not block on the AI
+        self.assertEqual(voice.said[0][0], ACK_TEXT)  # cue is queued immediately
         self.assertEqual(len(voice.said), 1)
         self.assertTrue(self.wait_for(lambda: len(voice.said) == 2))
         self.assertEqual(voice.said[1][0], 'Answer for gap_ahead.')
@@ -354,8 +389,9 @@ class ListenerTests(unittest.TestCase):
         def broken_microphone(device_index=None):
             raise OSError('no microphone')
 
-        listener = VoiceCommandListener(object(), microphone_factory=broken_microphone,
-                                        recognizer_factory=lambda: type('R', (), {})())
+        listener = VoiceCommandListener(
+            object(), microphone_factory=broken_microphone, recognizer_factory=lambda: type('R', (), {})()
+        )
         try:
             import speech_recognition  # noqa: F401
         except ImportError:
@@ -366,6 +402,7 @@ class ListenerTests(unittest.TestCase):
 class StreamRoutingTests(unittest.TestCase):
     def test_status_and_damage_packets_reach_the_analysis_engine(self):
         from telemetry_stream import TelemetryStream
+
         engine = AnalysisEngine(SilentVoice())
         stream = TelemetryStream(engine)
         stream.handle(build_session_packet(0, 1, 11), now=0)
@@ -375,7 +412,7 @@ class StreamRoutingTests(unittest.TestCase):
         self.assertEqual(engine.latest_status.compound_name, 'Soft')
         self.assertEqual(engine.latest_damage.worst_tyre_wear, 24.0)
         bad = bytearray(build_car_damage_packet(0.2, 3, (20, 21, 24, 22)))
-        bad[24:28] = b'\x00\x00\xc8\x43'      # 400.0% tyre wear is impossible
+        bad[24:28] = b'\x00\x00\xc8\x43'  # 400.0% tyre wear is impossible
         self.assertFalse(stream.handle(bytes(bad), now=1))
         self.assertEqual(engine.latest_damage.worst_tyre_wear, 24.0)
 
@@ -399,7 +436,7 @@ class SetupConsultTests(unittest.TestCase):
         self.assertIn('low drag', result['ai_consultation'])
         self.assertIn('Monza', Client.seen[1])
         self.assertIn('understeer', Client.seen[1])
-        self.assertGreaterEqual(Client.seen[2], 1000)      # room for R1 reasoning plus the answer
+        self.assertGreaterEqual(Client.seen[2], 1000)  # room for R1 reasoning plus the answer
         fallback = generate_ai_setup_recommendation(11, 'dry', 'balanced', Down())
         self.assertIn('Engineer Setup Briefing', fallback['ai_consultation'])
         self.assertIn('ai_consultation_error', fallback)
@@ -408,6 +445,7 @@ class SetupConsultTests(unittest.TestCase):
         import socketserver
 
         import web_hud
+
         server = web_hud.start_web_hud_server(port=0)
         self.assertIsNotNone(server)
         self.addCleanup(server.server_close)

@@ -30,12 +30,13 @@ from race_calibration import pit_loss, summarize_races  # noqa: E402
 from track_data import TRACK_DATABASE  # noqa: E402
 from track_profiles import BASELINE_PROFILES, CALIBRATION_PATH  # noqa: E402
 
-NOT_GREEN = set('4567')   # FastF1 TrackStatus: 4 SC, 5 red, 6 VSC, 7 VSC ending
+NOT_GREEN = set('4567')  # FastF1 TrackStatus: 4 SC, 5 red, 6 VSC, 7 VSC ending
 
 
 def race_from_session(session, name: str) -> dict:
     """Convert one FastF1 race session into the plain dict race_calibration expects."""
     import pandas as pd
+
     laps = session.laps
     race_laps = int(laps['LapNumber'].max())
     statuses = laps['TrackStatus'].fillna('').astype(str)
@@ -48,8 +49,13 @@ def race_from_session(session, name: str) -> dict:
         rain = True
 
     bad_status = statuses.apply(lambda s: bool(set(s) & NOT_GREEN))
-    clean_all = laps[(laps['LapNumber'] > 1) & laps['LapTime'].notna() & laps['PitInTime'].isna()
-                     & laps['PitOutTime'].isna() & ~bad_status]
+    clean_all = laps[
+        (laps['LapNumber'] > 1)
+        & laps['LapTime'].notna()
+        & laps['PitInTime'].isna()
+        & laps['PitOutTime'].isna()
+        & ~bad_status
+    ]
     stints, pit_losses, stops = [], [], []
     for driver, driver_laps in laps.groupby('Driver'):
         driver_laps = driver_laps.sort_values('LapNumber')
@@ -60,9 +66,17 @@ def race_from_session(session, name: str) -> dict:
         stint_sizes = driver_laps.groupby('Stint').size()
         for stint_no, stint_laps in clean.groupby('Stint'):
             compound = str(stint_laps['Compound'].iloc[0]).upper()
-            rows = [(int(r.LapNumber), int(r.TyreLife) if not pd.isna(r.TyreLife) else i + 1,
-                     r.LapTime.total_seconds()) for i, r in enumerate(stint_laps.itertuples())]
-            stints.append({'compound': compound, 'laps': rows, 'length': int(stint_sizes.get(stint_no, len(rows)))})
+            rows = [
+                (
+                    int(r.LapNumber),
+                    int(r.TyreLife) if not pd.isna(r.TyreLife) else i + 1,
+                    r.LapTime.total_seconds(),
+                )
+                for i, r in enumerate(stint_laps.itertuples())
+            ]
+            stints.append(
+                {'compound': compound, 'laps': rows, 'length': int(stint_sizes.get(stint_no, len(rows)))}
+            )
         # pit loss: in-lap + out-lap vs two green laps
         for _, in_lap in driver_laps[driver_laps['PitInTime'].notna()].iterrows():
             out = driver_laps[driver_laps['LapNumber'] == in_lap['LapNumber'] + 1]
@@ -70,18 +84,32 @@ def race_from_session(session, name: str) -> dict:
                 continue
             if set(str(in_lap['TrackStatus'])) & NOT_GREEN:
                 continue
-            pit_losses.append(pit_loss(in_lap['LapTime'].total_seconds(),
-                                       out['LapTime'].iloc[0].total_seconds(), green_median))
+            pit_losses.append(
+                pit_loss(
+                    in_lap['LapTime'].total_seconds(), out['LapTime'].iloc[0].total_seconds(), green_median
+                )
+            )
         if driver_laps['LapNumber'].max() >= 0.9 * race_laps:
             stops.append(int(driver_laps['Stint'].max()) - 1)
-    return {'name': name, 'race_laps': race_laps, 'rain': rain, 'safety_car': safety_car,
-            'stints': stints, 'pit_losses': pit_losses, 'stops': stops}
+    return {
+        'name': name,
+        'race_laps': race_laps,
+        'rain': rain,
+        'safety_car': safety_car,
+        'stints': stints,
+        'pit_losses': pit_losses,
+        'stops': stops,
+    }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument('--years', type=int, nargs='+', default=list(range(2018, 2025)))
-    parser.add_argument('--tracks', type=int, nargs='+', default=None, help='TRACK_DATABASE ids (default: all)')
+    parser.add_argument(
+        '--tracks', type=int, nargs='+', default=None, help='TRACK_DATABASE ids (default: all)'
+    )
     parser.add_argument('--cache', type=Path, default=ROOT / '.fastf1-cache')
     parser.add_argument('--out', type=Path, default=CALIBRATION_PATH)
     args = parser.parse_args()
@@ -123,14 +151,22 @@ def main() -> int:
         summary = summarize_races(track_races)
         if summary:
             existing[str(tid)] = summary
-            print(f"{TRACK_DATABASE[tid]['short_name']}: {summary['deg_s_per_lap']} from {len(track_races)} races")
+            print(
+                f"{TRACK_DATABASE[tid]['short_name']}: {summary['deg_s_per_lap']} from {len(track_races)} races"
+            )
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps({
-        'generated_at': datetime.now(UTC).isoformat(timespec='seconds'),
-        'source': 'FastF1 race timing data (as used by IAmTomShaw/f1-race-replay)',
-        'years': args.years,
-        'tracks': existing,
-    }, indent=2), encoding='utf-8')
+    args.out.write_text(
+        json.dumps(
+            {
+                'generated_at': datetime.now(UTC).isoformat(timespec='seconds'),
+                'source': 'FastF1 race timing data (as used by IAmTomShaw/f1-race-replay)',
+                'years': args.years,
+                'tracks': existing,
+            },
+            indent=2,
+        ),
+        encoding='utf-8',
+    )
     print(f'Wrote {args.out}')
     return 0
 

@@ -23,18 +23,31 @@ from voice_engine import Priority
 log = get_logger('voice')
 
 ACK_TEXT = 'We are checking.'
-QUESTION = 'question'          # handle_text() result for a free-form question
+QUESTION = 'question'  # handle_text() result for a free-form question
 MAX_QUESTION_CHARS = 300
 
-COMMANDS = ('weather', 'tyre_temps', 'pit_window', 'gap_ahead', 'gap_behind', 'pace', 'threats', 'strategy',
-            'rivals')
+COMMANDS = (
+    'weather',
+    'tyre_temps',
+    'pit_window',
+    'gap_ahead',
+    'gap_behind',
+    'pace',
+    'threats',
+    'strategy',
+    'rivals',
+)
 
 # "When will Hamilton box?", "what are the others doing?", "rival strategy": questions about
 # other cars' stops. The driver's own stop ("when do we box") stays a pit-window question.
-_RIVAL_WORDS = re.compile(r'\b(rivals?|others|other cars|everyone|the field|opponents?|car ahead|car behind|they|they\'re)\b')
+_RIVAL_WORDS = re.compile(
+    r'\b(rivals?|others|other cars|everyone|the field|opponents?|car ahead|car behind|they|they\'re)\b'
+)
 _STOP_WORDS = re.compile(r'\b(pit|pitting|box|boxing|stop|stopping|strategy|strategies|tyres?|doing)\b')
-_NAMED_STOP = re.compile(r'\b(?:when (?:is|will|does)|is|will) (?!(?:i|we|me|my|us|it|the|there|this|that)\b)[a-z]+ '
-                         r'(?:going to )?(?:pit|box|stop)')
+_NAMED_STOP = re.compile(
+    r'\b(?:when (?:is|will|does)|is|will) (?!(?:i|we|me|my|us|it|the|there|this|that)\b)[a-z]+ '
+    r'(?:going to )?(?:pit|box|stop)'
+)
 
 _WAKE_WORDS = re.compile(r'^(?:hey |ok |okay )?(?:engineer|race engineer|box box)[, ]+', re.IGNORECASE)
 
@@ -55,7 +68,10 @@ def match_command(text: str) -> str | None:
         return 'rivals'
     if re.search(r'\b(threat|threats|attacking|pressure|catching|closing)\b', t):
         return 'threats'
-    if re.search(r'\b(undercut|overcut|strategy|plan|how many stops|one stop|two stop|which tyres?|what tyres?|compound|what are (?:our|the|my) chances|chances of (?:winning|a podium)|odds|win probability)\b', t):
+    if re.search(
+        r'\b(undercut|overcut|strategy|plan|how many stops|one stop|two stop|which tyres?|what tyres?|compound|what are (?:our|the|my) chances|chances of (?:winning|a podium)|odds|win probability)\b',
+        t,
+    ):
         return 'strategy'
     if 'behind' in t or 'chasing' in t:
         return 'gap_behind'
@@ -75,8 +91,17 @@ def match_command(text: str) -> str | None:
 class CommandDispatcher:
     """Acknowledge instantly, then answer from the brain in the background."""
 
-    def __init__(self, voice, brain, *, on_log=None, ack_text: str = ACK_TEXT,
-                 debounce_s: float = 2.0, max_workers: int = 2, answer_ttl: float = 30.0):
+    def __init__(
+        self,
+        voice,
+        brain,
+        *,
+        on_log=None,
+        ack_text: str = ACK_TEXT,
+        debounce_s: float = 2.0,
+        max_workers: int = 2,
+        answer_ttl: float = 30.0,
+    ):
         self.voice = voice
         self.brain = brain
         self.on_log = on_log
@@ -144,9 +169,10 @@ def transcribe(recognizer, audio, engine: str = 'google', language: str = 'en-GB
     try:
         if engine == 'vosk':
             import json
+
             return json.loads(recognizer.recognize_vosk(audio)).get('text') or None
         return recognizer.recognize_google(audio, language=language) or None
-    except Exception as error:   # unintelligible audio / network error: just ignore the clip
+    except Exception as error:  # unintelligible audio / network error: just ignore the clip
         if type(error).__name__ != 'UnknownValueError':
             log.warning(f'Speech recognition error: {error}')
         return None
@@ -155,14 +181,23 @@ def transcribe(recognizer, audio, engine: str = 'google', language: str = 'en-GB
 class VoiceCommandListener:
     """Background microphone listener feeding transcripts to a dispatcher."""
 
-    def __init__(self, dispatcher: CommandDispatcher, *, engine: str = 'google',
-                 device_index: int | None = None, voice=None, language: str = 'en-GB',
-                 recognizer_factory=None, microphone_factory=None, ignore_when=None):
+    def __init__(
+        self,
+        dispatcher: CommandDispatcher,
+        *,
+        engine: str = 'google',
+        device_index: int | None = None,
+        voice=None,
+        language: str = 'en-GB',
+        recognizer_factory=None,
+        microphone_factory=None,
+        ignore_when=None,
+    ):
         self.dispatcher = dispatcher
         self.ignore_when = ignore_when  # callable; True skips a clip (push-to-talk in use)
         self.engine = engine
         self.device_index = device_index
-        self.voice = voice          # used to ignore the engineer's own voice
+        self.voice = voice  # used to ignore the engineer's own voice
         self.language = language
         self._recognizer_factory = recognizer_factory
         self._microphone_factory = microphone_factory
@@ -194,13 +229,15 @@ class VoiceCommandListener:
             microphone = (self._microphone_factory or sr.Microphone)(device_index=self.device_index)
             with microphone as source:
                 self._recognizer.adjust_for_ambient_noise(source, duration=0.5)
-            self._stop = self._recognizer.listen_in_background(microphone, self._on_audio,
-                                                               phrase_time_limit=6)
-        except Exception as error:   # no microphone / PyAudio missing
+            self._stop = self._recognizer.listen_in_background(
+                microphone, self._on_audio, phrase_time_limit=6
+            )
+        except Exception as error:  # no microphone / PyAudio missing
             log.warning(f'Microphone unavailable, voice commands disabled: {error}')
             return False
-        log.info('Listening for commands: weather, tyre temps, pit window, '
-              'gap ahead, gap behind, pace update.')
+        log.info(
+            'Listening for commands: weather, tyre temps, pit window, gap ahead, gap behind, pace update.'
+        )
         return True
 
     def stop(self):

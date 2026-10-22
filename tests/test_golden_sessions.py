@@ -37,12 +37,16 @@ def _make_test(name, info):
             self.skipTest(f'{name}: waiting for a real F1 2021 recording (tests/golden/README.md)')
         self.assertTrue(rec.exists(), f'{rec} is missing')
         self.assertTrue(exp.exists(), f'{exp} is missing; run tools/golden_sessions.py bless {name}')
-        problems = harness.compare(harness.load_expected(name), harness.replay(rec),
-                                   MANIFEST.get('tolerances'))
+        problems = harness.compare(
+            harness.load_expected(name), harness.replay(rec), MANIFEST.get('tolerances')
+        )
         if problems:
-            self.fail(f'Golden session "{name}" changed behaviour ({info["description"]}):\n'
-                      + '\n'.join(problems)
-                      + f'\nIf this is intended: python tools/golden_sessions.py bless {name}')
+            self.fail(
+                f'Golden session "{name}" changed behaviour ({info["description"]}):\n'
+                + '\n'.join(problems)
+                + f'\nIf this is intended: python tools/golden_sessions.py bless {name}'
+            )
+
     test.__name__ = f'test_{name}'
     test.__doc__ = f'{info["kind"]}: {info["description"]}'
     return test
@@ -54,8 +58,9 @@ for _name, _info in MANIFEST['sessions'].items():
 
 class StoreTests(unittest.TestCase):
     def test_every_kind_has_a_session(self):
-        kinds = {info['kind'] for info in MANIFEST['sessions'].values()
-                 if info['source'] != 'needs-recording'}
+        kinds = {
+            info['kind'] for info in MANIFEST['sessions'].values() if info['source'] != 'needs-recording'
+        }
         self.assertTrue({'race', 'qualifying', 'wet', 'safety_car'} <= kinds, kinds)
 
     def test_recordings_carry_metadata(self):
