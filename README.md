@@ -51,6 +51,8 @@ python tools/build_real_race_calibration.py --years 2021 2022 2023
 - No microphone? Send text to the engineer: `curl -X POST localhost:5000/api/command -d "{\"text\": \"pit window\"}"`. Typed text can be any question, like the radio button.
 - Test without the game: `test_simulation.bat` now also sends tyre wear and fuel packets.
 
+**Fast answers without frame drops** ([docs/ai-performance.md](docs/ai-performance.md)). The 9 fixed questions (and short versions of them asked over push-to-talk) are answered instantly from the live data. Everything else goes to the AI with only the data that question is about, the reply is streamed and spoken as soon as the radio line is complete, and Ollama is started below the game's priority. If you still get frame drops, try `--ai-model qwen2.5:3b` (a much lighter model) or `--ai-cpu` (keeps the AI off the graphics card).
+
 ---
 
 ## 🎞️ Recording & Replay (for backtesting)
