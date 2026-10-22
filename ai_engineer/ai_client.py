@@ -47,7 +47,9 @@ class AITimeout(AIUnavailable):
 def _is_timeout(error) -> bool:
     if isinstance(error, (TimeoutError, socket.timeout)):
         return True
-    return isinstance(error, urllib.error.URLError) and isinstance(error.reason, (TimeoutError, socket.timeout))
+    return isinstance(error, urllib.error.URLError) and isinstance(
+        error.reason, (TimeoutError, socket.timeout)
+    )
 
 
 def strip_reasoning(text: str) -> str:
@@ -57,8 +59,9 @@ def strip_reasoning(text: str) -> str:
     return text.strip()
 
 
-def ollama_options(num_ctx: int | None = DEFAULT_NUM_CTX, gpu_layers: int | None = None,
-                   threads: int | None = None) -> dict:
+def ollama_options(
+    num_ctx: int | None = DEFAULT_NUM_CTX, gpu_layers: int | None = None, threads: int | None = None
+) -> dict:
     """Model options that decide how Ollama loads the model.
 
     Every request must send the same ones (the launcher's preload and keep-warm pings too):
@@ -88,9 +91,15 @@ def voice_from_partial(text: str) -> str | None:
 
 
 class AIClient:
-    def __init__(self, base_url: str | None = None, model: str | None = None,
-                 api_key: str | None = None, timeout: float = 15.0, *,
-                 load_options: dict | None = None):
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 15.0,
+        *,
+        load_options: dict | None = None,
+    ):
         self.base_url = (base_url or os.environ.get('F1_AI_BASE_URL') or DEFAULT_BASE_URL).rstrip('/')
         self.model = model or os.environ.get('F1_AI_MODEL') or DEFAULT_MODEL
         self.api_key = api_key or os.environ.get('F1_AI_API_KEY') or 'ollama'
@@ -102,12 +111,12 @@ class AIClient:
 
     supports_fast = True
 
-    def _post_native(self, system: str, user: str, temperature: float, max_tokens: int,
-                     json_mode: bool, think: bool | None) -> str:
+    def _post_native(
+        self, system: str, user: str, temperature: float, max_tokens: int, json_mode: bool, think: bool | None
+    ) -> str:
         body = {
             'model': self.model,
-            'messages': [{'role': 'system', 'content': system},
-                         {'role': 'user', 'content': user}],
+            'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             'stream': False,
             'keep_alive': KEEP_ALIVE,
             'options': {**self.load_options, 'temperature': temperature, 'num_predict': max_tokens},
@@ -117,14 +126,24 @@ class AIClient:
         if json_mode:
             body['format'] = 'json'
         request = urllib.request.Request(
-            f'{self.ollama_root}/api/chat', data=json.dumps(body).encode('utf-8'), method='POST',
-            headers={'Content-Type': 'application/json'})
+            f'{self.ollama_root}/api/chat',
+            data=json.dumps(body).encode('utf-8'),
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+        )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode('utf-8'))
             return payload['message']['content']
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError,
-                KeyError, IndexError, TypeError) as error:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            OSError,
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as error:
             if _is_timeout(error):
                 raise AITimeout(str(error)) from error
             raise AIUnavailable(str(error)) from error
@@ -139,15 +158,16 @@ class AIClient:
             raise
         except AIUnavailable:
             pass
-        try:   # e.g. an older Ollama or a model that rejects the think switch
+        try:  # e.g. an older Ollama or a model that rejects the think switch
             return self._post_native(system, user, temperature, max_tokens, json_mode, think=None)
         except AITimeout:
             raise
         except AIUnavailable:
             return None
 
-    def _stream_voice(self, system: str, user: str, temperature: float, max_tokens: int,
-                      think: bool | None) -> str:
+    def _stream_voice(
+        self, system: str, user: str, temperature: float, max_tokens: int, think: bool | None
+    ) -> str:
         """Stream a JSON radio reply and stop reading as soon as its "voice" line is complete.
 
         The spoken line comes first in the reply, so this returns before the model writes the
@@ -156,8 +176,7 @@ class AIClient:
         """
         body = {
             'model': self.model,
-            'messages': [{'role': 'system', 'content': system},
-                         {'role': 'user', 'content': user}],
+            'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             'stream': True,
             'format': 'json',
             'keep_alive': KEEP_ALIVE,
@@ -166,8 +185,11 @@ class AIClient:
         if think is not None:
             body['think'] = think
         request = urllib.request.Request(
-            f'{self.ollama_root}/api/chat', data=json.dumps(body).encode('utf-8'), method='POST',
-            headers={'Content-Type': 'application/json'})
+            f'{self.ollama_root}/api/chat',
+            data=json.dumps(body).encode('utf-8'),
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+        )
         deadline = time.monotonic() + self.timeout
         content = ''
         try:
@@ -188,8 +210,16 @@ class AIClient:
                         raise AITimeout(f'no answer within {self.timeout:g} s')
         except AIUnavailable:
             raise
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError,
-                KeyError, IndexError, TypeError, AttributeError) as error:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            OSError,
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+            AttributeError,
+        ) as error:
             if _is_timeout(error):
                 raise AITimeout(str(error)) from error
             raise AIUnavailable(str(error)) from error
@@ -202,8 +232,9 @@ class AIClient:
             raise AIUnavailable('reply had no voice line')
         return str(voice)
 
-    def radio_voice(self, system: str, user: str, *, temperature: float = 0.3,
-                    max_tokens: int = 220) -> str | None:
+    def radio_voice(
+        self, system: str, user: str, *, temperature: float = 0.3, max_tokens: int = 220
+    ) -> str | None:
         """Fastest path for a spoken answer on a local Ollama: streamed, thinking off.
 
         Returns None when the server isn't a local Ollama, so the caller uses chat_json().
@@ -216,19 +247,17 @@ class AIClient:
             raise
         except AIUnavailable:
             pass
-        try:   # an older Ollama or a model that rejects the think switch
+        try:  # an older Ollama or a model that rejects the think switch
             return self._stream_voice(system, user, temperature, max_tokens, think=None)
         except AITimeout:
             raise
         except AIUnavailable:
             return None
 
-    def _post(self, system: str, user: str, temperature: float, max_tokens: int,
-             json_mode: bool) -> str:
+    def _post(self, system: str, user: str, temperature: float, max_tokens: int, json_mode: bool) -> str:
         body = {
             'model': self.model,
-            'messages': [{'role': 'system', 'content': system},
-                         {'role': 'user', 'content': user}],
+            'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
             'temperature': temperature,
             'max_tokens': max_tokens,
             'stream': False,
@@ -236,21 +265,31 @@ class AIClient:
         if json_mode:
             body['response_format'] = {'type': 'json_object'}
         request = urllib.request.Request(
-            f'{self.base_url}/chat/completions', data=json.dumps(body).encode('utf-8'), method='POST',
-            headers={'Content-Type': 'application/json',
-                     'Authorization': f'Bearer {self.api_key}'})
+            f'{self.base_url}/chat/completions',
+            data=json.dumps(body).encode('utf-8'),
+            method='POST',
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {self.api_key}'},
+        )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode('utf-8'))
             return payload['choices'][0]['message']['content']
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError,
-                KeyError, IndexError, TypeError) as error:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            OSError,
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as error:
             if _is_timeout(error):
                 raise AITimeout(str(error)) from error
             raise AIUnavailable(str(error)) from error
 
-    def chat(self, system: str, user: str, *, temperature: float = 0.3,
-             max_tokens: int = 600, fast: bool = False) -> str:
+    def chat(
+        self, system: str, user: str, *, temperature: float = 0.3, max_tokens: int = 600, fast: bool = False
+    ) -> str:
         """Return the model's final answer text, or raise AIUnavailable.
 
         ``max_tokens`` is generous on purpose: R1-style models spend tokens on
@@ -264,8 +303,9 @@ class AIClient:
             raise AIUnavailable('empty response')
         return answer
 
-    def chat_json(self, system: str, user: str, *, temperature: float = 0.3,
-                 max_tokens: int = 700, fast: bool = False) -> dict:
+    def chat_json(
+        self, system: str, user: str, *, temperature: float = 0.3, max_tokens: int = 700, fast: bool = False
+    ) -> dict:
         """Chat with the server's JSON-object mode, returning the parsed object.
 
         Prefer this over scraping free text out of ``chat()`` whenever the prompt asks for
@@ -283,7 +323,7 @@ class AIClient:
             try:
                 content = self._post(system, user, temperature, max_tokens, json_mode=True)
             except AITimeout:
-                raise                 # a slow model won't be faster the second time
+                raise  # a slow model won't be faster the second time
             except AIUnavailable:
                 content = self._post(system, user, temperature, max_tokens, json_mode=False)
         text = strip_reasoning(content)
@@ -293,7 +333,7 @@ class AIClient:
             return json.loads(text)
         except ValueError:
             pass
-        match = re.search(r'\{.*\}', text, re.DOTALL)   # model wrapped the JSON in prose
+        match = re.search(r'\{.*\}', text, re.DOTALL)  # model wrapped the JSON in prose
         if match:
             try:
                 return json.loads(match.group(0))

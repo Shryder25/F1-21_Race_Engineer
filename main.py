@@ -2,8 +2,9 @@
 F1 2021 AI Race Engineer - Root Launcher
 Redirects execution into ai_engineer/main.py
 """
-import sys
+
 import os
+import sys
 
 # Redirect to ai_engineer directory
 ai_engineer_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_engineer")

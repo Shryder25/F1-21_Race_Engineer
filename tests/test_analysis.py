@@ -5,7 +5,7 @@ from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 from analysis import AnalysisEngine
-from packets import parse_player_lap_data, parse_player_telemetry, SessionData
+from packets import SessionData, parse_player_lap_data, parse_player_telemetry
 from simulate_telemetry import build_lap_packet, build_telemetry_packet
 
 
@@ -28,14 +28,28 @@ class LapValidityTests(unittest.TestCase):
         for distance in range(start, 1000, 20):
             if skip_at and skip_at[0] <= distance <= skip_at[1]:
                 continue
-            self.engine.update_telemetry(self.telemetry, replace(
-                self.lap, lap_distance=distance, current_lap_time_ms=100 + distance * 50,
-                current_lap_invalid=int(distance == invalid_at), pit_status=int(distance == pit_at)))
+            self.engine.update_telemetry(
+                self.telemetry,
+                replace(
+                    self.lap,
+                    lap_distance=distance,
+                    current_lap_time_ms=100 + distance * 50,
+                    current_lap_invalid=int(distance == invalid_at),
+                    pit_status=int(distance == pit_at),
+                ),
+            )
 
     def finish(self, lap_num=2):
-        self.engine.update_telemetry(self.telemetry, replace(
-            self.lap, lap_distance=10, current_lap_time_ms=500,
-            current_lap_num=lap_num, last_lap_time_ms=50000))
+        self.engine.update_telemetry(
+            self.telemetry,
+            replace(
+                self.lap,
+                lap_distance=10,
+                current_lap_time_ms=500,
+                current_lap_num=lap_num,
+                last_lap_time_ms=50000,
+            ),
+        )
 
     def test_complete_valid_lap_sets_baseline(self):
         self.drive_lap()
@@ -70,11 +84,13 @@ class LapValidityTests(unittest.TestCase):
     def test_live_delta_interpolates_matching_distance_and_clears_when_unavailable(self):
         self.engine.delta.best_lap_times = {0.0: 0, 100.0: 1000}
         self.engine.delta.best_lap_time_ms = 50000
-        self.engine.update_telemetry(self.telemetry, replace(
-            self.lap, lap_distance=50, current_lap_time_ms=600))
+        self.engine.update_telemetry(
+            self.telemetry, replace(self.lap, lap_distance=50, current_lap_time_ms=600)
+        )
         self.assertEqual(self.engine.delta.last_reported_delta_ms, 100)
-        self.engine.update_telemetry(self.telemetry, replace(
-            self.lap, lap_distance=150, current_lap_time_ms=1600))
+        self.engine.update_telemetry(
+            self.telemetry, replace(self.lap, lap_distance=150, current_lap_time_ms=1600)
+        )
         self.assertIsNone(self.engine.delta.last_reported_delta_ms)
 
 

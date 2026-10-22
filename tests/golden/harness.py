@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import json
 import difflib
+import json
 import math
 import struct
 import sys
@@ -34,17 +34,16 @@ for _path in (ROOT / 'ai_engineer', Path(__file__).resolve().parent):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-import analysis as analysis_module          # noqa: E402
-import race_radio as race_radio_module      # noqa: E402
-import telemetry_stream as stream_module    # noqa: E402
-import web_hud                              # noqa: E402
-from analysis import AnalysisEngine, PROACTIVE_KEYS   # noqa: E402
-from engineer_brain import rule_based_answer          # noqa: E402
-from history import TelemetryHistory                  # noqa: E402
-from telemetry_stream import TelemetryStream          # noqa: E402
-from voice_commands import COMMANDS                   # noqa: E402
-
-import recording                                       # noqa: E402
+import analysis as analysis_module  # noqa: E402
+import race_radio as race_radio_module  # noqa: E402
+import recording  # noqa: E402
+import telemetry_stream as stream_module  # noqa: E402
+import web_hud  # noqa: E402
+from analysis import PROACTIVE_KEYS, AnalysisEngine  # noqa: E402
+from engineer_brain import rule_based_answer  # noqa: E402
+from history import TelemetryHistory  # noqa: E402
+from telemetry_stream import TelemetryStream  # noqa: E402
+from voice_commands import COMMANDS  # noqa: E402
 
 TRANSCRIPT_VERSION = 1
 # Fixed origins for the simulated clocks: far from zero, like a real PC, so "seconds since
@@ -57,6 +56,7 @@ DEFAULT_TOLERANCES = {'time_s': 0.25, 'number_abs': 0.011, 'number_rel': 0.0}
 # ──────────────────────────────────────────────
 # Simulated clock and recording voice
 # ──────────────────────────────────────────────
+
 
 class SimClock:
     """Stands in for the `time` module inside the engine modules during a replay."""
@@ -73,7 +73,7 @@ class SimClock:
     def perf_counter(self):
         return self.monotonic()
 
-    def __getattr__(self, name):              # sleep, strftime, ... fall through
+    def __getattr__(self, name):  # sleep, strftime, ... fall through
         return getattr(real_time, name)
 
 
@@ -100,11 +100,15 @@ class RecordingVoice:
             return False
         self._last[topic] = now
         short_key = topic.split(':', 1)[1] if ':' in topic else topic
-        self.calls.append({
-            't': round(self.session_time, 2), 'key': short_key,
-            'priority': getattr(priority, 'name', str(priority)),
-            'proactive': short_key in PROACTIVE_KEYS, 'text': message,
-        })
+        self.calls.append(
+            {
+                't': round(self.session_time, 2),
+                'key': short_key,
+                'priority': getattr(priority, 'name', str(priority)),
+                'proactive': short_key in PROACTIVE_KEYS,
+                'text': message,
+            }
+        )
         return True
 
     def say_immediate(self, message):
@@ -116,7 +120,7 @@ class RecordingVoice:
 
 @contextlib.contextmanager
 def simulated_time(clock: SimClock):
-    modules = (analysis_module, race_radio_module, stream_module, web_hud)
+    modules = (*analysis_module.TIMED_MODULES, race_radio_module, stream_module, web_hud)
     saved = [(m, m.time) for m in modules]
     saved_state = copy.deepcopy(web_hud.dashboard_state)
     try:
@@ -132,6 +136,7 @@ def simulated_time(clock: SimClock):
 # ──────────────────────────────────────────────
 # Transcript
 # ──────────────────────────────────────────────
+
 
 def _round(value, places=3):
     if isinstance(value, float):
@@ -152,27 +157,38 @@ def key_numbers(engine: AnalysisEngine) -> dict:
     strategy = ctx.get('strategy') or {}
     best = strategy.get('best') if isinstance(strategy, dict) else None
     threats = ctx.get('opponent_threats') or []
-    return _round({
-        'lap': ctx.get('lap'), 'position': ctx.get('position'),
-        'weather': ctx.get('weather'), 'safety_car': ctx.get('safety_car'),
-        'last_lap_ms': ctx.get('last_lap_ms'), 'best_lap_ms': ctx.get('best_lap_ms'),
-        'race_pace_ms': ctx.get('race_pace_ms'),
-        'gap_ahead_s': ctx.get('gap_ahead_s'), 'gap_behind_s': ctx.get('gap_behind_s'),
-        'car_ahead': ctx.get('car_ahead_name'), 'car_behind': ctx.get('car_behind_name'),
-        'compound': ctx.get('compound'), 'tyre_age_laps': ctx.get('tyre_age_laps'),
-        'worst_wear_pct': max((ctx.get('tyre_wear_pct') or {}).values(), default=None),
-        'fuel_kg': fuel.get('fuel_kg'), 'fuel_per_lap_kg': fuel.get('per_lap_kg'),
-        'fuel_margin_laps': fuel.get('margin_laps'),
-        'ml_pit_window': [pit.get('ideal_lap'), pit.get('latest_lap')] if pit else None,
-        'ml_wear_per_lap_pct': pit.get('wear_per_lap_pct'),
-        'tyre_health': tire.get('health_score'), 'tyre_remaining_laps': tire.get('remaining_laps'),
-        'pace_trend_s_per_lap': ctx.get('pace_trend_s_per_lap'),
-        'strategy_stops': best.get('stops') if isinstance(best, dict) else None,
-        'strategy_plan': best.get('compounds') if isinstance(best, dict) else None,
-        'strategy_pit_laps': best.get('pit_laps') if isinstance(best, dict) else None,
-        'top_threat': (threats[0]['driver_name'], threats[0]['threat_level']) if threats else None,
-        'race_report_laps': len(engine.session_lap_stats),
-    }, 3)
+    return _round(
+        {
+            'lap': ctx.get('lap'),
+            'position': ctx.get('position'),
+            'weather': ctx.get('weather'),
+            'safety_car': ctx.get('safety_car'),
+            'last_lap_ms': ctx.get('last_lap_ms'),
+            'best_lap_ms': ctx.get('best_lap_ms'),
+            'race_pace_ms': ctx.get('race_pace_ms'),
+            'gap_ahead_s': ctx.get('gap_ahead_s'),
+            'gap_behind_s': ctx.get('gap_behind_s'),
+            'car_ahead': ctx.get('car_ahead_name'),
+            'car_behind': ctx.get('car_behind_name'),
+            'compound': ctx.get('compound'),
+            'tyre_age_laps': ctx.get('tyre_age_laps'),
+            'worst_wear_pct': max((ctx.get('tyre_wear_pct') or {}).values(), default=None),
+            'fuel_kg': fuel.get('fuel_kg'),
+            'fuel_per_lap_kg': fuel.get('per_lap_kg'),
+            'fuel_margin_laps': fuel.get('margin_laps'),
+            'ml_pit_window': [pit.get('ideal_lap'), pit.get('latest_lap')] if pit else None,
+            'ml_wear_per_lap_pct': pit.get('wear_per_lap_pct'),
+            'tyre_health': tire.get('health_score'),
+            'tyre_remaining_laps': tire.get('remaining_laps'),
+            'pace_trend_s_per_lap': ctx.get('pace_trend_s_per_lap'),
+            'strategy_stops': best.get('stops') if isinstance(best, dict) else None,
+            'strategy_plan': best.get('compounds') if isinstance(best, dict) else None,
+            'strategy_pit_laps': best.get('pit_laps') if isinstance(best, dict) else None,
+            'top_threat': (threats[0]['driver_name'], threats[0]['threat_level']) if threats else None,
+            'race_report_laps': len(engine.session_lap_stats),
+        },
+        3,
+    )
 
 
 def answers(engine: AnalysisEngine) -> dict:
@@ -191,7 +207,6 @@ def replay(path, checkpoints_every_lap=True) -> dict:
             engine = AnalysisEngine(voice, history=history, on_demand=False)
             stream = TelemetryStream(engine)
             laps: list[dict] = []
-            mid_answers = None
             last_lap = None
             datagrams = accepted = 0
             for record in recording.read_records(path):
@@ -217,7 +232,8 @@ def replay(path, checkpoints_every_lap=True) -> dict:
             history.close()
     return {
         'transcript_version': TRANSCRIPT_VERSION,
-        'datagrams': datagrams, 'paired_frames': accepted,
+        'datagrams': datagrams,
+        'paired_frames': accepted,
         'calls': voice.calls,
         'race_control_feed': _round(race_control, 2),
         'laps': laps,
@@ -231,13 +247,14 @@ def replay(path, checkpoints_every_lap=True) -> dict:
 # Comparison
 # ──────────────────────────────────────────────
 
+
 def _numbers_equal(a, b, tol) -> bool:
     if isinstance(a, bool) or isinstance(b, bool):
         return a == b
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return abs(a - b) <= max(tol['number_abs'], tol['number_rel'] * max(abs(a), abs(b)))
     if isinstance(a, list) and isinstance(b, list):
-        return len(a) == len(b) and all(_numbers_equal(x, y, tol) for x, y in zip(a, b))
+        return len(a) == len(b) and all(_numbers_equal(x, y, tol) for x, y in zip(a, b, strict=False))
     if isinstance(a, dict) and isinstance(b, dict):
         return a.keys() == b.keys() and all(_numbers_equal(a[k], b[k], tol) for k in a)
     return a == b
@@ -256,11 +273,12 @@ def compare(expected: dict, actual: dict, tolerances: dict | None = None, limit=
     exp_lines = [f"[{c['key']}] {c['text']}" for c in exp_calls]
     act_lines = [f"[{c['key']}] {c['text']}" for c in act_calls]
     if exp_lines != act_lines:
-        diff = list(difflib.unified_diff(exp_lines, act_lines, 'expected calls', 'actual calls',
-                                         lineterm='', n=1))
-        problems.append('Radio calls changed:\n  ' + '\n  '.join(diff[:limit * 2]))
+        diff = list(
+            difflib.unified_diff(exp_lines, act_lines, 'expected calls', 'actual calls', lineterm='', n=1)
+        )
+        problems.append('Radio calls changed:\n  ' + '\n  '.join(diff[: limit * 2]))
     else:
-        for e, a in zip(exp_calls, act_calls):
+        for e, a in zip(exp_calls, act_calls, strict=False):
             if abs(e['t'] - a['t']) > tol['time_s']:
                 problems.append(f"Call timing moved: expected {_fmt_call(e)}  got t={a['t']:.2f}")
                 if len(problems) >= limit:
@@ -278,13 +296,16 @@ def compare(expected: dict, actual: dict, tolerances: dict | None = None, limit=
     exp_laps, act_laps = expected.get('laps', []), actual.get('laps', [])
     if len(exp_laps) != len(act_laps):
         problems.append(f'Lap checkpoints: expected {len(exp_laps)}, got {len(act_laps)}')
+
     def compare_answers(label, exp, act):
         for command in sorted(set(exp) | set(act)):
             if exp.get(command) != act.get(command):
-                problems.append(f"{label} answer to '{command}' changed:\n    expected: {exp.get(command)!r}"
-                                f"\n    got:      {act.get(command)!r}")
+                problems.append(
+                    f"{label} answer to '{command}' changed:\n    expected: {exp.get(command)!r}"
+                    f"\n    got:      {act.get(command)!r}"
+                )
 
-    for e, a in zip(exp_laps, act_laps):
+    for e, a in zip(exp_laps, act_laps, strict=False):
         label = f"After lap {e.get('lap_completed')}:"
         e2 = {k: v for k, v in e.items() if k not in ('t', 'answers')}
         a2 = {k: v for k, v in a.items() if k not in ('t', 'answers')}
@@ -296,9 +317,10 @@ def compare(expected: dict, actual: dict, tolerances: dict | None = None, limit=
     exp_feed = [f"{e.get('kind')}: {e.get('text')}" for e in expected.get('race_control_feed', [])]
     act_feed = [f"{e.get('kind')}: {e.get('text')}" for e in actual.get('race_control_feed', [])]
     if exp_feed != act_feed:
-        diff = list(difflib.unified_diff(exp_feed, act_feed, 'expected feed', 'actual feed',
-                                         lineterm='', n=0))
-        problems.append('Race control feed changed:\n  ' + '\n  '.join(diff[:limit * 2]))
+        diff = list(
+            difflib.unified_diff(exp_feed, act_feed, 'expected feed', 'actual feed', lineterm='', n=0)
+        )
+        problems.append('Race control feed changed:\n  ' + '\n  '.join(diff[: limit * 2]))
     return problems[:limit] + ([f'... and {len(problems) - limit} more'] if len(problems) > limit else [])
 
 

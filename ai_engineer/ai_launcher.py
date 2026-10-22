@@ -24,10 +24,14 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
+from log_setup import get_logger
+
+log = get_logger('ai')
+
 LOCAL_HOSTS = {'localhost', '127.0.0.1', '::1', '0.0.0.0'}
 OLLAMA_PORT = 11434
-KEEP_ALIVE = '15m'           # how long Ollama keeps the model loaded after each ping
-PING_EVERY_S = 240           # re-ping well inside Ollama's default 5 minute unload
+KEEP_ALIVE = '15m'  # how long Ollama keeps the model loaded after each ping
+PING_EVERY_S = 240  # re-ping well inside Ollama's default 5 minute unload
 START_WAIT_S = 30
 
 
@@ -74,13 +78,23 @@ def _lower_priority():
 
 
 class LocalAILauncher:
-    def __init__(self, base_url: str, model: str, *, on_status=None, on_ready=None,
-                 executable_finder=find_ollama, popen=subprocess.Popen,
-                 start_wait_s: float = START_WAIT_S, ping_every_s: float = PING_EVERY_S,
-                 load_options: dict | None = None, low_priority: bool = True):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        *,
+        on_status=None,
+        on_ready=None,
+        executable_finder=find_ollama,
+        popen=subprocess.Popen,
+        start_wait_s: float = START_WAIT_S,
+        ping_every_s: float = PING_EVERY_S,
+        load_options: dict | None = None,
+        low_priority: bool = True,
+    ):
         self.root = ollama_root(base_url)
         self.model = model
-        self.on_status = on_status or (lambda text: print(f'[AI] {text}'))
+        self.on_status = on_status or (lambda text: log.info('%s', text))
         self.on_ready = on_ready
         self._find = executable_finder
         self._popen = popen
@@ -102,9 +116,12 @@ class LocalAILauncher:
     # ── HTTP helpers ─────────────────────────────────────────
     def _request(self, path, body=None, timeout=5.0):
         data = None if body is None else json.dumps(body).encode('utf-8')
-        request = urllib.request.Request(f'{self.root}{path}', data=data,
-                                         method='GET' if body is None else 'POST',
-                                         headers={'Content-Type': 'application/json'})
+        request = urllib.request.Request(
+            f'{self.root}{path}',
+            data=data,
+            method='GET' if body is None else 'POST',
+            headers={'Content-Type': 'application/json'},
+        )
         return urllib.request.urlopen(request, timeout=timeout)
 
     def installed_models(self):
@@ -127,23 +144,30 @@ class LocalAILauncher:
     def _start_server(self):
         exe = self._find()
         if not exe:
-            self._say('Ollama is not installed, so DeepSeek is off. Install it from '
-                      'https://ollama.com/download (answers come from built-in rules meanwhile).')
+            self._say(
+                'Ollama is not installed, so DeepSeek is off. Install it from '
+                'https://ollama.com/download (answers come from built-in rules meanwhile).'
+            )
             return False
         self._say('Starting Ollama...')
         flags, extra = 0, {}
         if sys.platform == 'win32':
             flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-            if self.low_priority:     # the game's frames come first when both want the CPU
+            if self.low_priority:  # the game's frames come first when both want the CPU
                 flags |= getattr(subprocess, 'BELOW_NORMAL_PRIORITY_CLASS', 0)
         elif self.low_priority and hasattr(os, 'nice'):
             extra['preexec_fn'] = _lower_priority
         env = dict(os.environ)
         env.setdefault('OLLAMA_KEEP_ALIVE', KEEP_ALIVE)
         try:
-            self._process = self._popen([exe, 'serve'], stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL, env=env, creationflags=flags,
-                                        **extra)
+            self._process = self._popen(
+                [exe, 'serve'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env,
+                creationflags=flags,
+                **extra,
+            )
         except OSError as error:
             self._say(f'Could not start Ollama: {error}')
             return False
@@ -159,8 +183,7 @@ class LocalAILauncher:
         self._say(f'Downloading {self.model} (first run only, this can take a while)...')
         last_shown = -10
         try:
-            with self._request('/api/pull', {'model': self.model, 'stream': True},
-                               timeout=60.0) as response:
+            with self._request('/api/pull', {'model': self.model, 'stream': True}, timeout=60.0) as response:
                 for raw in response:
                     if self._stop.is_set():
                         return False
@@ -188,8 +211,7 @@ class LocalAILauncher:
             body = {'model': self.model, 'prompt': '', 'keep_alive': KEEP_ALIVE, 'stream': False}
             if self.load_options:
                 body['options'] = self.load_options
-            with self._request('/api/generate', body,
-                               timeout=timeout) as response:
+            with self._request('/api/generate', body, timeout=timeout) as response:
                 response.read()
             return True
         except (urllib.error.URLError, OSError) as error:
@@ -218,7 +240,7 @@ class LocalAILauncher:
             except Exception:
                 pass
         while not self._stop.wait(self._ping_every_s):
-            self._load(timeout=30.0)      # keeps the model in memory between questions
+            self._load(timeout=30.0)  # keeps the model in memory between questions
 
     # ── lifecycle ────────────────────────────────────────────
     def start(self):

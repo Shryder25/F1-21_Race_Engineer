@@ -13,13 +13,15 @@ import physics_models as pm
 from ai_client import AIClient, AIUnavailable
 from analysis import AnalysisEngine
 from engineer_brain import EngineerBrain, rule_based_answer
-from packets import SessionData, parse_all_car_status, parse_all_car_damage, parse_player_car_status
+from packets import SessionData, parse_all_car_damage, parse_all_car_status, parse_player_car_status
 from race_radio import RaceRadio
-from simulate_telemetry import (build_car_damage_packet, build_car_status_packet,
-                                build_lap_packet, build_session_packet)
+from simulate_telemetry import (
+    build_car_damage_packet,
+    build_car_status_packet,
+    build_lap_packet,
+)
 from test_analysis import SilentVoice
 from voice_commands import match_command
-from voice_engine import Priority
 
 
 class TireModelTests(unittest.TestCase):
@@ -117,25 +119,36 @@ class RaceRadioThreatTests(unittest.TestCase):
         self.radio.reset(SessionData(0, 30, 20, 53, 5793, 10, 11, 0))
 
     def _lap(self, position, distance, lap_num=3, last_lap_ms=90000):
-        return replace(self.base_lap, car_position=position, total_distance=distance,
-                       current_lap_num=lap_num, last_lap_time_ms=last_lap_ms)
+        return replace(
+            self.base_lap,
+            car_position=position,
+            total_distance=distance,
+            current_lap_num=lap_num,
+            last_lap_time_ms=last_lap_ms,
+        )
 
     def _drive(self, positions_and_offsets, last_laps_ms=None, frames=((0, 0), (10, 10), (11, 20))):
         """Replay several frames of a tight field so every nearby car's trajectory brackets
         the player's distance (what RaceRadio's crossing-time lookup requires), the same
         pattern test_race_radio.py's own gap test uses.
         """
-        from simulate_telemetry import build_lap_packet
         from packets import parse_player_lap_data
+
         base = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 2), 0)
         last_laps_ms = last_laps_ms or {}
         for now, offset in frames:
             laps = [replace(base, car_position=99, total_distance=-1000.0, result_status=0)] * 22
             laps = list(laps)
             for index, (position, distance) in positions_and_offsets.items():
-                laps[index] = replace(base, car_position=position, total_distance=distance + offset,
-                                      result_status=2, pit_status=0, current_lap_num=3,
-                                      last_lap_time_ms=last_laps_ms.get(index, 0))
+                laps[index] = replace(
+                    base,
+                    car_position=position,
+                    total_distance=distance + offset,
+                    result_status=2,
+                    pit_status=0,
+                    current_lap_num=3,
+                    last_lap_time_ms=last_laps_ms.get(index, 0),
+                )
             self.radio.update_field(laps, player_index=0, session_time=now)
 
     def test_opponent_threats_are_scored_for_nearby_positions(self):
@@ -161,11 +174,12 @@ class AnalysisContextThreatTests(unittest.TestCase):
         engine.update_session(SessionData(0, 30, 20, 53, 5793, 10, 11, 0), 1, 0)
         engine.latest_status = parse_player_car_status(build_car_status_packet(0, 1, 55.0, 17, 10), 0)
         engine.latest_damage = parse_all_car_damage(build_car_damage_packet(0, 1, (40, 41, 39, 42)))[0]
-        engine.radio.opponent_threats = [
-            pm.evaluate_opponent_threat(1, 2, gap_s=-0.9, pace_delta_s=-0.2)]
+        engine.radio.opponent_threats = [pm.evaluate_opponent_threat(1, 2, gap_s=-0.9, pace_delta_s=-0.2)]
         ctx = engine.build_context()
         self.assertIsNotNone(ctx['tire_health'])
-        self.assertEqual(ctx['tire_health']['limiting_factor'] in ('wear', 'age', 'performance', 'cliff'), True)
+        self.assertEqual(
+            ctx['tire_health']['limiting_factor'] in ('wear', 'age', 'performance', 'cliff'), True
+        )
         self.assertEqual(len(ctx['opponent_threats']), 1)
         self.assertEqual(ctx['opponent_threats'][0]['threat_level'], 'HIGH')
 
@@ -183,8 +197,12 @@ class ThreatsVoiceCommandTests(unittest.TestCase):
         self.assertEqual(match_command('whats behind me'), 'gap_behind')
 
     def test_rule_based_threats_answer(self):
-        ctx = {'session_mode': 'race', 'opponent_threats': [
-            {'threat_level': 'HIGH', 'gap_s': -0.8, 'factors': ['gap 0.8s (DRS range)']}]}
+        ctx = {
+            'session_mode': 'race',
+            'opponent_threats': [
+                {'threat_level': 'HIGH', 'gap_s': -0.8, 'factors': ['gap 0.8s (DRS range)']}
+            ],
+        }
         answer = rule_based_answer('threats', ctx)
         self.assertIn('behind', answer)
         self.assertIn('0.8', answer)
@@ -221,7 +239,9 @@ class FakeJSONHandler(BaseHTTPRequestHandler):
 
 class AIClientJSONModeTests(unittest.TestCase):
     def setUp(self):
-        FakeJSONHandler.reply = '{"voice": "Gap ahead two point four.", "advice": "Tyres are fine, keep pushing."}'
+        FakeJSONHandler.reply = (
+            '{"voice": "Gap ahead two point four.", "advice": "Tyres are fine, keep pushing."}'
+        )
         FakeJSONHandler.accept_json_mode = True
         FakeJSONHandler.status = 200
         self.server = HTTPServer(('127.0.0.1', 0), FakeJSONHandler)
@@ -241,8 +261,9 @@ class AIClientJSONModeTests(unittest.TestCase):
         self.assertEqual(result['voice'], 'Gap ahead two point four.')
 
     def test_chat_json_extracts_object_wrapped_in_prose(self):
-        FakeJSONHandler.reply = ('<think>reasoning here</think>Sure, here you go: '
-                                 '{"voice": "Box this lap.", "advice": ""}')
+        FakeJSONHandler.reply = (
+            '<think>reasoning here</think>Sure, here you go: {"voice": "Box this lap.", "advice": ""}'
+        )
         result = self.client.chat_json('sys', 'user')
         self.assertEqual(result['voice'], 'Box this lap.')
 

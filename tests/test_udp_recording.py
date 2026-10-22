@@ -1,7 +1,5 @@
-import gzip
 import pathlib
 import socket
-import struct
 import sys
 import tempfile
 import threading
@@ -11,15 +9,31 @@ import zlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 import udp_recording
-from udp_recording import (FILE_HEADER, RECORD_HEADER, Record, RecordingError, RecordingReader,
-                           RecordingWriter, ReplayFinished, ReplaySource, paced, parse_speed,
-                           read_records, record_socket, replay_into, replay_to_udp, summarize)
 from simulate_telemetry import build_lap_packet, build_session_packet, build_telemetry_packet
+from udp_recording import (
+    FILE_HEADER,
+    RECORD_HEADER,
+    Record,
+    RecordingError,
+    RecordingReader,
+    RecordingWriter,
+    ReplayFinished,
+    ReplaySource,
+    paced,
+    parse_speed,
+    read_records,
+    record_socket,
+    replay_into,
+    replay_to_udp,
+    summarize,
+)
 
-PACKETS = [build_session_packet(0.0, 1, 11),
-           build_telemetry_packet(0.04, 2, 280, 1, 0, 8, 95),
-           build_lap_packet(0.04, 2, 1000, 20000),
-           b'not an F1 packet']  # junk is recorded too
+PACKETS = [
+    build_session_packet(0.0, 1, 11),
+    build_telemetry_packet(0.04, 2, 280, 1, 0, 8, 95),
+    build_lap_packet(0.04, 2, 1000, 20000),
+    b'not an F1 packet',
+]  # junk is recorded too
 
 
 class FakeClock:
@@ -46,7 +60,7 @@ class RecordingTestCase(unittest.TestCase):
     def make(self, name='s.f1rec', times_ms=(0, 40, 41, 1000), packets=PACKETS, **kwargs):
         path = self.dir / name
         with RecordingWriter(path, metadata={'port': 20777, 'note': 'test'}, **kwargs) as writer:
-            for t_ms, data in zip(times_ms, packets):
+            for t_ms, data in zip(times_ms, packets, strict=False):
                 writer.write(data, t_ns=t_ms * 1_000_000)
         return path
 
@@ -64,12 +78,12 @@ class FormatTests(RecordingTestCase):
         raw = path.read_bytes()
         magic, version, flags, start_ns, meta_len = FILE_HEADER.unpack_from(raw)
         self.assertEqual((magic, version, flags), (b'F1UDPREC', 1, 0))
-        self.assertLess(abs(start_ns - time.time_ns()), 60 * 10 ** 9)
+        self.assertLess(abs(start_ns - time.time_ns()), 60 * 10**9)
         self.assertEqual(FILE_HEADER.size, 24)
         self.assertEqual(RECORD_HEADER.size, 14)
         offset = FILE_HEADER.size + meta_len
         t_ns, length, crc = RECORD_HEADER.unpack_from(raw, offset)
-        payload = raw[offset + 14:offset + 14 + length]
+        payload = raw[offset + 14 : offset + 14 + length]
         self.assertEqual((t_ns, payload, crc), (0, PACKETS[0], zlib.crc32(PACKETS[0])))
         with RecordingReader(path) as reader:
             self.assertEqual(reader.metadata['game'], 'F1 2021')
@@ -104,7 +118,7 @@ class FormatTests(RecordingTestCase):
         with RecordingReader(path) as reader:
             records = list(reader)
         self.assertGreaterEqual(len(records), 0)
-        self.assertEqual([r.data for r in records], PACKETS[:len(records)])
+        self.assertEqual([r.data for r in records], PACKETS[: len(records)])
 
     def test_corrupt_payload_raises(self):
         path = self.make()
@@ -168,7 +182,7 @@ class SpeedTests(RecordingTestCase):
     def test_real_time_honours_recorded_gaps(self):
         fake = self.pace(1.0)
         self.assertEqual(len(fake.sleeps), 3)
-        for got, want in zip(fake.sleeps, (0.040, 0.001, 0.959)):
+        for got, want in zip(fake.sleeps, (0.040, 0.001, 0.959), strict=False):
             self.assertAlmostEqual(got, want)
         self.assertAlmostEqual(fake.now - 100.0, 1.0)
 
@@ -199,6 +213,7 @@ class ReplayTests(RecordingTestCase):
 
             def handle(self, data, now=None):
                 self.calls.append((data, now))
+
         stream = Stream()
         self.assertEqual(replay_into(stream, self.make()), 4)
         self.assertEqual([d for d, _ in stream.calls], PACKETS)
@@ -257,7 +272,7 @@ class RecorderTests(RecordingTestCase):
         self.assertEqual(count, len(PACKETS))
         records = list(read_records(path))
         self.assertEqual([r.data for r in records], PACKETS)
-        gaps = [b.t_ns - a.t_ns for a, b in zip(records, records[1:])]
+        gaps = [b.t_ns - a.t_ns for a, b in zip(records, records[1:], strict=False)]
         self.assertTrue(all(gap >= 10_000_000 for gap in gaps), gaps)  # ~20 ms apart
 
     def test_record_then_replay_through_a_real_telemetry_stream(self):
@@ -265,6 +280,7 @@ class RecorderTests(RecordingTestCase):
             from analysis import AnalysisEngine
             from telemetry_stream import TelemetryStream
             from test_analysis import SilentVoice
+
             stream = TelemetryStream(AnalysisEngine(SilentVoice()))
         except Exception as e:  # the engine itself is broken on some branches; not this module
             self.skipTest(f'AnalysisEngine unavailable: {e}')

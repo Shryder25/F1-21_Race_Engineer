@@ -12,17 +12,20 @@ Provides:
 import base64
 import hashlib
 import http.server
+import json
 import socketserver
 import struct
 import threading
-import json
 import time
 import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from track_data import get_all_tracks
+from log_setup import get_logger
 from track_analysis import TrackAnalyst, model_analysis, normalize_session
+from track_data import get_all_tracks
+
+log = get_logger('hud')
 
 TELEMETRY_TIMEOUT = 2.0
 
@@ -75,7 +78,7 @@ dashboard_state: dict[str, Any] = {
     "pit_window": None,
     "opponent_threats": [],
     "race_strategy": None,
-    "model_ranges": None,       # fitted tyre/fuel model ranges (AnalysisEngine.model_summary)
+    "model_ranges": None,  # fitted tyre/fuel model ranges (AnalysisEngine.model_summary)
     "race_control": [],
     "tire_health": None,
     "race_report": [],
@@ -88,16 +91,16 @@ dashboard_state: dict[str, Any] = {
     "car_yaw": 0.0,
     "g_force_lat": 0.0,
     "g_force_lon": 0.0,
-    "track_map": [],            # live trail, only while the circuit has no stored outline
+    "track_map": [],  # live trail, only while the circuit has no stored outline
     "current_lap_trail": [],
-    "track_outline": [],        # the whole circuit (track_maps.TrackMapStore)
+    "track_outline": [],  # the whole circuit (track_maps.TrackMapStore)
     "pit_lane": [],
     "track_map_source": "recording",
     "pit_status": 0,
-    "cars": [],                 # every car: [x, z, team_id, position, is_player, in_pit]
+    "cars": [],  # every car: [x, z, team_id, position, is_player, in_pit]
     "flashback_count": 0,
     "braking_zones": [],
-    "ers_zones": []
+    "ers_zones": [],
 }
 
 state_lock = threading.Lock()
@@ -125,7 +128,7 @@ def _finite(value):
     return value
 
 
-_encoder = json.JSONEncoder(allow_nan=False, separators=(',', ':'))   # built once: cheaper per call
+_encoder = json.JSONEncoder(allow_nan=False, separators=(',', ':'))  # built once: cheaper per call
 _lenient_encoder = json.JSONEncoder(allow_nan=False, separators=(',', ':'), default=str)
 
 
@@ -155,7 +158,7 @@ def update_web_state(data: dict[str, Any]):
     with state_lock:
         changed = False
         for key, text in encoded.items():
-            dashboard_state[key] = data[key]      # latest value, for in-process callers
+            dashboard_state[key] = data[key]  # latest value, for in-process callers
             changed = _set_encoded(key, text) or changed
         if changed:
             state_changed.notify_all()
@@ -174,9 +177,10 @@ def _connection_status(now: float) -> dict:
     """'connected' and 'data_age_seconds' as of now (caller holds the lock)."""
     last_update = dashboard_state.get('last_update_monotonic')
     age = max(0.0, now - last_update) if last_update is not None else None
-    return {'connected': bool(dashboard_state.get('connected') and age is not None
-                              and age <= TELEMETRY_TIMEOUT),
-            'data_age_seconds': age}
+    return {
+        'connected': bool(dashboard_state.get('connected') and age is not None and age <= TELEMETRY_TIMEOUT),
+        'data_age_seconds': age,
+    }
 
 
 def get_web_state(now=None):
@@ -206,8 +210,9 @@ def web_state_json(now=None) -> str:
     now = time.monotonic() if now is None else now
     with state_lock:
         status = _connection_status(now)
-        parts = [f'{json.dumps(k)}:{_encoded[k]}' for k in _encoded
-                 if k not in _LOCAL_KEYS and k not in status]
+        parts = [
+            f'{json.dumps(k)}:{_encoded[k]}' for k in _encoded if k not in _LOCAL_KEYS and k not in status
+        ]
     parts += [f'{json.dumps(k)}:{_encode(v)}' for k, v in status.items()]
     return '{' + ','.join(parts) + '}'
 
@@ -254,9 +259,11 @@ def set_setup_ai_client(client):
 
 def _analysis_params(source: dict) -> tuple:
     """(track_id, weather, handling, race_fraction, session) from a query string or JSON body."""
+
     def first(key, default):
         value = source.get(key, default)
         return value[0] if isinstance(value, list) else value
+
     try:
         track_id = int(first("track_id", 7))
     except (ValueError, TypeError):
@@ -278,6 +285,7 @@ def add_voice_log(message: str, status='spoken'):
         dashboard_state["voice_log"] = log
         if _set_encoded("voice_log", _encode(log)):
             state_changed.notify_all()
+
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -756,7 +764,7 @@ MIME_TYPES = {
     ".json": "application/json",
     ".png": "image/png",
     ".svg": "image/svg+xml",
-    ".ico": "image/x-icon"
+    ".ico": "image/x-icon",
 }
 
 
@@ -842,7 +850,7 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
                     if frame is None or frame[0] == 0x8:
                         break
                     if frame[0] == 0x9:
-                        send(frame[1], 0xA)          # ping -> pong
+                        send(frame[1], 0xA)  # ping -> pong
             except (OSError, ValueError, struct.error):
                 pass
             finally:
@@ -896,7 +904,7 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(content)
 
         elif path.startswith("/static/"):
-            rel_path = path[len("/static/"):].lstrip("/")
+            rel_path = path[len("/static/") :].lstrip("/")
             static_dir = (Path(__file__).resolve().parent / "static").resolve()
             file_path = (static_dir / rel_path).resolve()
             if str(file_path).startswith(str(static_dir)) and file_path.is_file():
@@ -968,7 +976,7 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
                 try:
                     _reset_map_handler()
                 except Exception as error:
-                    print(f'[WebHUD] reset_map handler failed: {error}')
+                    log.warning(f'reset_map handler failed: {error}')
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -1004,8 +1012,10 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
         # Suppress noisy HTTP request logging in terminal
         return
 
+
 def start_web_hud_server(port: int = 5000):
     """Start the HUD HTTP server on a background daemon thread."""
+
     class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         # Threaded: each WebSocket client holds a thread, and a slow AI setup consult never
         # stalls the live push.
@@ -1016,8 +1026,8 @@ def start_web_hud_server(port: int = 5000):
         httpd = ReusableTCPServer(("0.0.0.0", port), TelemetryHUDHandler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True, name="WebHUDServer")
         thread.start()
-        print(f"[WebHUD] Visual Telemetry Dashboard live at http://localhost:{port}")
+        log.info(f"Visual Telemetry Dashboard live at http://localhost:{port}")
         return httpd
     except Exception as e:
-        print(f"[WebHUD] Warning: Could not bind to port {port}: {e}")
+        log.warning(f"Could not bind to port {port}: {e}")
         return None

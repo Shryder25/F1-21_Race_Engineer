@@ -22,7 +22,8 @@ the game; analysis.py wires it to the live telemetry and the radio.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
+from typing import Any
 
 import race_sim
 import race_strategy as rs
@@ -30,11 +31,11 @@ import track_wetness as tw
 from physics_models import _compound_params
 
 # ── The margin a Plan B must clear (tunable; main.py exposes the first two as flags) ──
-REPLAN_MARGIN_S = 3.0            # median race time gained over Plan A, seconds ...
-REPLAN_MARGIN_POSITIONS = 0.5    # ... or mean finishing places gained (either one will do)
-REPLAN_MIN_CONFIDENCE = 0.6      # and Plan B must come out ahead in at least this share of runs
-REPLAN_CONFIRM_RUNS = 2          # routine lap re-runs: Plan B must win this many in a row
-REPLAN_COOLDOWN_LAPS = 3         # routine lap re-runs: no new Plan B call this soon after the last
+REPLAN_MARGIN_S = 3.0  # median race time gained over Plan A, seconds ...
+REPLAN_MARGIN_POSITIONS = 0.5  # ... or mean finishing places gained (either one will do)
+REPLAN_MIN_CONFIDENCE = 0.6  # and Plan B must come out ahead in at least this share of runs
+REPLAN_CONFIRM_RUNS = 2  # routine lap re-runs: Plan B must win this many in a row
+REPLAN_COOLDOWN_LAPS = 3  # routine lap re-runs: no new Plan B call this soon after the last
 # Two plans with the same tyres whose stops are this close (laps) are the same plan.
 SAME_PLAN_LAPS = 2
 # A rival's stop triggers a re-run when they are this many places either side of us.
@@ -54,7 +55,7 @@ EVENT_REASONS = ('safety_car', 'vsc', 'rain', 'rival_stop', 'crossover', 'tyre_g
 # Changing tyre type around the crossover: try the expected crossover lap, a lap early and two late.
 SWITCH_OFFSETS = (-1, 0, 2)
 TYRE_WORDS = {'slick': 'slicks', 'inter': 'inters', 'wet': 'full wets'}
-WET_WEATHER = 3                  # session weather code from which the track is wet (light rain)
+WET_WEATHER = 3  # session weather code from which the track is wet (light rain)
 
 
 @dataclass
@@ -69,7 +70,7 @@ class ReplanConfig:
 @dataclass
 class PlanBCall:
     message: str
-    plan: race_sim.Candidate          # the new Plan A
+    plan: race_sim.Candidate  # the new Plan A
     previous: race_sim.Candidate
     lap: int
     reasons: list
@@ -78,15 +79,30 @@ class PlanBCall:
     p_better: float
 
     def as_dict(self) -> dict:
-        return {'kind': 'plan_b', 'message': self.message, 'lap': self.lap, 'reasons': list(self.reasons),
-                'plan': plan_dict(self.plan), 'previous': plan_dict(self.previous),
-                'time_gain_s': self.time_gain_s, 'position_gain': self.position_gain,
-                'p_better': self.p_better}
+        return {
+            'kind': 'plan_b',
+            'message': self.message,
+            'lap': self.lap,
+            'reasons': list(self.reasons),
+            'plan': plan_dict(self.plan),
+            'previous': plan_dict(self.previous),
+            'time_gain_s': self.time_gain_s,
+            'position_gain': self.position_gain,
+            'p_better': self.p_better,
+        }
 
 
 def plan_dict(c: race_sim.Candidate | None) -> dict | None:
-    return None if c is None else {'label': c.label, 'stops': c.stops, 'compounds': list(c.compounds),
-                                   'pit_laps': list(c.pit_laps)}
+    return (
+        None
+        if c is None
+        else {
+            'label': c.label,
+            'stops': c.stops,
+            'compounds': list(c.compounds),
+            'pit_laps': list(c.pit_laps),
+        }
+    )
 
 
 def _plan_key(c: race_sim.Candidate) -> tuple:
@@ -99,7 +115,7 @@ def same_plan(a: race_sim.Candidate, b: race_sim.Candidate, lap_num: int) -> boo
         return False
     if a.pit_laps and (a.pit_laps[0] == lap_num) != (b.pit_laps[0] == lap_num):
         return False
-    return all(abs(x - y) <= SAME_PLAN_LAPS for x, y in zip(a.pit_laps, b.pit_laps))
+    return all(abs(x - y) <= SAME_PLAN_LAPS for x, y in zip(a.pit_laps, b.pit_laps, strict=False))
 
 
 def _candidate(compounds, pit_laps, suffix: str = '') -> race_sim.Candidate:
@@ -143,9 +159,18 @@ def condition_switches(lap_num: int, compound: str | None, trajectory, last_lap:
         for lap in sorted({min(max(lap_num + k + d, lap_num), last_lap) for d in SWITCH_OFFSETS}):
             if lap < lap_num or lap > last_lap:
                 continue
-            new = (dry_compound_for(last_lap + 1 - lap) if target == 'slick'
-                   else 'INTERMEDIATE' if target == 'inter' else 'WET')
-            out.append(_candidate([current, new], [lap], ', box now' if lap == lap_num else f', {TYRE_WORDS[target]} L{lap}'))
+            new = (
+                dry_compound_for(last_lap + 1 - lap)
+                if target == 'slick'
+                else 'INTERMEDIATE'
+                if target == 'inter'
+                else 'WET'
+            )
+            out.append(
+                _candidate(
+                    [current, new], [lap], ', box now' if lap == lap_num else f', {TYRE_WORDS[target]} L{lap}'
+                )
+            )
     return out
 
 
@@ -153,18 +178,28 @@ def _words(stops: int) -> str:
     return {0: 'no stop', 1: 'one stop', 2: 'two stops', 3: 'three stops'}.get(stops, f'{stops} stops')
 
 
-def plan_b_message(new: race_sim.Candidate, old: race_sim.Candidate, lap_num: int, time_gain_s: float,
-                   position_gain: float, reasons, rival_name: str | None, config: ReplanConfig,
-                   gamble: tuple | None = None) -> str:
+def plan_b_message(
+    new: race_sim.Candidate,
+    old: race_sim.Candidate,
+    lap_num: int,
+    time_gain_s: float,
+    position_gain: float,
+    reasons,
+    rival_name: str | None,
+    config: ReplanConfig,
+    gamble: tuple | None = None,
+) -> str:
     """Short radio line in the engineer's style: why, the call, what it is worth."""
     why = ''
     new_family = tw.family(new.compounds[1]) if new.pit_laps and len(new.compounds) > 1 else None
     old_family = tw.family(new.compounds[0])
     if 'crossover' in reasons and new_family and new_family != old_family:
         soon = new.pit_laps[0] <= lap_num + 1
-        why = {'slick': "Track's ready for slicks. " if soon else "Track's drying. ",
-               'inter': 'Too wet for slicks now. ' if soon else 'Track getting wetter. ',
-               'wet': 'Standing water out there. '}[new_family]
+        why = {
+            'slick': "Track's ready for slicks. " if soon else "Track's drying. ",
+            'inter': 'Too wet for slicks now. ' if soon else 'Track getting wetter. ',
+            'wet': 'Standing water out there. ',
+        }[new_family]
     elif 'tyre_gamble' in reasons and gamble:
         who, fam = gamble
         why = f'{who or "A car"} has gone to {TYRE_WORDS.get(fam, fam)}. '
@@ -203,32 +238,40 @@ class Replanner:
         self.config = config or ReplanConfig()
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.plan_a: race_sim.Candidate | None = None
         self.stops_done: int | None = None
         self.seen_lap: int | None = None
         self.seen_sc = 0
         self.seen_wet: bool | None = None
         self.seen_stops: dict[int, int] = {}
-        self.events = 0                     # bumps on every event trigger (part of the sim key)
-        self.pending: list[str] = []        # reasons gathered since the last submitted re-run
+        self.events = 0  # bumps on every event trigger (part of the sim key)
+        self.pending: list[str] = []  # reasons gathered since the last submitted re-run
         self.rival_name: str | None = None  # the last rival whose stop triggered a re-run
-        self.seen_best: str | None = None    # quickest tyre type on the estimated wetness
+        self.seen_best: str | None = None  # quickest tyre type on the estimated wetness
         self.seen_families: dict[int, str] = {}
-        self.gamble: tuple | None = None     # (name, tyre type) of the last car to change tyre type
-        self.submitted: dict = {}           # sim key -> (Plan A, reasons, rival name)
+        self.gamble: tuple | None = None  # (name, tyre type) of the last car to change tyre type
+        self.submitted: dict = {}  # sim key -> (Plan A, reasons, rival name)
         self.last_result = None
         self.streak_key = None
         self.streak = 0
         self.last_call: PlanBCall | None = None
         self.challenger: dict | None = None  # best alternative in the last re-run, for the HUD
-        self.status = 'waiting'              # waiting / holding / watching / cooldown / switched
+        self.status = 'waiting'  # waiting / holding / watching / cooldown / switched
         self.last_run: dict | None = None
 
     # ── triggers ──
-    def observe(self, lap_num: int, safety_car: int, weather: int, field_laps=None,
-                player_index: int = 0, name_of=None, best_tyre: str | None = None,
-                families: dict | None = None) -> list[str]:
+    def observe(
+        self,
+        lap_num: int,
+        safety_car: int,
+        weather: int,
+        field_laps=None,
+        player_index: int = 0,
+        name_of=None,
+        best_tyre: str | None = None,
+        families: dict | None = None,
+    ) -> list[str]:
         """Note what changed since the last frame; returns the new re-plan reasons.
 
         ``best_tyre`` is the quickest tyre type on the estimated wetness (track_wetness), and
@@ -279,11 +322,14 @@ class Replanner:
 
     # ── Plan A ──
     def adopt(self, candidate: race_sim.Candidate, stops_done: int):
-        self.plan_a = replace(candidate, compounds=list(candidate.compounds), pit_laps=list(candidate.pit_laps))
+        self.plan_a = replace(
+            candidate, compounds=list(candidate.compounds), pit_laps=list(candidate.pit_laps)
+        )
         self.stops_done = stops_done
 
-    def sync_plan_a(self, plan: rs.StrategyPlan, lap_num: int, stops_done: int, compound: str | None,
-                    laps_remaining: int) -> race_sim.Candidate | None:
+    def sync_plan_a(
+        self, plan: rs.StrategyPlan, lap_num: int, stops_done: int, compound: str | None, laps_remaining: int
+    ) -> race_sim.Candidate | None:
         """Bring Plan A up to date with the race: stops made, a stop we skipped, our tyres."""
         if plan is None:
             return self.plan_a
@@ -295,11 +341,11 @@ class Replanner:
         if stops_done > self.stops_done:
             made = stops_done - self.stops_done
             if a.stops >= made:
-                a = _candidate([current, *a.compounds[made + 1:]], a.pit_laps[made:])
-            else:                               # a stop the plan didn't have (damage, a gamble)
+                a = _candidate([current, *a.compounds[made + 1 :]], a.pit_laps[made:])
+            else:  # a stop the plan didn't have (damage, a gamble)
                 a = race_sim.Candidate.from_option(plan.best)
             self.stops_done = stops_done
-        elif stops_done < self.stops_done:      # flashback past a stop: start again
+        elif stops_done < self.stops_done:  # flashback past a stop: start again
             a = race_sim.Candidate.from_option(plan.best)
             self.stops_done = stops_done
         if a.compounds and a.compounds[0] != current:
@@ -312,12 +358,20 @@ class Replanner:
             laps.append(prev)
         if laps != list(a.pit_laps):
             keep = [p for p in laps if p <= last]
-            a = _candidate(a.compounds[:len(keep) + 1], keep)
+            a = _candidate(a.compounds[: len(keep) + 1], keep)
         self.plan_a = a
         return a
 
-    def candidates(self, plan: rs.StrategyPlan | None, lap_num: int, neutralised: bool, raining: bool,
-                   compound: str | None, trajectory=None, last_lap: int | None = None) -> list[race_sim.Candidate]:
+    def candidates(
+        self,
+        plan: rs.StrategyPlan | None,
+        lap_num: int,
+        neutralised: bool,
+        raining: bool,
+        compound: str | None,
+        trajectory=None,
+        last_lap: int | None = None,
+    ) -> list[race_sim.Candidate]:
         """Plan A first, then tyre-type changes around the crossover, the event options (box now)
         and the planner's options. ``trajectory`` is the expected wetness lap by lap from now."""
         if self.plan_a is None:
@@ -336,8 +390,11 @@ class Replanner:
         elif raining and current not in rs.WET_COMPOUNDS:
             add(_candidate([current, 'INTERMEDIATE'], [lap_num], ', box now'))
         cheap_stop = neutralised or 'rival_stop' in self.pending
-        if cheap_stop and self.plan_a.pit_laps and \
-                self.plan_a.pit_laps[0] - lap_num <= race_sim.SC_PIT_WINDOW_LAPS:
+        if (
+            cheap_stop
+            and self.plan_a.pit_laps
+            and self.plan_a.pit_laps[0] - lap_num <= race_sim.SC_PIT_WINDOW_LAPS
+        ):
             add(pit_now(self.plan_a, lap_num))
         for c in race_sim.candidates_from_plan(plan):
             add(c)
@@ -345,7 +402,7 @@ class Replanner:
                 add(pit_now(c, lap_num))
         return out
 
-    def note_submitted(self, key):
+    def note_submitted(self, key: Any) -> None:
         """A re-run went off with Plan A first: remember what it was asked."""
         self.submitted[key] = (self.plan_a, list(self.pending), self.rival_name, self.gamble)
         if len(self.submitted) > 8:
@@ -364,7 +421,7 @@ class Replanner:
         self.last_result = result
         plan_a, reasons, rival_name, gamble = self.submitted.pop(key)
         if plan_a is None or plan_a is not self.plan_a or lap_num - result.lap > 1:
-            return None                  # Plan A moved on (a stop, a call) while it ran
+            return None  # Plan A moved on (a stop, a call) while it ran
         cfg = self.config
         ref = next((o for o in result.outcomes if o.is_reference), None)
         self.last_run = {'lap': result.lap, 'runs': result.runs, 'reasons': reasons}
@@ -386,8 +443,9 @@ class Replanner:
             return None
         o, c = best
         vs = o.vs_reference
-        clears = ((vs['time_gain_s'] >= cfg.margin_s or vs['position_gain'] >= cfg.margin_positions)
-                  and vs['p_better'] >= cfg.min_confidence)
+        clears = (vs['time_gain_s'] >= cfg.margin_s or vs['position_gain'] >= cfg.margin_positions) and vs[
+            'p_better'
+        ] >= cfg.min_confidence
         self.challenger = {**plan_dict(c), **vs, 'clears_margin': clears}
         if not clears:
             self.status, self.streak_key, self.streak = 'holding', None, 0
@@ -403,10 +461,18 @@ class Replanner:
             if self.streak < cfg.confirm_runs:
                 self.status = 'watching'
                 return None
-        call = PlanBCall(plan_b_message(c, plan_a, lap_num, vs['time_gain_s'], vs['position_gain'], reasons,
-                                        rival_name, cfg, gamble),
-                         c, plan_a, lap_num, [r for r in reasons if r != 'lap'] or ['lap'],
-                         vs['time_gain_s'], vs['position_gain'], vs['p_better'])
+        call = PlanBCall(
+            plan_b_message(
+                c, plan_a, lap_num, vs['time_gain_s'], vs['position_gain'], reasons, rival_name, cfg, gamble
+            ),
+            c,
+            plan_a,
+            lap_num,
+            [r for r in reasons if r != 'lap'] or ['lap'],
+            vs['time_gain_s'],
+            vs['position_gain'],
+            vs['p_better'],
+        )
         self.adopt(c, self.stops_done if self.stops_done is not None else 0)
         self.last_call, self.status = call, 'switched'
         self.streak_key, self.streak, self.challenger = None, 0, None
@@ -423,7 +489,13 @@ class Replanner:
             line = f"Plan A: {_words(a.stops)}, box lap {a.pit_laps[0]} for {a.compounds[1].lower()}s."
         else:
             line = f"Plan A: no more stops, {a.compounds[0].lower()}s to the flag."
-        return {'plan_a': plan_dict(a), 'status': self.status, 'challenger': self.challenger,
-                'last_call': call.as_dict() if call else None, 'call_active': active,
-                'last_run': self.last_run, 'radio': line,
-                'margin': asdict(self.config)}
+        return {
+            'plan_a': plan_dict(a),
+            'status': self.status,
+            'challenger': self.challenger,
+            'last_call': call.as_dict() if call else None,
+            'call_active': active,
+            'last_run': self.last_run,
+            'radio': line,
+            'margin': asdict(self.config),
+        }

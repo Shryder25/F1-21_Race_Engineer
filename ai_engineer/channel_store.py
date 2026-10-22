@@ -39,9 +39,18 @@ from pathlib import Path
 
 import numpy as np
 
-from packets import (HEADER_SIZE, PacketHeader, parse_all_car_damage, parse_all_car_status,
-                     parse_all_lap_data, parse_participants, parse_player_motion,
-                     parse_player_motion_extra, parse_player_telemetry, parse_session_data)
+from packets import (
+    HEADER_SIZE,
+    PacketHeader,
+    parse_all_car_damage,
+    parse_all_car_status,
+    parse_all_lap_data,
+    parse_participants,
+    parse_player_motion,
+    parse_player_motion_extra,
+    parse_player_telemetry,
+    parse_session_data,
+)
 from session_modes import mode_label
 from track_data import get_track_info
 
@@ -49,8 +58,18 @@ STORE_VERSION = 1
 PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 4: 1257, 6: 1347, 7: 1058, 10: 882}
 FLASHBACK_EVENT = b'FLBK'
 WHEELS = ('rl', 'rr', 'fl', 'fr')  # the game's array order
-TEAMS = {0: 'Mercedes', 1: 'Ferrari', 2: 'Red Bull Racing', 3: 'Williams', 4: 'Aston Martin',
-         5: 'Alpine', 6: 'AlphaTauri', 7: 'Haas', 8: 'McLaren', 9: 'Alfa Romeo'}
+TEAMS = {
+    0: 'Mercedes',
+    1: 'Ferrari',
+    2: 'Red Bull Racing',
+    3: 'Williams',
+    4: 'Aston Martin',
+    5: 'Alpine',
+    6: 'AlphaTauri',
+    7: 'Haas',
+    8: 'McLaren',
+    9: 'Alfa Romeo',
+}
 
 # kind: 'linear' interpolates between samples, 'step' holds the previous value (gear, lap,
 # flags), 'angle' interpolates the short way round (yaw). motec: (name, unit, factor) used
@@ -59,8 +78,12 @@ Channel = namedtuple('Channel', 'name type unit kind motec')
 
 
 def _wheel(prefix, motec_prefix, type_, unit, kind='linear', motec_unit=None, factor=1.0):
-    return [Channel(f'{prefix}_{w}', type_, unit, kind,
-                    (f'{motec_prefix} {w.upper()}', motec_unit or unit, factor)) for w in WHEELS]
+    return [
+        Channel(
+            f'{prefix}_{w}', type_, unit, kind, (f'{motec_prefix} {w.upper()}', motec_unit or unit, factor)
+        )
+        for w in WHEELS
+    ]
 
 
 CHANNELS = [
@@ -128,7 +151,7 @@ CHANNELS = [
     Channel('weather', 'int8', '', 'step', ('Weather', '', 1.0)),
 ]
 CHANNELS_BY_NAME = {c.name: c for c in CHANNELS}
-_INT_RANGES = {'int8': (-128, 127), 'int16': (-32768, 32767), 'uint32': (0, 2 ** 32 - 1)}
+_INT_RANGES = {'int8': (-128, 127), 'int16': (-32768, 32767), 'uint32': (0, 2**32 - 1)}
 
 
 def _require_pyarrow():
@@ -136,20 +159,25 @@ def _require_pyarrow():
         import pyarrow
         import pyarrow.parquet
     except ImportError as error:
-        raise RuntimeError('The channel store needs pyarrow: pip install pyarrow '
-                           '(it is in ai_engineer/requirements.txt)') from error
+        raise RuntimeError(
+            'The channel store needs pyarrow: pip install pyarrow (it is in ai_engineer/requirements.txt)'
+        ) from error
     return pyarrow, pyarrow.parquet
 
 
 def arrow_schema():
     pa, _ = _require_pyarrow()
-    return pa.schema([pa.field(c.name, getattr(pa, c.type)(), metadata={'unit': c.unit, 'kind': c.kind})
-                      for c in CHANNELS],
-                     metadata={'f1_channel_store_version': str(STORE_VERSION)})
+    return pa.schema(
+        [
+            pa.field(c.name, getattr(pa, c.type)(), metadata={'unit': c.unit, 'kind': c.kind})
+            for c in CHANNELS
+        ],
+        metadata={'f1_channel_store_version': str(STORE_VERSION)},
+    )
 
 
 def _wheels(prefix, values):
-    return {f'{prefix}_{w}': v for w, v in zip(WHEELS, values)}
+    return {f'{prefix}_{w}': v for w, v in zip(WHEELS, values, strict=False)}
 
 
 def _clean(row):
@@ -190,9 +218,9 @@ class ChannelLogger:
         self.out_dir = Path(out_dir)
         self.clock = clock
         self.compression = compression
-        self.on_file = on_file          # called with the path of each finished session file
+        self.on_file = on_file  # called with the path of each finished session file
         self.schema = arrow_schema()
-        self.files = []                 # every session file written (finished or open)
+        self.files = []  # every session file written (finished or open)
         self.rows_written = 0
         self.flashbacks = 0
         self._reset_session(None)
@@ -234,9 +262,13 @@ class ChannelLogger:
     def _finish_session(self):
         self._flush_laps(keep=0)
         if self._writer is not None:
-            meta = dict(self.meta, rows=self._session_rows, laps=self._row_groups,
-                        store_version=STORE_VERSION,
-                        channels={c.name: c.unit for c in CHANNELS})
+            meta = dict(
+                self.meta,
+                rows=self._session_rows,
+                laps=self._row_groups,
+                store_version=STORE_VERSION,
+                channels={c.name: c.unit for c in CHANNELS},
+            )
             self._writer.add_key_value_metadata({'f1_session': json.dumps(meta, sort_keys=True)})
             self._writer.close()
             if self.on_file:
@@ -273,8 +305,11 @@ class ChannelLogger:
         if header.packet_format != 2021 or not 0 <= header.player_car_index < 22:
             return False
         if pid == 3:
-            if bytes(data[24:28]) == FLASHBACK_EVENT and len(data) >= 36 \
-                    and header.session_uid == self.session_uid:
+            if (
+                bytes(data[24:28]) == FLASHBACK_EVENT
+                and len(data) >= 36
+                and header.session_uid == self.session_uid
+            ):
                 self._flashback(*struct.unpack_from('<If', data, 28))
             return False
         if PACKET_SIZES.get(pid) != len(data) or not math.isfinite(header.session_time):
@@ -288,14 +323,22 @@ class ChannelLogger:
         if pid == 0:
             m, ex = parse_player_motion(data, p), parse_player_motion_extra(data)
             self._motion = {
-                'pos_x': m.world_position_x, 'pos_y': m.world_position_y, 'pos_z': m.world_position_z,
-                'g_lat': m.g_force_lateral, 'g_long': m.g_force_longitudinal,
-                'g_vert': m.g_force_vertical, 'yaw': m.yaw, 'pitch': m.pitch, 'roll': m.roll,
-                'yaw_rate': ex.angular_velocity[1], 'front_wheels_angle': ex.front_wheels_angle,
+                'pos_x': m.world_position_x,
+                'pos_y': m.world_position_y,
+                'pos_z': m.world_position_z,
+                'g_lat': m.g_force_lateral,
+                'g_long': m.g_force_longitudinal,
+                'g_vert': m.g_force_vertical,
+                'yaw': m.yaw,
+                'pitch': m.pitch,
+                'roll': m.roll,
+                'yaw_rate': ex.angular_velocity[1],
+                'front_wheels_angle': ex.front_wheels_angle,
                 **_wheels('susp_pos', ex.suspension_position),
                 **_wheels('susp_vel', ex.suspension_velocity),
                 **_wheels('wheel_speed', ex.wheel_speed),
-                **_wheels('wheel_slip', ex.wheel_slip)}
+                **_wheels('wheel_slip', ex.wheel_slip),
+            }
         elif pid == 4:
             people = parse_participants(data)
             if p < len(people):
@@ -303,16 +346,23 @@ class ChannelLogger:
                 self.meta['team'] = TEAMS.get(people[p].team_id, f'Team {people[p].team_id}')
         elif pid == 7:
             s = parse_all_car_status(data)[p]
-            self._status = {'fuel': s.fuel_in_tank, 'fuel_laps': s.fuel_remaining_laps,
-                            'ers_store': s.ers_store_energy, 'ers_mode': s.ers_deploy_mode,
-                            'ers_deployed_lap': s.ers_deployed_this_lap,
-                            'tyre_compound': s.visual_tyre_compound, 'tyre_age': s.tyres_age_laps}
+            self._status = {
+                'fuel': s.fuel_in_tank,
+                'fuel_laps': s.fuel_remaining_laps,
+                'ers_store': s.ers_store_energy,
+                'ers_mode': s.ers_deploy_mode,
+                'ers_deployed_lap': s.ers_deployed_this_lap,
+                'tyre_compound': s.visual_tyre_compound,
+                'tyre_age': s.tyres_age_laps,
+            }
         elif pid == 10:
             d = parse_all_car_damage(data)[p]
-            self._damage = {**_wheels('tyre_wear', d.tyres_wear),
-                            'front_left_wing_damage': d.front_left_wing,
-                            'front_right_wing_damage': d.front_right_wing,
-                            'rear_wing_damage': d.rear_wing}
+            self._damage = {
+                **_wheels('tyre_wear', d.tyres_wear),
+                'front_left_wing_damage': d.front_left_wing,
+                'front_right_wing_damage': d.front_right_wing,
+                'rear_wing_damage': d.rear_wing,
+            }
         elif pid in (2, 6):
             if self.paused:
                 return False
@@ -331,18 +381,26 @@ class ChannelLogger:
             self._finish_session()
             self._reset_session(header.session_uid)
             track = get_track_info(session.track_id) or {}
-            self.meta = {'session_uid': f'{header.session_uid:016x}', 'track_id': session.track_id,
-                         'track': track.get('short_name') or f'Track {session.track_id}',
-                         'track_length_m': session.track_length, 'session_type': session.session_type,
-                         'session': mode_label(session.session_type), 'total_laps': session.total_laps,
-                         'formula': session.formula,
-                         'game_version': f'{header.game_major_version}.{header.game_minor_version:02d}'}
+            self.meta = {
+                'session_uid': f'{header.session_uid:016x}',
+                'track_id': session.track_id,
+                'track': track.get('short_name') or f'Track {session.track_id}',
+                'track_length_m': session.track_length,
+                'session_type': session.session_type,
+                'session': mode_label(session.session_type),
+                'total_laps': session.total_laps,
+                'formula': session.formula,
+                'game_version': f'{header.game_major_version}.{header.game_minor_version:02d}',
+            }
         self.player_index = header.player_car_index
         self.paused = bool(session.game_paused or session.is_spectating)
         if self.paused:
             self._pending.clear()
-        self._session_values = {'track_temp': session.track_temperature,
-                                'air_temp': session.air_temperature, 'weather': session.weather}
+        self._session_values = {
+            'track_temp': session.track_temperature,
+            'air_temp': session.air_temperature,
+            'weather': session.weather,
+        }
 
     def _flashback(self, frame, restored_time):
         if not math.isfinite(restored_time):
@@ -369,22 +427,39 @@ class ChannelLogger:
         tel = parse_player_telemetry(tel_bytes, self.player_index)
         if not (math.isfinite(lap.lap_distance) and math.isfinite(lap.total_distance)):
             return False
-        row = {'session_time': t, 'frame': header.frame_identifier,
-               'lap': lap.current_lap_num, 'lap_distance': lap.lap_distance,
-               'total_distance': lap.total_distance, 'lap_time': lap.current_lap_time_ms / 1000,
-               'last_lap_time': lap.last_lap_time_ms / 1000 if lap.last_lap_time_ms else None,
-               'sector': lap.sector, 'position': lap.car_position, 'pit_status': lap.pit_status,
-               'num_pit_stops': lap.num_pit_stops, 'lap_invalid': lap.current_lap_invalid,
-               'driver_status': lap.driver_status,
-               'speed': tel.speed, 'throttle': tel.throttle, 'brake': tel.brake, 'steer': tel.steer,
-               'clutch': tel.clutch, 'gear': tel.gear, 'rpm': tel.engine_rpm, 'drs': tel.drs,
-               'engine_temp': tel.engine_temperature,
-               **_wheels('brake_temp', tel.brakes_temperature),
-               **_wheels('tyre_surface_temp', tel.tyres_surface_temperature),
-               **_wheels('tyre_inner_temp', tel.tyres_inner_temperature),
-               **_wheels('tyre_pressure', tel.tyres_pressure),
-               **_wheels('surface', tel.surface_type),
-               **self._motion, **self._status, **self._damage, **self._session_values}
+        row = {
+            'session_time': t,
+            'frame': header.frame_identifier,
+            'lap': lap.current_lap_num,
+            'lap_distance': lap.lap_distance,
+            'total_distance': lap.total_distance,
+            'lap_time': lap.current_lap_time_ms / 1000,
+            'last_lap_time': lap.last_lap_time_ms / 1000 if lap.last_lap_time_ms else None,
+            'sector': lap.sector,
+            'position': lap.car_position,
+            'pit_status': lap.pit_status,
+            'num_pit_stops': lap.num_pit_stops,
+            'lap_invalid': lap.current_lap_invalid,
+            'driver_status': lap.driver_status,
+            'speed': tel.speed,
+            'throttle': tel.throttle,
+            'brake': tel.brake,
+            'steer': tel.steer,
+            'clutch': tel.clutch,
+            'gear': tel.gear,
+            'rpm': tel.engine_rpm,
+            'drs': tel.drs,
+            'engine_temp': tel.engine_temperature,
+            **_wheels('brake_temp', tel.brakes_temperature),
+            **_wheels('tyre_surface_temp', tel.tyres_surface_temperature),
+            **_wheels('tyre_inner_temp', tel.tyres_inner_temperature),
+            **_wheels('tyre_pressure', tel.tyres_pressure),
+            **_wheels('surface', tel.surface_type),
+            **self._motion,
+            **self._status,
+            **self._damage,
+            **self._session_values,
+        }
         if self._writer is None:
             self._open(self.clock() if wall_time is None else wall_time)
         self._buffer.append(_clean(row))
@@ -412,6 +487,7 @@ class ChannelLogger:
 def build_from_recording(recording, out_dir, compression='zstd'):
     """Rebuild channel files from a raw UDP recording (.f1rec[.gz]). Returns the file paths."""
     from udp_recording import RecordingReader
+
     with RecordingReader(recording) as reader:
         start = reader.start_unix_ns / 1e9 if getattr(reader, 'start_unix_ns', None) else time.time()
         with ChannelLogger(out_dir, compression=compression) as logger:
@@ -424,6 +500,7 @@ def build_from_recording(recording, out_dir, compression='zstd'):
 # Reading
 # ──────────────────────────────────────────────
 
+
 def find_session_file(path='channels'):
     """Turn what the user typed into one channel file, or raise ValueError saying what is there.
 
@@ -433,23 +510,37 @@ def find_session_file(path='channels'):
     if path.is_dir():
         files = sorted(path.glob('*.parquet'), key=lambda f: f.stat().st_mtime)
         if not files:
-            raise ValueError(f'No .parquet files in {path}. Log a session first with '
-                             f'--log-channels {path}, and stop the engineer with Ctrl+C so the file is saved.')
+            raise ValueError(
+                f'No .parquet files in {path}. Log a session first with '
+                f'--log-channels {path}, and stop the engineer with Ctrl+C so the file is saved.'
+            )
         return files[-1]
     if not path.exists() and path.suffix != '.parquet' and path.with_suffix('.parquet').exists():
         return path.with_suffix('.parquet')
     if not path.exists() and not path.suffix:
-        raise ValueError(f'There is no folder called {path} here, so nothing has been logged to it '
-                         f'yet. Start the engineer with --log-channels {path}, drive, then stop it '
-                         'with Ctrl+C.')
+        raise ValueError(
+            f'There is no folder called {path} here, so nothing has been logged to it '
+            f'yet. Start the engineer with --log-channels {path}, drive, then stop it '
+            'with Ctrl+C.'
+        )
     if not path.exists():
         folder = path.parent if str(path.parent) else Path('.')
-        nearby = sorted(folder.glob('*.parquet'), key=lambda f: f.stat().st_mtime)[-5:] \
-            if folder.is_dir() else []
-        hint = ('Files in that folder: ' + ', '.join(f.name for f in reversed(nearby))
-                + f'. Or give just the folder ({folder}) to use the newest one.') if nearby else \
-            (f'The folder {folder} has no .parquet files.' if folder.is_dir()
-             else f'The folder {folder} does not exist.')
+        nearby = (
+            sorted(folder.glob('*.parquet'), key=lambda f: f.stat().st_mtime)[-5:] if folder.is_dir() else []
+        )
+        hint = (
+            (
+                'Files in that folder: '
+                + ', '.join(f.name for f in reversed(nearby))
+                + f'. Or give just the folder ({folder}) to use the newest one.'
+            )
+            if nearby
+            else (
+                f'The folder {folder} has no .parquet files.'
+                if folder.is_dir()
+                else f'The folder {folder} does not exist.'
+            )
+        )
         raise ValueError(f'No file at {path}. {hint}')
     return path
 
@@ -461,10 +552,12 @@ def _check_finished(path):
         f.seek(max(0, size - 4))
         tail = f.read(4)
     if tail != b'PAR1':
-        raise ValueError(f'{path} was never finished, so it cannot be read. This happens when the '
-                         'engineer is closed with the window X or crashes instead of stopping with '
-                         'Ctrl+C. If you also recorded the session (--record), rebuild it with: '
-                         'python tools/channels.py build <recording>')
+        raise ValueError(
+            f'{path} was never finished, so it cannot be read. This happens when the '
+            'engineer is closed with the window X or crashes instead of stopping with '
+            'Ctrl+C. If you also recorded the session (--record), rebuild it with: '
+            'python tools/channels.py build <recording>'
+        )
 
 
 def read_session(path, columns=None):
@@ -485,8 +578,8 @@ def read_session(path, columns=None):
         names.insert(0, 'session_time')
     table = pf.read(columns=names)
     t = table.column('session_time').to_numpy()
-    suffix_min = np.minimum.accumulate(t[::-1])[::-1]       # min of t[i:]
-    keep = t < np.append(suffix_min[1:], np.inf)             # earlier than every later row
+    suffix_min = np.minimum.accumulate(t[::-1])[::-1]  # min of t[i:]
+    keep = t < np.append(suffix_min[1:], np.inf)  # earlier than every later row
     cols = {}
     for name in names:
         dtype = np.float64 if name in ('session_time', 'total_distance') else np.float32
@@ -511,14 +604,24 @@ def lap_summary(cols):
         nxt = np.flatnonzero(laps == lap + 1)
         if len(nxt) and 'last_lap_time' in cols and np.isfinite(cols['last_lap_time'][nxt[0]]):
             lap_time = float(cols['last_lap_time'][nxt[0]])
-        complete = bool(len(dist) and np.nanmin(dist) < 50 and np.nanmax(dist) > track_end - 50
-                        and len(nxt) > 0)
+        complete = bool(
+            len(dist) and np.nanmin(dist) < 50 and np.nanmax(dist) > track_end - 50 and len(nxt) > 0
+        )
         pitted = bool('pit_status' in cols and np.nanmax(cols['pit_status'][idx]) > 0)
         invalid = bool('lap_invalid' in cols and np.nanmax(cols['lap_invalid'][idx]) > 0)
-        out.append({'lap': int(lap), 'start_time': float(cols['session_time'][idx[0]]),
-                    'end_time': float(cols['session_time'][idx[-1]]), 'samples': int(len(idx)),
-                    'lap_time': lap_time, 'complete': complete, 'invalid': invalid, 'pit': pitted,
-                    'clean': complete and not invalid and not pitted})
+        out.append(
+            {
+                'lap': int(lap),
+                'start_time': float(cols['session_time'][idx[0]]),
+                'end_time': float(cols['session_time'][idx[-1]]),
+                'samples': int(len(idx)),
+                'lap_time': lap_time,
+                'complete': complete,
+                'invalid': invalid,
+                'pit': pitted,
+                'clean': complete and not invalid and not pitted,
+            }
+        )
     return out
 
 

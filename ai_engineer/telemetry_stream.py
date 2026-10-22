@@ -4,17 +4,31 @@ import math
 import struct
 import time
 
-from packets import (PacketHeader, parse_session_data, parse_all_lap_data,
-                     parse_player_telemetry, parse_all_car_damage,
-                     parse_player_motion, parse_all_positions, parse_speed_trap_event, parse_all_car_status,
-                     parse_race_event, race_event_body_size, parse_participants,
-                     parse_car_setups, parse_final_classification, parse_session_history,
-                     parse_buttons_event)
+from log_setup import get_logger
+from packets import (
+    PacketHeader,
+    parse_all_car_damage,
+    parse_all_car_status,
+    parse_all_lap_data,
+    parse_all_positions,
+    parse_buttons_event,
+    parse_car_setups,
+    parse_final_classification,
+    parse_participants,
+    parse_player_motion,
+    parse_player_telemetry,
+    parse_race_event,
+    parse_session_data,
+    parse_session_history,
+    parse_speed_trap_event,
+    race_event_body_size,
+)
 from session_history import valid_history
-from web_hud import update_web_state, TELEMETRY_TIMEOUT
+from web_hud import TELEMETRY_TIMEOUT, update_web_state
 
-PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 4: 1257, 5: 1102, 6: 1347, 7: 1058, 8: 839, 10: 882,
-                11: 1155}
+log = get_logger('stream')
+
+PACKET_SIZES = {0: 1464, 1: 625, 2: 970, 4: 1257, 5: 1102, 6: 1347, 7: 1058, 8: 839, 10: 882, 11: 1155}
 # Packet ID 3 (Event) is a fixed header plus a variable-size, event-code-specific body, so
 # unlike every other packet type it does not have one single valid length.
 EVENT_PACKET_SIZES = {b'FLBK': 36, b'SPTP': 40}
@@ -24,7 +38,7 @@ RACE_EVENT_PACKET_SIZES = (36, 40)
 
 
 def newer_frame(frame: int, previous: int) -> bool:
-    return 0 < (frame - previous) % (2 ** 32) < 2 ** 31
+    return 0 < (frame - previous) % (2**32) < 2**31
 
 
 class TelemetryStream:
@@ -45,7 +59,7 @@ class TelemetryStream:
         self.last_flashback = None
         self.rewind_anchor = None
         self.last_session_time = None
-        self.on_buttons = None          # callable(mask) for the game's Buttons event (push-to-talk)
+        self.on_buttons = None  # callable(mask) for the game's Buttons event (push-to-talk)
 
     def check_timeout(self, now=None):
         now = time.monotonic() if now is None else now
@@ -79,15 +93,21 @@ class TelemetryStream:
                     expected_size = len(data) if len(data) in RACE_EVENT_PACKET_SIZES else -1
             else:
                 expected_size = PACKET_SIZES[packet_id]
-            if (header.packet_format != 2021 or header.packet_version != 1
-                    or len(data) != expected_size
-                    or not 0 <= header.player_car_index < 22
-                    or not math.isfinite(header.session_time)):
+            if (
+                header.packet_format != 2021
+                or header.packet_version != 1
+                or len(data) != expected_size
+                or not 0 <= header.player_car_index < 22
+                or not math.isfinite(header.session_time)
+            ):
                 raise ValueError('Wrong packet format, version, length, timestamp, or player index')
             if packet_id == 0:
                 payload = parse_player_motion(data, header.player_car_index)
                 all_positions = parse_all_positions(data)
-                if not all(math.isfinite(x) for x in (payload.world_position_x, payload.world_position_z, payload.g_force_lateral)):
+                if not all(
+                    math.isfinite(x)
+                    for x in (payload.world_position_x, payload.world_position_z, payload.g_force_lateral)
+                ):
                     raise ValueError('Invalid car motion')
             elif packet_id == 1:
                 payload = parse_session_data(data)
@@ -96,8 +116,10 @@ class TelemetryStream:
             elif packet_id == 2:
                 all_laps = parse_all_lap_data(data)
                 payload = all_laps[header.player_car_index]
-                if not all(math.isfinite(value) for value in
-                           (payload.lap_distance, payload.total_distance, payload.safety_car_delta)):
+                if not all(
+                    math.isfinite(value)
+                    for value in (payload.lap_distance, payload.total_distance, payload.safety_car_delta)
+                ):
                     raise ValueError('Non-finite lap data')
                 if payload.sector not in (0, 1, 2) or payload.pit_status not in (0, 1, 2):
                     raise ValueError('Invalid lap state')
@@ -109,13 +131,16 @@ class TelemetryStream:
                     if self.on_buttons is not None:
                         try:
                             self.on_buttons(parse_buttons_event(data))
-                        except Exception as error:   # never let the radio break telemetry
-                            print(f'[PTT] Game button handler failed: {error}')
+                        except Exception as error:  # never let the radio break telemetry
+                            log.warning(f'Game button handler failed: {error}')
                     return False
                 if data[24:28] == b'SPTP':
                     speed_trap = parse_speed_trap_event(data)
-                    if (speed_trap is None or not math.isfinite(speed_trap.speed_kph)
-                            or speed_trap.vehicle_index != header.player_car_index):
+                    if (
+                        speed_trap is None
+                        or not math.isfinite(speed_trap.speed_kph)
+                        or speed_trap.vehicle_index != header.player_car_index
+                    ):
                         return False
                     self.analysis.update_speed_trap(speed_trap.speed_kph)
                     return False
@@ -133,8 +158,18 @@ class TelemetryStream:
                 payload = parse_participants(data)
             elif packet_id == 5:
                 payload = parse_car_setups(data)
-                if not all(math.isfinite(x) for s in payload for x in
-                           (s.front_camber, s.rear_camber, s.front_toe, s.rear_toe, s.fuel_load, *s.tyre_pressures)):
+                if not all(
+                    math.isfinite(x)
+                    for s in payload
+                    for x in (
+                        s.front_camber,
+                        s.rear_camber,
+                        s.front_toe,
+                        s.rear_toe,
+                        s.fuel_load,
+                        *s.tyre_pressures,
+                    )
+                ):
                     raise ValueError('Invalid car setups')
             elif packet_id == 8:
                 if data[24] > 22:
@@ -149,8 +184,10 @@ class TelemetryStream:
             elif packet_id == 7:
                 all_status = parse_all_car_status(data)
                 payload = all_status[header.player_car_index]
-                if not all(math.isfinite(x) and x >= 0 for x in
-                           (payload.fuel_in_tank, payload.fuel_capacity, payload.fuel_remaining_laps)):
+                if not all(
+                    math.isfinite(x) and x >= 0
+                    for x in (payload.fuel_in_tank, payload.fuel_capacity, payload.fuel_remaining_laps)
+                ):
                     raise ValueError('Invalid car status')
             elif packet_id == 10:
                 all_damage = parse_all_car_damage(data)
@@ -160,10 +197,14 @@ class TelemetryStream:
             else:
                 payload = parse_player_telemetry(data, header.player_car_index)
                 controls = (payload.throttle, payload.brake)
-                if (not all(math.isfinite(x) and 0 <= x <= 1 for x in controls)
-                        or not math.isfinite(payload.steer) or not -1 <= payload.steer <= 1
-                        or not all(math.isfinite(x) and x >= 0 for x in payload.tyres_pressure)
-                        or not -1 <= payload.gear <= 8 or payload.speed > 600):
+                if (
+                    not all(math.isfinite(x) and 0 <= x <= 1 for x in controls)
+                    or not math.isfinite(payload.steer)
+                    or not -1 <= payload.steer <= 1
+                    or not all(math.isfinite(x) and x >= 0 for x in payload.tyres_pressure)
+                    or not -1 <= payload.gear <= 8
+                    or payload.speed > 600
+                ):
                     raise ValueError('Invalid car telemetry')
         except (ValueError, struct.error) as error:
             self.last_error = str(error)
@@ -185,8 +226,12 @@ class TelemetryStream:
             signature = (header.session_uid, header.frame_identifier, payload)
             if signature != self.last_flashback:
                 self.last_flashback = signature
-                self.rewind_anchor = (payload[0], payload[1], now,
-                                      max(header.session_time, self.last_session_time or header.session_time))
+                self.rewind_anchor = (
+                    payload[0],
+                    payload[1],
+                    now,
+                    max(header.session_time, self.last_session_time or header.session_time),
+                )
                 self.last_frames.clear()
                 self.pending.clear()
                 self.last_processed_frame = self.last_pair_time = None
@@ -207,14 +252,21 @@ class TelemetryStream:
             restored_frame, restored_time, received_at, _ = self.rewind_anchor
             # Old-timeline datagrams may arrive after FLBK. They must not advance
             # frame filters before the restored simulation can reach their time.
-            if ((header.frame_identifier != restored_frame and
-                 not newer_frame(header.frame_identifier, restored_frame))
-                    or header.session_time < restored_time
-                    or header.session_time > restored_time + max(0, now - received_at) + 0.25):
+            if (
+                (
+                    header.frame_identifier != restored_frame
+                    and not newer_frame(header.frame_identifier, restored_frame)
+                )
+                or header.session_time < restored_time
+                or header.session_time > restored_time + max(0, now - received_at) + 0.25
+            ):
                 return False
 
-        if packet_id != 1 and (header.player_car_index != self.player_index
-                or self.latest_session.game_paused or self.latest_session.is_spectating):
+        if packet_id != 1 and (
+            header.player_car_index != self.player_index
+            or self.latest_session.game_paused
+            or self.latest_session.is_spectating
+        ):
             return False
         if race_event is not None:
             # Several events can share one frame (two penalties at once), so no frame filter.

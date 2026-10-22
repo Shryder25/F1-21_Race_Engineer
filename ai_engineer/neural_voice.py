@@ -22,15 +22,20 @@ from pathlib import Path
 
 import numpy as np
 
+from log_setup import get_logger
 from radio_fx import radio_filter
 
+log = get_logger('voice')
+
 DEFAULT_KOKORO_DIR = Path(__file__).resolve().parent.parent / 'models' / 'kokoro'
-DEFAULT_KOKORO_VOICE = 'bm_george'      # British male; bm_lewis / bm_daniel / bm_fable also work
+DEFAULT_KOKORO_VOICE = 'bm_george'  # British male; bm_lewis / bm_daniel / bm_fable also work
 KOKORO_MODEL_FILE = 'kokoro-v1.0.onnx'
 KOKORO_VOICES_FILE = 'voices-v1.0.bin'
 KOKORO_DOWNLOAD_URL = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/'
-SETUP_HINT = ('For the natural engineer voice run: pip install kokoro-onnx sounddevice '
-              '(model files download automatically on the next start).')
+SETUP_HINT = (
+    'For the natural engineer voice run: pip install kokoro-onnx sounddevice '
+    '(model files download automatically on the next start).'
+)
 
 
 def missing_packages() -> list[str]:
@@ -41,13 +46,17 @@ def missing_packages() -> list[str]:
             __import__(module)
         except ImportError:
             missing.append(package)
-        except Exception as error:     # installed but can't load, e.g. no PortAudio audio library
+        except Exception as error:  # installed but can't load, e.g. no PortAudio audio library
             missing.append(f'{package} (installed but failed to load: {error})')
     return missing
 
 
-def download_model_files(model_dir: Path = DEFAULT_KOKORO_DIR, on_status=print,
-                         base_url: str = KOKORO_DOWNLOAD_URL, opener=urllib.request.urlopen) -> bool:
+def download_model_files(
+    model_dir: Path = DEFAULT_KOKORO_DIR,
+    on_status=print,
+    base_url: str = KOKORO_DOWNLOAD_URL,
+    opener=urllib.request.urlopen,
+) -> bool:
     """Fetch any missing Kokoro model file. Partial downloads never count as present."""
     model_dir = Path(model_dir)
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +86,7 @@ def download_model_files(model_dir: Path = DEFAULT_KOKORO_DIR, on_status=print,
             return False
     return True
 
+
 # Fixed calls worth having ready before they're needed: neural synthesis takes about a
 # second on CPU, and these are the ones where a delay matters most.
 PREWARM_CALLS = (
@@ -94,6 +104,7 @@ class SoundDevicePlayer:
 
     def __init__(self):
         import sounddevice
+
         self._sd = sounddevice
 
     def play(self, samples, sample_rate):
@@ -113,40 +124,50 @@ def default_tts_threads() -> int:
     return max(1, min(4, (os.cpu_count() or 4) // 4))
 
 
-def kokoro_synthesizer(model_dir: Path = DEFAULT_KOKORO_DIR, voice: str = DEFAULT_KOKORO_VOICE,
-                       speed: float = 1.1, lang: str = 'en-gb', threads: int | None = None):
+def kokoro_synthesizer(
+    model_dir: Path = DEFAULT_KOKORO_DIR,
+    voice: str = DEFAULT_KOKORO_VOICE,
+    speed: float = 1.1,
+    lang: str = 'en-gb',
+    threads: int | None = None,
+):
     """Return ``text -> (samples, sample_rate)`` backed by Kokoro. Raises if unavailable."""
     from kokoro_onnx import Kokoro
+
     model_dir = Path(model_dir)
     model, voices = model_dir / KOKORO_MODEL_FILE, model_dir / KOKORO_VOICES_FILE
     if not model.exists() or not voices.exists():
-        raise FileNotFoundError(f'Kokoro model files not found in {model_dir} '
-                                f'(need {KOKORO_MODEL_FILE} and {KOKORO_VOICES_FILE})')
+        raise FileNotFoundError(
+            f'Kokoro model files not found in {model_dir} (need {KOKORO_MODEL_FILE} and {KOKORO_VOICES_FILE})'
+        )
     threads = threads or default_tts_threads()
     kokoro = None
     if hasattr(Kokoro, 'from_session'):
         try:
             import onnxruntime
+
             options = onnxruntime.SessionOptions()
             options.intra_op_num_threads = threads
             options.inter_op_num_threads = 1
-            session = onnxruntime.InferenceSession(str(model), sess_options=options,
-                                                   providers=['CPUExecutionProvider'])
+            session = onnxruntime.InferenceSession(
+                str(model), sess_options=options, providers=['CPUExecutionProvider']
+            )
             kokoro = Kokoro.from_session(session, str(voices))
-        except Exception as exc:          # older kokoro-onnx: fall back to its own defaults
-            print(f'[NeuralVoice] Could not limit Kokoro to {threads} threads ({exc}).')
+        except Exception as exc:  # older kokoro-onnx: fall back to its own defaults
+            log.warning(f'Could not limit Kokoro to {threads} threads ({exc}).')
     if kokoro is None:
         kokoro = Kokoro(str(model), str(voices))
 
     def synthesize(text):
         return kokoro.create(text, voice=voice, speed=speed, lang=lang)
+
     return synthesize
 
 
 class NeuralSpeechDriver:
     """pyttsx3-shaped driver: say/iterate/isBusy/stop around a synthesize function."""
 
-    CACHE_SIZE = 64     # common calls ("We are checking.", "Box, box...") replay instantly
+    CACHE_SIZE = 64  # common calls ("We are checking.", "Box, box...") replay instantly
 
     def __init__(self, synthesize, player=None, *, radio_effect: bool = True):
         self._synthesize = synthesize
@@ -154,7 +175,7 @@ class NeuralSpeechDriver:
         self._radio_effect = radio_effect
         self._callbacks = {}
         self._lock = threading.Lock()
-        self._current = None          # utterance name while synthesizing or playing
+        self._current = None  # utterance name while synthesizing or playing
         self._cache: OrderedDict[str, tuple[np.ndarray, int]] = OrderedDict()
 
     # pyttsx3 surface used by VoiceEngine ------------------------------------
@@ -184,8 +205,9 @@ class NeuralSpeechDriver:
         token = object()
         with self._lock:
             self._current = (token, name)
-        threading.Thread(target=self._speak, args=(token, text, name),
-                         name='NeuralSpeech', daemon=True).start()
+        threading.Thread(
+            target=self._speak, args=(token, text, name), name='NeuralSpeech', daemon=True
+        ).start()
 
     def stop(self):
         with self._lock:
@@ -195,17 +217,19 @@ class NeuralSpeechDriver:
             try:
                 self._player.stop()
             except Exception as exc:
-                print(f'[NeuralVoice] Could not stop playback: {exc}')
+                log.warning(f'Could not stop playback: {exc}')
 
     def prewarm(self, texts):
         """Synthesize fixed calls in the background so they play with no delay later."""
+
         def run():
             for text in texts:
                 try:
                     self._audio_for(text)
                 except Exception as exc:
-                    print(f'[NeuralVoice] Prewarm failed for "{text}": {exc}')
+                    log.warning(f'Prewarm failed for "{text}": {exc}')
                     return
+
         threading.Thread(target=run, name='NeuralPrewarm', daemon=True).start()
 
     # internals --------------------------------------------------------------
@@ -233,42 +257,51 @@ class NeuralSpeechDriver:
         try:
             samples, sample_rate = self._audio_for(text)
             if not self._is_current(token):
-                return          # interrupted while synthesizing
+                return  # interrupted while synthesizing
             callback = self._callbacks.get('started-utterance')
             if callback:
                 callback(name)
             self._player.play(samples, sample_rate)
         except Exception as exc:
-            print(f'[NeuralVoice] Could not speak "{text}": {exc}')
+            log.warning(f'Could not speak "{text}": {exc}')
         finally:
             with self._lock:
                 if self._current is not None and self._current[0] is token:
                     self._current = None
 
 
-def build_kokoro_driver_factory(model_dir=DEFAULT_KOKORO_DIR, voice=DEFAULT_KOKORO_VOICE,
-                                speed=1.1, radio_effect=True, download=True, threads=None):
+def build_kokoro_driver_factory(
+    model_dir=DEFAULT_KOKORO_DIR,
+    voice=DEFAULT_KOKORO_VOICE,
+    speed=1.1,
+    radio_effect=True,
+    download=True,
+    threads=None,
+):
     """Check Kokoro can load now, and return a factory for VoiceEngine; None if it can't.
 
     With ``download`` the model files are fetched on first use when the packages are there.
     """
     missing = missing_packages()
     if missing:
-        print(f'[NeuralVoice] Kokoro voice not installed (missing: {", ".join(missing)}). '
-              f'Using the system voice. {SETUP_HINT}')
+        log.warning(
+            f'Kokoro voice not installed (missing: {", ".join(missing)}). '
+            f'Using the system voice. {SETUP_HINT}'
+        )
         return None
     if download and not download_model_files(model_dir):
-        print(f'[NeuralVoice] Using the system voice until the Kokoro files are in {model_dir}.')
+        log.info(f'Using the system voice until the Kokoro files are in {model_dir}.')
         return None
     try:
         synthesize = kokoro_synthesizer(model_dir, voice, speed, threads=threads)
         player = SoundDevicePlayer()
     except Exception as exc:
-        print(f'[NeuralVoice] Kokoro unavailable ({exc}). Using the system voice instead.')
+        log.warning(f'Kokoro unavailable ({exc}). Using the system voice instead.')
         return None
 
     def factory():
         driver = NeuralSpeechDriver(synthesize, player, radio_effect=radio_effect)
         driver.prewarm(PREWARM_CALLS)
         return driver
+
     return factory

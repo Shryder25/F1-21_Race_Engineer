@@ -16,13 +16,18 @@ from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 
-from analysis import AnalysisEngine, TYRE_TEMP_CRITICAL
-from packets import (parse_player_lap_data, parse_player_telemetry, parse_player_motion,
-                     parse_speed_trap_event, SessionData, CarStatusData)
-from simulate_telemetry import (build_lap_packet, build_telemetry_packet, build_header,
-                                build_session_packet)
-from test_analysis import SilentVoice
 import web_hud
+from analysis import TYRE_TEMP_CRITICAL, AnalysisEngine
+from packets import (
+    CarStatusData,
+    SessionData,
+    parse_player_lap_data,
+    parse_player_motion,
+    parse_player_telemetry,
+    parse_speed_trap_event,
+)
+from simulate_telemetry import build_header, build_lap_packet, build_telemetry_packet
+from test_analysis import SilentVoice
 
 
 def build_motion_packet(session_time, frame_id, x, z, g_lat=0.0):
@@ -31,10 +36,24 @@ def build_motion_packet(session_time, frame_id, x, z, g_lat=0.0):
     # CAR_MOTION_FORMAT: 6f (pos+vel) + 6h (dirs) + 3f (g-forces) + 3f (yaw/pitch/roll) = 60 bytes
     player_block = struct.pack(
         '<ffffff hhh hhh fff fff'.replace(' ', ''),
-        x, 0.0, z, 0.0, 0.0, 0.0,
-        0, 0, 0, 0, 0, 0,
-        g_lat, 0.0, 0.0,
-        0.0, 0.0, 0.0,
+        x,
+        0.0,
+        z,
+        0.0,
+        0.0,
+        0.0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        g_lat,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
     )
     cars_data = player_block + bytes(60) * 21
     extra = bytes(1464 - 24 - 60 * 22)
@@ -74,17 +93,19 @@ class TrackMapContinuousRecordingTests(unittest.TestCase):
     def feed_motion_and_telemetry(self, distance, x, z):
         motion = parse_player_motion(build_motion_packet(1.0, 1, x, z), 0)
         self.engine.update_motion(motion)
-        self.engine.update_telemetry(self.telemetry, replace(
-            self.lap, lap_distance=distance, current_lap_time_ms=100 + distance * 50))
+        self.engine.update_telemetry(
+            self.telemetry, replace(self.lap, lap_distance=distance, current_lap_time_ms=100 + distance * 50)
+        )
 
     def test_map_has_points_before_any_lap_completes(self):
         # Lap 1 is still in progress (current_lap_num stays 1 throughout) — no lap has
         # completed yet, so only the old "best lap" trail would be empty.
-        for i, distance in enumerate(range(0, 200, 10)):
+        for distance in range(0, 200, 10):
             self.feed_motion_and_telemetry(distance, x=float(distance), z=float(distance) * 2)
         state = web_hud.get_web_state(now=0)
-        self.assertGreater(len(state['track_map']), 0,
-                           'track map should have points from lap 1, before any lap completes')
+        self.assertGreater(
+            len(state['track_map']), 0, 'track map should have points from lap 1, before any lap completes'
+        )
 
     def test_reset_map_clears_both_in_progress_and_best_trails(self):
         for distance in range(0, 200, 10):
@@ -137,8 +158,7 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
         self.lap = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 3), 0)
 
     def make_telemetry(self, tyre_temp, speed=150):
-        return parse_player_telemetry(
-            build_telemetry_packet(1, 1, speed, 1, 0, 4, tyre_temp), 0)
+        return parse_player_telemetry(build_telemetry_packet(1, 1, speed, 1, 0, 4, tyre_temp), 0)
 
     def test_single_frame_noisy_spike_does_not_alert(self):
         # First sample establishes the baseline rate (no previous sample yet).
@@ -147,7 +167,11 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
         # simulating sensor noise rather than genuine sustained overheating.
         self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 5), self.lap)
         self.engine.analyze_tyres(self.make_telemetry(95), self.lap)
-        critical_alerts = [m for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature')]
+        critical_alerts = [
+            m
+            for m, p, kw in self.engine.voice.messages
+            if str(kw.get('key', '')).endswith('tyre_temperature')
+        ]
         # A single-sample spike without a sustained rise should not be enough on its own
         # given how little real time elapses between calls in a direct unit-test call
         # pattern (dt is effectively 0 between back-to-back calls => huge, instant
@@ -157,6 +181,7 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
 
     def test_critical_alert_respects_cooldown_between_repeats(self):
         import time as time_module
+
         real_time = time_module.time
         clock = {'t': 1000.0}
         time_module.time = lambda: clock['t']
@@ -165,14 +190,22 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             for temp in (100, 105, 110, 115, TYRE_TEMP_CRITICAL + 3):
                 self.engine.analyze_tyres(self.make_telemetry(temp), self.lap)
                 clock['t'] += 1.0
-            first_count = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
+            first_count = sum(
+                1
+                for m, p, kw in self.engine.voice.messages
+                if str(kw.get('key', '')).endswith('tyre_temperature')
+            )
             self.assertGreaterEqual(first_count, 1, 'a genuinely rising critical temperature should alert')
 
             # Immediately after, still critical and still rising slightly -- within the
             # cooldown window, so it must not alert again.
             self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 4), self.lap)
             clock['t'] += 1.0
-            second_count = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
+            second_count = sum(
+                1
+                for m, p, kw in self.engine.voice.messages
+                if str(kw.get('key', '')).endswith('tyre_temperature')
+            )
             self.assertEqual(second_count, first_count, 'critical alert must respect its cooldown')
 
             # After the cooldown has elapsed, cool off, then have the tyre spike fast and
@@ -184,7 +217,11 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 10), self.lap)
             clock['t'] += 0.6
             self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 12), self.lap)
-            same_lap = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
+            same_lap = sum(
+                1
+                for m, p, kw in self.engine.voice.messages
+                if str(kw.get('key', '')).endswith('tyre_temperature')
+            )
             self.assertEqual(same_lap, second_count, 'at most one critical call per lap')
 
             # A new lap: a fresh overheat may be called again.
@@ -195,13 +232,20 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 10), self.lap)
             clock['t'] += 0.6
             self.engine.analyze_tyres(self.make_telemetry(TYRE_TEMP_CRITICAL + 12), self.lap)
-            third_count = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
-            self.assertGreater(third_count, second_count, 'a new critical event after cooldown should alert again')
+            third_count = sum(
+                1
+                for m, p, kw in self.engine.voice.messages
+                if str(kw.get('key', '')).endswith('tyre_temperature')
+            )
+            self.assertGreater(
+                third_count, second_count, 'a new critical event after cooldown should alert again'
+            )
         finally:
             time_module.time = real_time
 
     def test_slow_cooldown_from_critical_back_to_normal_does_not_spuriously_alert_repeatedly(self):
         import time as time_module
+
         real_time = time_module.time
         clock = {'t': 2000.0}
         time_module.time = lambda: clock['t']
@@ -209,7 +253,11 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             for temp in (100, 108, 116, TYRE_TEMP_CRITICAL + 2):
                 self.engine.analyze_tyres(self.make_telemetry(temp), self.lap)
                 clock['t'] += 1.0
-            alerts_after_climb = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
+            alerts_after_climb = sum(
+                1
+                for m, p, kw in self.engine.voice.messages
+                if str(kw.get('key', '')).endswith('tyre_temperature')
+            )
             self.assertGreaterEqual(alerts_after_climb, 1)
 
             # Temperature falls slowly back toward normal: rate of change goes negative,
@@ -218,7 +266,11 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
             for temp in (TYRE_TEMP_CRITICAL + 1, TYRE_TEMP_CRITICAL - 1, 108, 100):
                 self.engine.analyze_tyres(self.make_telemetry(temp), self.lap)
                 clock['t'] += 1.0
-            alerts_after_cooldown = sum(1 for m, p, kw in self.engine.voice.messages if str(kw.get('key', '')).endswith('tyre_temperature'))
+            alerts_after_cooldown = sum(
+                1
+                for m, p, kw in self.engine.voice.messages
+                if str(kw.get('key', '')).endswith('tyre_temperature')
+            )
             self.assertEqual(alerts_after_cooldown, alerts_after_climb)
         finally:
             time_module.time = real_time
@@ -232,11 +284,20 @@ class RaceReportTests(unittest.TestCase):
         self.engine.update_session(SessionData(0, 30, 20, 20, 1000, 10, 11, 0))
         self.telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 100, 1, 0, 4, 95), 0)
         self.lap = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 3), 0)
-        self.engine.update_car_status(CarStatusData(
-            fuel_in_tank=50.0, fuel_capacity=100.0, fuel_remaining_laps=20.0,
-            actual_tyre_compound=16, visual_tyre_compound=16, tyres_age_laps=2,
-            fia_flags=0, ers_store_energy=2000000.0, ers_deploy_mode=1,
-            ers_deployed_this_lap=0.0))
+        self.engine.update_car_status(
+            CarStatusData(
+                fuel_in_tank=50.0,
+                fuel_capacity=100.0,
+                fuel_remaining_laps=20.0,
+                actual_tyre_compound=16,
+                visual_tyre_compound=16,
+                tyres_age_laps=2,
+                fia_flags=0,
+                ers_store_energy=2000000.0,
+                ers_deploy_mode=1,
+                ers_deployed_this_lap=0.0,
+            )
+        )
 
     def drive_and_finish_lap(self, lap_num_after, speed_trap_events_at=None):
         """Drive one lap, firing update_speed_trap(...) mid-lap (matching how the real
@@ -244,18 +305,32 @@ class RaceReportTests(unittest.TestCase):
         speed_trap_events_at = speed_trap_events_at or {}
         current_lap_num = lap_num_after - 1  # the lap in progress, before it completes
         for distance in range(0, 1000, 50):
-            self.engine.update_telemetry(self.telemetry, replace(
-                self.lap, lap_distance=distance, current_lap_time_ms=100 + distance * 50,
-                current_lap_num=current_lap_num,
-                sector=0 if distance < 300 else 1 if distance < 700 else 2,
-                sector1_time_ms=15000 if distance >= 300 else 0,
-                sector2_time_ms=15000 if distance >= 700 else 0))
+            self.engine.update_telemetry(
+                self.telemetry,
+                replace(
+                    self.lap,
+                    lap_distance=distance,
+                    current_lap_time_ms=100 + distance * 50,
+                    current_lap_num=current_lap_num,
+                    sector=0 if distance < 300 else 1 if distance < 700 else 2,
+                    sector1_time_ms=15000 if distance >= 300 else 0,
+                    sector2_time_ms=15000 if distance >= 700 else 0,
+                ),
+            )
             if distance in speed_trap_events_at:
                 self.engine.update_speed_trap(speed_trap_events_at[distance])
-        self.engine.update_telemetry(self.telemetry, replace(
-            self.lap, lap_distance=10, current_lap_time_ms=500,
-            current_lap_num=lap_num_after, last_lap_time_ms=45000,
-            sector1_time_ms=15000, sector2_time_ms=15000))
+        self.engine.update_telemetry(
+            self.telemetry,
+            replace(
+                self.lap,
+                lap_distance=10,
+                current_lap_time_ms=500,
+                current_lap_num=lap_num_after,
+                last_lap_time_ms=45000,
+                sector1_time_ms=15000,
+                sector2_time_ms=15000,
+            ),
+        )
 
     def test_speed_trap_event_is_attributed_to_the_lap_it_happened_on(self):
         self.drive_and_finish_lap(lap_num_after=2, speed_trap_events_at={500: 298.4})
@@ -264,8 +339,9 @@ class RaceReportTests(unittest.TestCase):
         self.assertAlmostEqual(report[0]['speed_trap_kph'], 298.4, places=1)
 
     def test_fastest_speed_trap_of_the_lap_is_kept(self):
-        self.drive_and_finish_lap(lap_num_after=2, speed_trap_events_at={
-            100: 280.0, 500: 305.5, 900: 290.0})  # 290.0 is slower -- must not overwrite 305.5
+        self.drive_and_finish_lap(
+            lap_num_after=2, speed_trap_events_at={100: 280.0, 500: 305.5, 900: 290.0}
+        )  # 290.0 is slower -- must not overwrite 305.5
         report = self.engine.race_report()
         self.assertAlmostEqual(report[0]['speed_trap_kph'], 305.5, places=1)
 
@@ -303,19 +379,29 @@ class HistorySpeedTrapColumnTests(unittest.TestCase):
     def test_record_and_read_back_speed_trap(self):
         import tempfile
         from pathlib import Path
+
         from history import TelemetryHistory
 
         with tempfile.TemporaryDirectory() as tmp:
             history = TelemetryHistory(Path(tmp) / 'telemetry.sqlite3')
             session = SessionData(0, 30, 20, 20, 1000, 10, 11, 0)
             capture_id = history.start_session(session, 999)
-            history.record_lap_stats(capture_id, {
-                'lap_num': 1, 'lap_time_ms': 45000, 'eligible': True,
-                'compound': 16, 'tyre_age_laps': 2, 'wear': (1.0, 1.0, 1.0, 1.0),
-                'fuel_start': 50.0, 'fuel_end': 48.5,
-                'sectors': {1: 15000, 2: 15000, 3: 15000}, 'sector_deltas': {},
-                'speed_trap_kph': 301.2,
-            })
+            history.record_lap_stats(
+                capture_id,
+                {
+                    'lap_num': 1,
+                    'lap_time_ms': 45000,
+                    'eligible': True,
+                    'compound': 16,
+                    'tyre_age_laps': 2,
+                    'wear': (1.0, 1.0, 1.0, 1.0),
+                    'fuel_start': 50.0,
+                    'fuel_end': 48.5,
+                    'sectors': {1: 15000, 2: 15000, 3: 15000},
+                    'sector_deltas': {},
+                    'speed_trap_kph': 301.2,
+                },
+            )
             report = history.race_report(capture_id)
             self.assertEqual(len(report), 1)
             self.assertAlmostEqual(report[0]['speed_trap_kph'], 301.2, places=1)
@@ -331,6 +417,7 @@ class TyreLapSummaryTests(unittest.TestCase):
 
     def setUp(self):
         import time as time_module
+
         self.time_module = time_module
         self.real_time = time_module.time
         self.clock = {'t': 5000.0}
@@ -349,20 +436,25 @@ class TyreLapSummaryTests(unittest.TestCase):
             self.clock['t'] += 0.1
 
     def tyre_calls(self):
-        return [m for m, p, kw in self.engine.voice.messages
-                if 'tyre' in str(kw.get('key', '')) or 'hot' in m or 'cold' in m]
+        return [
+            m
+            for m, p, kw in self.engine.voice.messages
+            if 'tyre' in str(kw.get('key', '')) or 'hot' in m or 'cold' in m
+        ]
 
     def test_hot_tyres_are_silent_mid_lap_and_summarised_at_lap_end(self):
-        self.drive(108, 60)                 # a whole minute hot: old code called every 25 s
+        self.drive(108, 60)  # a whole minute hot: old code called every 25 s
         self.assertEqual(self.tyre_calls(), [])
         self.engine._report_tyre_lap()
-        self.assertEqual(self.tyre_calls(), ['All four tyres ran hot that lap, peak one sixteen.'])  # fronts run 8 hotter
+        self.assertEqual(
+            self.tyre_calls(), ['All four tyres ran hot that lap, peak one sixteen.']
+        )  # fronts run 8 hotter
 
     def test_unchanged_issue_repeats_only_every_few_laps(self):
         for _ in range(6):
             self.drive(108, 10)
             self.engine._report_tyre_lap()
-        self.assertEqual(len(self.tyre_calls()), 2)     # lap 1 and lap 4
+        self.assertEqual(len(self.tyre_calls()), 2)  # lap 1 and lap 4
 
     def test_short_spell_out_of_window_is_not_mentioned(self):
         self.drive(108, 2)
@@ -373,7 +465,10 @@ class TyreLapSummaryTests(unittest.TestCase):
     def test_critical_call_is_short(self):
         for temp in range(100, 125, 2):
             self.drive(temp, 0.3)
-        calls = [m for m, p, kw in self.engine.voice.messages
-                 if str(kw.get('key', '')).endswith('tyre_temperature')]
+        calls = [
+            m
+            for m, p, kw in self.engine.voice.messages
+            if str(kw.get('key', '')).endswith('tyre_temperature')
+        ]
         self.assertEqual(calls, ['Fronts overheating, cool them.'])
         self.assertLessEqual(len(calls[0].split()), 6)

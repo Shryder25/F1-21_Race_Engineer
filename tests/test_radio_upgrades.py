@@ -45,6 +45,7 @@ def wait_for(predicate, timeout=3):
 # 1. Push-to-talk from the game's Buttons event
 # ──────────────────────────────────────────────
 
+
 class GameButtonParsingTests(unittest.TestCase):
     def test_buttons_event_is_parsed(self):
         self.assertEqual(parse_buttons_event(buttons_packet(0x0400)), 0x0400)
@@ -66,7 +67,7 @@ class GameButtonParsingTests(unittest.TestCase):
         stream = TelemetryStream(SimpleNamespace())
         stream.on_buttons = seen.append
         self.assertFalse(stream.handle(buttons_packet(0x0400)))
-        self.assertFalse(stream.handle(buttons_packet(0, size=40)))   # the other patch's padding
+        self.assertFalse(stream.handle(buttons_packet(0, size=40)))  # the other patch's padding
         self.assertEqual(seen, [0x0400, 0])
 
     def test_stream_ignores_buttons_without_a_handler_and_survives_a_bad_one(self):
@@ -75,20 +76,24 @@ class GameButtonParsingTests(unittest.TestCase):
 
         def boom(_mask):
             raise RuntimeError('broken')
+
         stream.on_buttons = boom
         self.assertFalse(stream.handle(buttons_packet(1)))
 
     def test_finder_picks_a_new_press_and_ignores_buttons_already_held(self):
-        feed = iter([b'not buttons', None, buttons_packet(0x0001), buttons_packet(0x0001),
-                     buttons_packet(0x0401)])
-        found = game_buttons.find_game_button(lambda: next(feed, None), parse_buttons_event,
-                                              out=lambda *_: None)
+        feed = iter(
+            [b'not buttons', None, buttons_packet(0x0001), buttons_packet(0x0001), buttons_packet(0x0401)]
+        )
+        found = game_buttons.find_game_button(
+            lambda: next(feed, None), parse_buttons_event, out=lambda *_: None
+        )
         self.assertEqual(found, 0x0400)
 
     def test_finder_times_out_with_a_hint_when_the_game_sends_nothing(self):
         lines, clock = [], iter(range(100))
-        found = game_buttons.find_game_button(lambda: None, parse_buttons_event, timeout_s=3,
-                                              out=lines.append, clock=lambda: next(clock))
+        found = game_buttons.find_game_button(
+            lambda: None, parse_buttons_event, timeout_s=3, out=lines.append, clock=lambda: next(clock)
+        )
         self.assertIsNone(found)
         self.assertIn('UDP Telemetry', lines[-1])
 
@@ -96,14 +101,19 @@ class GameButtonParsingTests(unittest.TestCase):
 class GameButtonWatcherTests(unittest.TestCase):
     def make(self, mode=ptt.HOLD, **options):
         events, now = [], [0.0]
-        watcher = ptt.GameButtonWatcher(0x0400, lambda: events.append('open'),
-                                        lambda: events.append('close'), mode=mode,
-                                        clock=lambda: now[0], **options)
+        watcher = ptt.GameButtonWatcher(
+            0x0400,
+            lambda: events.append('open'),
+            lambda: events.append('close'),
+            mode=mode,
+            clock=lambda: now[0],
+            **options,
+        )
         return watcher, events, now
 
     def test_hold_talks_while_the_bit_is_set(self):
         watcher, events, now = self.make()
-        watcher.handle_status(0x0001)          # another button: nothing
+        watcher.handle_status(0x0001)  # another button: nothing
         now[0] = 0.1
         watcher.handle_status(0x0401)
         now[0] = 1.0
@@ -122,17 +132,18 @@ class GameButtonWatcherTests(unittest.TestCase):
         now[0] = 0.1
         watcher.handle_status(0x400)
         now[0] = 2.5
-        watcher.tick()                          # no event arrived, the safety close fires
+        watcher.tick()  # no event arrived, the safety close fires
         self.assertEqual(events, ['open', 'close'])
 
     def test_thread_starts_and_stops_cleanly(self):
         events = []
-        watcher = ptt.GameButtonWatcher(0x400, lambda: events.append('open'),
-                                        lambda: events.append('close'), tick_s=0.01)
+        watcher = ptt.GameButtonWatcher(
+            0x400, lambda: events.append('open'), lambda: events.append('close'), tick_s=0.01
+        )
         self.assertTrue(watcher.start())
         watcher.handle_status(0x400)
         watcher.stop()
-        self.assertEqual(events, ['open', 'close'])   # stop closes an open radio
+        self.assertEqual(events, ['open', 'close'])  # stop closes an open radio
 
 
 class GameButtonSettingsTests(unittest.TestCase):
@@ -176,13 +187,17 @@ class GameButtonSettingsTests(unittest.TestCase):
                 self.stopped = True
 
         recorder = Recorder()
-        radio = ptt.start(ptt.Settings(None, game_button=0x0400), object(), recorder=recorder,
-                          transcriber=lambda audio: None)
+        radio = ptt.start(
+            ptt.Settings(None, game_button=0x0400),
+            object(),
+            recorder=recorder,
+            transcriber=lambda audio: None,
+        )
         self.assertIsNotNone(radio)
         self.assertIsNone(radio.watcher)
         radio.on_game_buttons(0x0400)
         self.assertTrue(recorder.recording)
-        time.sleep(0.06)                       # past the contact-bounce window
+        time.sleep(0.06)  # past the contact-bounce window
         radio.on_game_buttons(0)
         self.assertFalse(recorder.recording)
         radio.stop()
@@ -236,13 +251,14 @@ class TwoButtonsTests(unittest.TestCase):
         radio.on_start()
         self.assertEqual(recorder.begins, 1)
         radio.on_stop()
-        radio.on_stop()                        # the other button's release: nothing to do
+        radio.on_stop()  # the other button's release: nothing to do
         self.assertFalse(recorder.recording)
 
 
 # ──────────────────────────────────────────────
 # 2. Offline Whisper speech to text
 # ──────────────────────────────────────────────
+
 
 class FakeAudio:
     def __init__(self, samples=1600):
@@ -265,19 +281,20 @@ class FakeWhisperModel:
 
 class WhisperTests(unittest.TestCase):
     def test_transcribes_offline_with_the_radio_prompt(self):
-        model = FakeWhisperModel({'text': ' How are the rears? ',
-                                  'segments': [{'no_speech_prob': 0.01, 'avg_logprob': -0.2}]})
+        model = FakeWhisperModel(
+            {'text': ' How are the rears? ', 'segments': [{'no_speech_prob': 0.01, 'avg_logprob': -0.2}]}
+        )
         loads = []
         whisper = stt.WhisperTranscriber('base.en', loader=lambda name: loads.append(name) or model)
         self.assertEqual(whisper(FakeAudio()), 'How are the rears?')
         self.assertEqual(whisper(FakeAudio()), 'How are the rears?')
-        self.assertEqual(loads, ['base.en'])            # the model loads once
+        self.assertEqual(loads, ['base.en'])  # the model loads once
         samples, options = model.calls[0]
         self.assertEqual(samples.dtype.name, 'float32')
         self.assertAlmostEqual(float(samples[0]), 1000 / 32768, places=5)
         self.assertIn('undercut', options['initial_prompt'])
         self.assertFalse(options['fp16'])
-        self.assertNotIn('language', options)           # .en models are English only
+        self.assertNotIn('language', options)  # .en models are English only
 
     def test_multilingual_model_is_told_the_language(self):
         model = FakeWhisperModel({'text': 'gap ahead'})
@@ -290,16 +307,19 @@ class WhisperTests(unittest.TestCase):
         self.assertIsNone(stt.WhisperTranscriber(loader=lambda n: FakeWhisperModel(noise))(FakeAudio()))
         quiet = {'text': 'box', 'segments': [{'no_speech_prob': 0.9, 'avg_logprob': -1.4}]}
         self.assertIsNone(stt.WhisperTranscriber(loader=lambda n: FakeWhisperModel(quiet))(FakeAudio()))
-        self.assertIsNone(stt.WhisperTranscriber(loader=lambda n: FakeWhisperModel({'text': ''}))(
-            FakeAudio()))
-        self.assertIsNone(stt.WhisperTranscriber(loader=lambda n: FakeWhisperModel({'text': 'x'}))(
-            FakeAudio(samples=0)))
+        self.assertIsNone(
+            stt.WhisperTranscriber(loader=lambda n: FakeWhisperModel({'text': ''}))(FakeAudio())
+        )
+        self.assertIsNone(
+            stt.WhisperTranscriber(loader=lambda n: FakeWhisperModel({'text': 'x'}))(FakeAudio(samples=0))
+        )
 
     def test_falls_back_to_google_when_whisper_is_not_installed(self):
         recognizer = SimpleNamespace(recognize_google=lambda audio, language: 'gap behind')
         with patch('builtins.print'):
-            transcriber = stt.build_transcriber('whisper', available=lambda: False,
-                                                recognizer_factory=lambda: recognizer)
+            transcriber = stt.build_transcriber(
+                'whisper', available=lambda: False, recognizer_factory=lambda: recognizer
+            )
         self.assertEqual(transcriber(FakeAudio()), 'gap behind')
 
     def test_falls_back_when_the_model_cannot_load(self):
@@ -307,9 +327,11 @@ class WhisperTests(unittest.TestCase):
 
         def broken(name):
             raise RuntimeError('no torch')
+
         with patch('builtins.print'):
-            transcriber = stt.build_transcriber('whisper', loader=broken,
-                                                recognizer_factory=lambda: recognizer)
+            transcriber = stt.build_transcriber(
+                'whisper', loader=broken, recognizer_factory=lambda: recognizer
+            )
             self.assertEqual(transcriber(FakeAudio()), 'pit window')
             self.assertEqual(transcriber(FakeAudio()), 'pit window')
 
@@ -329,6 +351,7 @@ class WhisperTests(unittest.TestCase):
 # ──────────────────────────────────────────────
 # 3. Intent matching
 # ──────────────────────────────────────────────
+
 
 class IntentMatchingTests(unittest.TestCase):
     def test_natural_phrasing(self):
@@ -352,14 +375,22 @@ class IntentMatchingTests(unittest.TestCase):
             self.assertEqual(match_command(phrase), expected, phrase)
 
     def test_misheard_words_still_match(self):
-        for phrase, expected in (('how is the temprature on the fronts', 'tyre_temps'),
-                                 ('whats the forcast', 'weather'),
-                                 ('whats the strategie', 'strategy')):
+        for phrase, expected in (
+            ('how is the temprature on the fronts', 'tyre_temps'),
+            ('whats the forcast', 'weather'),
+            ('whats the strategie', 'strategy'),
+        ):
             self.assertEqual(match_command(phrase), expected, phrase)
 
     def test_non_commands_are_not_matched(self):
-        for phrase in ('', 'hello there', 'engineer', 'play some music', 'how much fuel do we have',
-                       'hey engineer'):
+        for phrase in (
+            '',
+            'hello there',
+            'engineer',
+            'play some music',
+            'how much fuel do we have',
+            'hey engineer',
+        ):
             self.assertIsNone(match_command(phrase), phrase)
 
     def test_match_details_explain_the_choice(self):
@@ -372,6 +403,7 @@ class IntentMatchingTests(unittest.TestCase):
 # ──────────────────────────────────────────────
 # 4. Calls-per-lap budget
 # ──────────────────────────────────────────────
+
 
 class RecordingVoice:
     is_running = True
@@ -395,7 +427,7 @@ class CallBudgetTests(unittest.TestCase):
         self.assertTrue(budget.allows('safety_car', Priority.CRITICAL))
         self.assertTrue(budget.allows('pit_window', Priority.STRATEGY))
         self.assertTrue(budget.allows('drs_behind', Priority.RACE))
-        budget.new_lap(3)                      # same lap: nothing changes
+        budget.new_lap(3)  # same lap: nothing changes
         self.assertEqual(budget.remaining, 0)
         budget.new_lap(4)
         self.assertEqual(budget.remaining, 2)
@@ -426,26 +458,27 @@ class CallBudgetTests(unittest.TestCase):
 # 5. No talking in high-load corners
 # ──────────────────────────────────────────────
 
+
 class DriverLoadGateTests(unittest.TestCase):
     def test_high_load_corner_holds_until_the_straight(self):
         gate = radio_discipline.DriverLoadGate()
         gate.update(300, 0.2, 0.0, now=0.0)
         self.assertFalse(gate.busy(now=0.0))
-        gate.update(150, 3.8, 0.0, now=1.0)          # slow corner: talking is fine
+        gate.update(150, 3.8, 0.0, now=1.0)  # slow corner: talking is fine
         self.assertFalse(gate.busy(now=1.0))
-        gate.update(250, 4.1, 0.0, now=2.0)          # Copse: busy
+        gate.update(250, 4.1, 0.0, now=2.0)  # Copse: busy
         self.assertTrue(gate.busy(now=2.0))
-        gate.update(240, 2.5, 0.0, now=2.3)          # still turning
+        gate.update(240, 2.5, 0.0, now=2.3)  # still turning
         self.assertTrue(gate.busy(now=2.3))
-        gate.update(260, 0.8, 0.0, now=2.5)          # straightening up...
+        gate.update(260, 0.8, 0.0, now=2.5)  # straightening up...
         self.assertTrue(gate.busy(now=2.5))
-        gate.update(270, 0.5, 0.0, now=3.0)          # ...on the straight long enough
+        gate.update(270, 0.5, 0.0, now=3.0)  # ...on the straight long enough
         self.assertFalse(gate.busy(now=3.0))
 
     def test_s_bend_counts_as_one_corner(self):
         gate = radio_discipline.DriverLoadGate()
         gate.update(260, 4.0, now=0.0)
-        gate.update(250, 1.0, now=0.2)               # flick between Maggots and Becketts
+        gate.update(250, 1.0, now=0.2)  # flick between Maggots and Becketts
         gate.update(240, -3.9, now=0.4)
         gate.update(240, 1.0, now=0.7)
         self.assertTrue(gate.busy(now=0.7))
@@ -454,13 +487,14 @@ class DriverLoadGateTests(unittest.TestCase):
         gate = radio_discipline.DriverLoadGate()
         gate.update(310, 0.3, 0.9, now=0.0)
         self.assertTrue(gate.busy(now=0.0))
-        self.assertFalse(gate.busy(now=5.0))         # no telemetry for a while: don't hold
+        self.assertFalse(gate.busy(now=5.0))  # no telemetry for a while: don't hold
         gate.update(200, 0.0, 0.2, now=6.0)
         self.assertFalse(gate.busy(now=6.0))
 
     def test_thresholds_are_configurable(self):
-        gate = radio_discipline.DriverLoadGate(radio_discipline.LoadThresholds(
-            corner_speed_kph=120, corner_g=2.5))
+        gate = radio_discipline.DriverLoadGate(
+            radio_discipline.LoadThresholds(corner_speed_kph=120, corner_g=2.5)
+        )
         gate.update(150, 3.0, now=0.0)
         self.assertTrue(gate.busy(now=0.0))
 
@@ -514,7 +548,7 @@ class CornerHoldVoiceTests(unittest.TestCase):
         voice.say('Safety Car, Safety Car.', Priority.CRITICAL, key='sc', ttl=10)
         self.assertTrue(wait_for(lambda: 'Safety Car, Safety Car.' in driver.started))
         time.sleep(0.2)
-        self.assertNotIn('Gap ahead one point two.', driver.started)   # held mid-corner
+        self.assertNotIn('Gap ahead one point two.', driver.started)  # held mid-corner
         busy[0] = False
         self.assertTrue(wait_for(lambda: 'Gap ahead one point two.' in driver.started))
 

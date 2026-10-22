@@ -8,15 +8,16 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 
-from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 import ai_launcher
 from ai_client import AIClient, ollama_options, voice_from_partial
 from analysis import AnalysisEngine
 from engineer_brain import EngineerBrain, build_prompt, format_context, question_topics
+from test_analysis import SilentVoice  # noqa: F401  (puts ai_engineer/ on the import path)
 
 
 class StreamingOllama(BaseHTTPRequestHandler):
     """Streams a JSON radio reply a few characters at a time, slowly after the voice line."""
+
     bodies = []
     finished = threading.Event()
 
@@ -26,8 +27,12 @@ class StreamingOllama(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         StreamingOllama.bodies.append((self.path, body))
-        reply = '{"voice": "Battery is at sixty percent, use overtake on the straight.", "advice": "' + 'x' * 40 + '"}'
-        pieces = [reply[i:i + 6] for i in range(0, len(reply), 6)]
+        reply = (
+            '{"voice": "Battery is at sixty percent, use overtake on the straight.", "advice": "'
+            + 'x' * 40
+            + '"}'
+        )
+        pieces = [reply[i : i + 6] for i in range(0, len(reply), 6)]
         self.send_response(200)
         self.send_header('Content-Type', 'application/x-ndjson')
         self.end_headers()
@@ -36,8 +41,8 @@ class StreamingOllama(BaseHTTPRequestHandler):
                 line = {'message': {'content': piece}, 'done': False}
                 self.wfile.write(json.dumps(line).encode() + b'\n')
                 self.wfile.flush()
-                if '"advice"' in ''.join(pieces[:pieces.index(piece) + 1]):
-                    time.sleep(0.2)          # the on-screen note is slow to write
+                if '"advice"' in ''.join(pieces[: pieces.index(piece) + 1]):
+                    time.sleep(0.2)  # the on-screen note is slow to write
             self.wfile.write(json.dumps({'message': {'content': ''}, 'done': True}).encode() + b'\n')
             StreamingOllama.finished.set()
         except (BrokenPipeError, ConnectionResetError):
@@ -51,8 +56,9 @@ class StreamingTests(unittest.TestCase):
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), StreamingOllama)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         root = f'http://127.0.0.1:{self.server.server_port}'
-        self.client = AIClient(root + '/v1', 'deepseek-r1:8b', timeout=5,
-                               load_options=ollama_options(4096, 20, 4))
+        self.client = AIClient(
+            root + '/v1', 'deepseek-r1:8b', timeout=5, load_options=ollama_options(4096, 20, 4)
+        )
         self.client.ollama_root = root
 
     def tearDown(self):
@@ -63,7 +69,7 @@ class StreamingTests(unittest.TestCase):
         started = time.monotonic()
         voice = self.client.radio_voice('s', 'u')
         self.assertEqual(voice, 'Battery is at sixty percent, use overtake on the straight.')
-        self.assertLess(time.monotonic() - started, 1.0)     # the slow note would take ~2 s
+        self.assertLess(time.monotonic() - started, 1.0)  # the slow note would take ~2 s
         self.assertFalse(StreamingOllama.finished.is_set())
         path, body = StreamingOllama.bodies[0]
         self.assertEqual(path, '/api/chat')
@@ -75,8 +81,10 @@ class StreamingTests(unittest.TestCase):
         self.assertEqual(body['options']['num_thread'], 4)
 
     def test_brain_uses_the_stream_for_free_questions(self):
-        brain = EngineerBrain(lambda: {'ers': {'battery_pct': 60, 'deploy_mode': 'medium',
-                                               'used_this_lap_pct': 10}}, self.client)
+        brain = EngineerBrain(
+            lambda: {'ers': {'battery_pct': 60, 'deploy_mode': 'medium', 'used_this_lap_pct': 10}},
+            self.client,
+        )
         self.assertIn('Battery', brain.answer_question('how much battery have I got left?'))
         self.assertEqual(brain.last_source, 'ai')
 
@@ -109,8 +117,9 @@ class HelperTests(unittest.TestCase):
             def read(self):
                 return b'{}'
 
-        launcher = ai_launcher.LocalAILauncher('http://localhost:11434/v1', 'm',
-                                               load_options={'num_ctx': 4096, 'num_gpu': 0})
+        launcher = ai_launcher.LocalAILauncher(
+            'http://localhost:11434/v1', 'm', load_options={'num_ctx': 4096, 'num_gpu': 0}
+        )
         launcher._request = lambda path, body=None, timeout=5.0: sent.append(body) or Response()
         self.assertTrue(launcher._load())
         self.assertEqual(sent[0]['options'], {'num_ctx': 4096, 'num_gpu': 0})
@@ -122,8 +131,13 @@ class HelperTests(unittest.TestCase):
             seen.update(kwargs)
             raise OSError('stop here')
 
-        launcher = ai_launcher.LocalAILauncher('http://localhost:11434/v1', 'm', on_status=lambda t: None,
-                                               executable_finder=lambda: '/opt/ollama', popen=fake_popen)
+        launcher = ai_launcher.LocalAILauncher(
+            'http://localhost:11434/v1',
+            'm',
+            on_status=lambda t: None,
+            executable_finder=lambda: '/opt/ollama',
+            popen=fake_popen,
+        )
         launcher._start_server()
         if ai_launcher.sys.platform == 'win32':
             self.assertTrue(seen['creationflags'] & 0x4000)
@@ -159,8 +173,12 @@ class RulesFirstTests(unittest.TestCase):
     def test_short_matching_question_is_instant_long_one_goes_to_ai(self):
         self.assertIn('Hamilton', self.brain.answer_question('gap ahead?', 'gap_ahead'))
         self.assertEqual(self.client.calls, 0)
-        self.assertEqual(self.brain.answer_question(
-            'can I get close enough to the car ahead to use DRS next lap', 'gap_ahead'), 'From the AI.')
+        self.assertEqual(
+            self.brain.answer_question(
+                'can I get close enough to the car ahead to use DRS next lap', 'gap_ahead'
+            ),
+            'From the AI.',
+        )
         self.assertEqual(self.client.calls, 1)
 
     def test_default_still_asks_the_ai(self):
@@ -169,20 +187,50 @@ class RulesFirstTests(unittest.TestCase):
 
 
 CTX = {
-    'track': 'Monza', 'session_mode': 'race', 'lap': 10, 'total_laps': 20, 'position': 4,
-    'gap_ahead_s': 1.2, 'car_ahead_name': 'Hamilton', 'last_lap_ms': 83_400,
-    'weather': 'clear', 'track_temp_c': 33,
+    'track': 'Monza',
+    'session_mode': 'race',
+    'lap': 10,
+    'total_laps': 20,
+    'position': 4,
+    'gap_ahead_s': 1.2,
+    'car_ahead_name': 'Hamilton',
+    'last_lap_ms': 83_400,
+    'weather': 'clear',
+    'track_temp_c': 33,
     'tyre_surface_c': {'RL': 90, 'RR': 91, 'FL': 95, 'FR': 96},
     'ers': {'battery_pct': 62, 'deploy_mode': 'medium', 'used_this_lap_pct': 20},
     'brake_temps_c': {'RL': 500, 'RR': 500, 'FL': 610, 'FR': 600},
-    'damage_pct': {'front left wing': 12, 'front right wing': 0, 'rear wing': 0, 'floor': 0,
-                   'gearbox wear': 3, 'engine wear': 5, 'tyre damage': 0},
-    'penalties': {'time_penalty_s': 5, 'warnings': 2, 'unserved_drive_through': 0,
-                  'unserved_stop_go': 0, 'pit_stops_done': 1, 'grid_position': 6},
+    'damage_pct': {
+        'front left wing': 12,
+        'front right wing': 0,
+        'rear wing': 0,
+        'floor': 0,
+        'gearbox wear': 3,
+        'engine wear': 5,
+        'tyre damage': 0,
+    },
+    'penalties': {
+        'time_penalty_s': 5,
+        'warnings': 2,
+        'unserved_drive_through': 0,
+        'unserved_stop_go': 0,
+        'pit_stops_done': 1,
+        'grid_position': 6,
+    },
     'recent_race_events': ['Yellow flag in sector 2.'],
-    'standings': [{'position': 1, 'name': 'Verstappen', 'gap_s': 0.0, 'last_lap_ms': 83_000,
-                   'best_lap_ms': 82_500, 'compound': 'M', 'tyre_age': 8, 'stops': 1},
-                  {'position': 4, 'name': 'Driver', 'is_player': True, 'gap_s': 6.3, 'interval_s': 1.2}],
+    'standings': [
+        {
+            'position': 1,
+            'name': 'Verstappen',
+            'gap_s': 0.0,
+            'last_lap_ms': 83_000,
+            'best_lap_ms': 82_500,
+            'compound': 'M',
+            'tyre_age': 8,
+            'stops': 1,
+        },
+        {'position': 4, 'name': 'Driver', 'is_player': True, 'gap_s': 6.3, 'interval_s': 1.2},
+    ],
 }
 
 
@@ -207,8 +255,8 @@ class PromptTests(unittest.TestCase):
     def test_focused_prompt_keeps_core_and_drops_the_rest(self):
         _, user = build_prompt('how is my battery', CTX)
         self.assertIn('ERS battery', user)
-        self.assertIn('Gap to car ahead', user)          # the core always goes
-        self.assertIn('Brake temps', user)               # 'car' covers brakes too
+        self.assertIn('Gap to car ahead', user)  # the core always goes
+        self.assertIn('Brake temps', user)  # 'car' covers brakes too
         self.assertNotIn('Running order', user)
         self.assertNotIn('Tyre surface temps', user)
         _, full = build_prompt('how is my battery', CTX, focused=False)
@@ -222,10 +270,18 @@ class PromptTests(unittest.TestCase):
 
 class EngineContextTests(unittest.TestCase):
     def test_build_context_has_car_health(self):
-        status = SimpleNamespace(ers_store_energy=2_000_000.0, ers_deploy_mode=3,
-                                 ers_deployed_this_lap=400_000.0)
-        damage = SimpleNamespace(tyres_damage=(0, 0, 5, 0), front_left_wing=10, front_right_wing=0,
-                                 rear_wing=0, floor=0, gearbox=2, engine=4)
+        status = SimpleNamespace(
+            ers_store_energy=2_000_000.0, ers_deploy_mode=3, ers_deployed_this_lap=400_000.0
+        )
+        damage = SimpleNamespace(
+            tyres_damage=(0, 0, 5, 0),
+            front_left_wing=10,
+            front_right_wing=0,
+            rear_wing=0,
+            floor=0,
+            gearbox=2,
+            engine=4,
+        )
         ctx = AnalysisEngine._car_context(None, None, damage, status)
         self.assertEqual(AnalysisEngine(SilentVoice()).build_context()['standings'], None)
         self.assertEqual(ctx['ers'], {'battery_pct': 50, 'deploy_mode': 'overtake', 'used_this_lap_pct': 10})

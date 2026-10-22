@@ -41,9 +41,32 @@ UNDERCUT_WINDOW_LAPS = 4
 # Approximate pit-lane time loss (pit entry to exit versus staying on track), seconds.
 DEFAULT_PIT_LOSS_S = 21.0
 PIT_LOSS_S = {
-    0: 21.0, 1: 22.0, 2: 21.5, 3: 22.5, 4: 21.5, 5: 19.5, 6: 18.5, 7: 20.5, 8: 17.5,
-    9: 20.5, 10: 18.5, 11: 23.5, 12: 28.0, 13: 22.5, 14: 21.0, 15: 21.0, 16: 21.5,
-    17: 19.5, 18: 26.0, 19: 22.0, 20: 20.0, 25: 20.5, 26: 18.0, 27: 27.5, 28: 25.0, 29: 19.5,
+    0: 21.0,
+    1: 22.0,
+    2: 21.5,
+    3: 22.5,
+    4: 21.5,
+    5: 19.5,
+    6: 18.5,
+    7: 20.5,
+    8: 17.5,
+    9: 20.5,
+    10: 18.5,
+    11: 23.5,
+    12: 28.0,
+    13: 22.5,
+    14: 21.0,
+    15: 21.0,
+    16: 21.5,
+    17: 19.5,
+    18: 26.0,
+    19: 22.0,
+    20: 20.0,
+    25: 20.5,
+    26: 18.0,
+    27: 27.5,
+    28: 25.0,
+    29: 19.5,
 }
 
 
@@ -69,6 +92,7 @@ def normalise_compound(name: str | None) -> str | None:
 @dataclass
 class TyreCurve:
     """Lap-time model for one compound: offset + scaled degradation + cliff past its life."""
+
     compound: str
     offset_s: float
     alpha: float
@@ -87,13 +111,21 @@ class TyreCurve:
 
 def tyre_curve(compound: str, deg_scale: float = 1.0, life_scale: float = 1.0) -> TyreCurve:
     params = _compound_params(compound)
-    return TyreCurve(compound, COMPOUND_PACE_OFFSET_S.get(compound, 0.35),
-                     params.alpha * deg_scale, params.beta * deg_scale,
-                     params.expected_life_laps * life_scale)
+    return TyreCurve(
+        compound,
+        COMPOUND_PACE_OFFSET_S.get(compound, 0.35),
+        params.alpha * deg_scale,
+        params.beta * deg_scale,
+        params.expected_life_laps * life_scale,
+    )
 
 
-def calibration(compound: str | None, tyre_age: float, observed_deg_s_per_lap: float | None = None,
-                observed_laps_to_limit: float | None = None) -> tuple[float, float]:
+def calibration(
+    compound: str | None,
+    tyre_age: float,
+    observed_deg_s_per_lap: float | None = None,
+    observed_laps_to_limit: float | None = None,
+) -> tuple[float, float]:
     """(deg_scale, life_scale) that bend the physics curves towards what strategy_ml has seen.
 
     ``observed_deg_s_per_lap`` is strategy_ml.pace_degradation (fuel-corrected lap time lost
@@ -106,7 +138,7 @@ def calibration(compound: str | None, tyre_age: float, observed_deg_s_per_lap: f
     params = _compound_params(compound)
     deg_scale = life_scale = 1.0
     if observed_deg_s_per_lap is not None and observed_deg_s_per_lap > 0:
-        model_rate = params.alpha + params.beta * max(tyre_age, 1.0)   # mean slope over the stint so far
+        model_rate = params.alpha + params.beta * max(tyre_age, 1.0)  # mean slope over the stint so far
         deg_scale = min(3.0, max(0.5, observed_deg_s_per_lap / model_rate))
     if observed_laps_to_limit is not None and observed_laps_to_limit >= 0:
         observed_life = tyre_age + observed_laps_to_limit
@@ -118,13 +150,14 @@ def calibration(compound: str | None, tyre_age: float, observed_deg_s_per_lap: f
 # Stop-count and compound planning
 # ──────────────────────────────────────────────
 
+
 @dataclass
 class StrategyOption:
     stops: int
-    compounds: list[str]          # current set first, then each new set in order
-    stint_laps: list[int]         # laps on each set, including the lap in progress
-    pit_laps: list[int]           # race lap at the end of which to box, one per stop
-    total_time_s: float           # modelled tyre + pit cost; only meaningful relative to other options
+    compounds: list[str]  # current set first, then each new set in order
+    stint_laps: list[int]  # laps on each set, including the lap in progress
+    pit_laps: list[int]  # race lap at the end of which to box, one per stop
+    total_time_s: float  # modelled tyre + pit cost; only meaningful relative to other options
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -133,7 +166,7 @@ class StrategyOption:
 @dataclass
 class StrategyPlan:
     best: StrategyOption
-    alternatives: list[StrategyOption] = field(default_factory=list)   # best plan for each other stop count
+    alternatives: list[StrategyOption] = field(default_factory=list)  # best plan for each other stop count
     pit_loss_s: float = DEFAULT_PIT_LOSS_S
     laps_remaining: int = 0
     # Best plan for each choice of next set ({compound: option}); used to weigh which tyre a
@@ -148,12 +181,20 @@ class StrategyPlan:
         return 0.0 if self.best.stops == stops else None
 
     def as_dict(self) -> dict:
-        return {'best': self.best.as_dict(),
-                'alternatives': [{'stops': o.stops, 'compounds': o.compounds,
-                                  'pit_laps': o.pit_laps,
-                                  'slower_by_s': round(o.total_time_s - self.best.total_time_s, 1)}
-                                 for o in self.alternatives],
-                'pit_loss_s': self.pit_loss_s, 'laps_remaining': self.laps_remaining}
+        return {
+            'best': self.best.as_dict(),
+            'alternatives': [
+                {
+                    'stops': o.stops,
+                    'compounds': o.compounds,
+                    'pit_laps': o.pit_laps,
+                    'slower_by_s': round(o.total_time_s - self.best.total_time_s, 1),
+                }
+                for o in self.alternatives
+            ],
+            'pit_loss_s': self.pit_loss_s,
+            'laps_remaining': self.laps_remaining,
+        }
 
 
 def _allocate(curves: list[TyreCurve], start_ages: list[float], laps: int) -> tuple[list[int], float] | None:
@@ -172,7 +213,7 @@ def _allocate(curves: list[TyreCurve], start_ages: list[float], laps: int) -> tu
     heap: list[tuple[float, int]] = []
 
     def offer(i: int):
-        age = start_ages[i] + lengths[i]          # age at the start of the lap being added
+        age = start_ages[i] + lengths[i]  # age at the start of the lap being added
         if age + 1 <= curves[i].max_age:
             heapq.heappush(heap, (curves[i].lap_cost(age), i))
 
@@ -188,10 +229,17 @@ def _allocate(curves: list[TyreCurve], start_ages: list[float], laps: int) -> tu
     return lengths, total
 
 
-def plan_race(laps_remaining: int, current_compound: str | None, tyre_age: float, current_lap: int,
-              pit_loss: float = DEFAULT_PIT_LOSS_S, compounds_used: set[str] | tuple = (),
-              deg_scale: float = 1.0, life_scale: float = 1.0,
-              max_stops: int = MAX_STOPS) -> StrategyPlan | None:
+def plan_race(
+    laps_remaining: int,
+    current_compound: str | None,
+    tyre_age: float,
+    current_lap: int,
+    pit_loss: float = DEFAULT_PIT_LOSS_S,
+    compounds_used: set[str] | tuple = (),
+    deg_scale: float = 1.0,
+    life_scale: float = 1.0,
+    max_stops: int = MAX_STOPS,
+) -> StrategyPlan | None:
     """Best number of stops and compound sequence for the rest of the race.
 
     ``laps_remaining`` counts the lap in progress. Enforces the dry-race rule that two different
@@ -229,8 +277,10 @@ def plan_race(laps_remaining: int, current_compound: str | None, tyre_age: float
             option = StrategyOption(stops, [current, *sequence], lengths, pit_laps, round(total, 2))
             if stops not in best_by_stops or option.total_time_s < best_by_stops[stops].total_time_s:
                 best_by_stops[stops] = option
-            if sequence and (sequence[0] not in best_by_next
-                             or option.total_time_s < best_by_next[sequence[0]].total_time_s):
+            if sequence and (
+                sequence[0] not in best_by_next
+                or option.total_time_s < best_by_next[sequence[0]].total_time_s
+            ):
                 best_by_next[sequence[0]] = option
     if not best_by_stops:
         return None
@@ -243,8 +293,15 @@ def plan_race(laps_remaining: int, current_compound: str | None, tyre_age: float
 # Undercut / overcut
 # ──────────────────────────────────────────────
 
-def undercut_gain(stayer_compound: str | None, stayer_age: float, new_compound: str | None = None,
-                  laps_before_cover: int = 1, deg_scale: float = 1.0, life_scale: float = 1.0) -> float:
+
+def undercut_gain(
+    stayer_compound: str | None,
+    stayer_age: float,
+    new_compound: str | None = None,
+    laps_before_cover: int = 1,
+    deg_scale: float = 1.0,
+    life_scale: float = 1.0,
+) -> float:
     """Time the car that pits first gains on the car that stays out, through the second car's out-lap.
 
     The pitter runs ``laps_before_cover`` laps on new tyres (the first one cold) while the stayer
@@ -254,7 +311,9 @@ def undercut_gain(stayer_compound: str | None, stayer_age: float, new_compound: 
     next sensible set.
     """
     stayer = tyre_curve(normalise_compound(stayer_compound) or 'MEDIUM', deg_scale, life_scale)
-    new = tyre_curve(normalise_compound(new_compound) or next_compound(stayer.compound), deg_scale, life_scale)
+    new = tyre_curve(
+        normalise_compound(new_compound) or next_compound(stayer.compound), deg_scale, life_scale
+    )
     gain = 0.0
     for i in range(laps_before_cover):
         gain += stayer.lap_cost(stayer_age + i) - new.lap_cost(i, out_lap=i == 0)
@@ -282,8 +341,8 @@ def next_compound(current: str | None) -> str:
 
 @dataclass
 class StrategyCall:
-    kind: str            # 'undercut', 'overcut', 'cover', 'stay_out', 'plan'
-    message: str          # short radio line
+    kind: str  # 'undercut', 'overcut', 'cover', 'stay_out', 'plan'
+    message: str  # short radio line
     gain_s: float | None = None
     gap_s: float | None = None
     car_index: int | None = None
@@ -292,35 +351,63 @@ class StrategyCall:
         return asdict(self)
 
 
-def undercut_opportunity(gap_ahead_s: float | None, my_compound: str | None, my_age: float,
-                         rival_compound: str | None, rival_age: float | None, laps_to_planned_stop: int | None,
-                         laps_remaining: int, deg_scale: float = 1.0, life_scale: float = 1.0,
-                         rival_index: int | None = None,
-                         rival_stop_in_laps: int | None = None) -> StrategyCall | None:
+def undercut_opportunity(
+    gap_ahead_s: float | None,
+    my_compound: str | None,
+    my_age: float,
+    rival_compound: str | None,
+    rival_age: float | None,
+    laps_to_planned_stop: int | None,
+    laps_remaining: int,
+    deg_scale: float = 1.0,
+    life_scale: float = 1.0,
+    rival_index: int | None = None,
+    rival_stop_in_laps: int | None = None,
+) -> StrategyCall | None:
     """Should we box now to jump the car ahead? Returns an 'undercut' call or None.
 
     ``rival_stop_in_laps`` is how many laps the rival is expected to stay out after we box
     (from the rival stop model). Without it the rival is assumed to cover next lap, the
     cautious case; with it the gain counts every lap they spend on worn tyres (capped).
     """
-    if (gap_ahead_s is None or rival_age is None or laps_to_planned_stop is None
-            or laps_to_planned_stop > UNDERCUT_WINDOW_LAPS or laps_remaining <= 3):
+    if (
+        gap_ahead_s is None
+        or rival_age is None
+        or laps_to_planned_stop is None
+        or laps_to_planned_stop > UNDERCUT_WINDOW_LAPS
+        or laps_remaining <= 3
+    ):
         return None
     my_next = next_compound(my_compound)
     cover = cover_laps(rival_stop_in_laps, laps_remaining)
     gain = undercut_gain(rival_compound, rival_age, my_next, cover, deg_scale, life_scale)
     if gain - gap_ahead_s < CALL_MARGIN_S:
         return None
-    return StrategyCall('undercut', f'Undercut is on the car ahead. Box this lap, box this lap. '
-                                    f'Gain about {gain:.1f}, gap {gap_ahead_s:.1f}.',
-                        gain, gap_ahead_s, rival_index)
+    return StrategyCall(
+        'undercut',
+        f'Undercut is on the car ahead. Box this lap, box this lap. '
+        f'Gain about {gain:.1f}, gap {gap_ahead_s:.1f}.',
+        gain,
+        gap_ahead_s,
+        rival_index,
+    )
 
 
-def react_to_rival_stop(rival_side: str, gap_s: float, my_compound: str | None, my_age: float,
-                        rival_old_compound: str | None, rival_new_compound: str | None, laps_remaining: int, my_stops_left: int,
-                        deg_scale: float = 1.0, life_scale: float = 1.0,
-                        rival_index: int | None = None, rival_name: str | None = None,
-                        assumed_new_compound: str | None = None) -> StrategyCall:
+def react_to_rival_stop(
+    rival_side: str,
+    gap_s: float,
+    my_compound: str | None,
+    my_age: float,
+    rival_old_compound: str | None,
+    rival_new_compound: str | None,
+    laps_remaining: int,
+    my_stops_left: int,
+    deg_scale: float = 1.0,
+    life_scale: float = 1.0,
+    rival_index: int | None = None,
+    rival_name: str | None = None,
+    assumed_new_compound: str | None = None,
+) -> StrategyCall:
     """Radio call when a nearby rival boxes.
 
     ``rival_side`` is 'ahead' or 'behind'; ``gap_s`` is the absolute gap before they pitted.
@@ -334,28 +421,48 @@ def react_to_rival_stop(rival_side: str, gap_s: float, my_compound: str | None, 
     known_new = normalise_compound(rival_new_compound)
     old = normalise_compound(rival_old_compound)
     # Unknown new set: the predicted one, else the usual next dry tyre or fresh wets of the same kind.
-    rival_new = (known_new or normalise_compound(assumed_new_compound)
-                 or (old if old in WET_COMPOUNDS else next_compound(old)))
+    rival_new = (
+        known_new
+        or normalise_compound(assumed_new_compound)
+        or (old if old in WET_COMPOUNDS else next_compound(old))
+    )
     who = f'{rival_name} {rival_side}' if rival_name else f'Car {rival_side}'
     if my_stops_left <= 0 or laps_remaining <= 2:
-        return StrategyCall('stay_out', f'{who} has boxed. We are not stopping again, '
-                                        'stay out and push to the flag.', None, gap, rival_index)
+        return StrategyCall(
+            'stay_out',
+            f'{who} has boxed. We are not stopping again, stay out and push to the flag.',
+            None,
+            gap,
+            rival_index,
+        )
     if rival_side == 'behind':
         # They are the pitter; we would cover next lap.
         threat = undercut_gain(my_compound, my_age, rival_new, 1, deg_scale, life_scale)
         if threat >= gap - CALL_MARGIN_S:
-            return StrategyCall('cover', f'{who} has boxed, undercut threat. '
-                                         f'Box this lap to cover, box box.', threat, gap, rival_index)
-        return StrategyCall('stay_out', f'{who} has boxed. Gap is {gap:.1f}, '
-                                        'undercut will not work. Stay out.', threat, gap, rival_index)
+            return StrategyCall(
+                'cover',
+                f'{who} has boxed, undercut threat. Box this lap to cover, box box.',
+                threat,
+                gap,
+                rival_index,
+            )
+        return StrategyCall(
+            'stay_out',
+            f'{who} has boxed. Gap is {gap:.1f}, undercut will not work. Stay out.',
+            threat,
+            gap,
+            rival_index,
+        )
     # Rival ahead pitted: we stay out one lap longer and they do a cold out-lap.
     overcut = -undercut_gain(my_compound, my_age, rival_new, 1, deg_scale, life_scale)
     if overcut >= gap + CALL_MARGIN_S:
-        return StrategyCall('overcut', f'{who} has boxed. Overcut is on, push now, '
-                                       'big lap please.', overcut, gap, rival_index)
+        return StrategyCall(
+            'overcut', f'{who} has boxed. Overcut is on, push now, big lap please.', overcut, gap, rival_index
+        )
     boxed = f'{who} has boxed for {known_new.lower()}s.' if known_new else f'{who} has boxed.'
-    return StrategyCall('stay_out', f'{boxed} Overcut is marginal, we stay on plan.',
-                        overcut, gap, rival_index)
+    return StrategyCall(
+        'stay_out', f'{boxed} Overcut is marginal, we stay on plan.', overcut, gap, rival_index
+    )
 
 
 def describe_plan(plan: StrategyPlan | None) -> str:
@@ -371,6 +478,10 @@ def describe_plan(plan: StrategyPlan | None) -> str:
     nearest = min(plan.alternatives, key=lambda o: o.total_time_s, default=None)
     if nearest is not None:
         delta = nearest.total_time_s - best.total_time_s
-        other = 'no stop' if nearest.stops == 0 else ('one stop' if nearest.stops == 1 else f'{nearest.stops} stops')
+        other = (
+            'no stop'
+            if nearest.stops == 0
+            else ('one stop' if nearest.stops == 1 else f'{nearest.stops} stops')
+        )
         line += f' {other.capitalize()} is {delta:.1f} slower.'
     return line

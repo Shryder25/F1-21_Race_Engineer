@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 import statistics
 
-MIN_LAPS = 3                 # fewer clean laps than this and there's nothing to say yet
-SLOW_LAP_FACTOR = 1.07       # laps slower than 107% of best (traffic, mistakes) are left out
+MIN_LAPS = 3  # fewer clean laps than this and there's nothing to say yet
+SLOW_LAP_FACTOR = 1.07  # laps slower than 107% of best (traffic, mistakes) are left out
 TOP_CORNERS = 2
 MIN_CORNER_LOSS_S = 0.05
 
@@ -32,14 +32,16 @@ def build_profile(history, session) -> dict | None:
     """Profile from every clean lap at this track/layout/formula/weather, or None if too few."""
     if history is None or session is None:
         return None
-    rows = history.connection.execute('''
+    rows = history.connection.execute(
+        '''
         SELECT l.capture_id, l.lap_time_ms, json_extract(l.recording, '$.sectors'),
                json_extract(l.recording, '$.corners')
         FROM laps l JOIN sessions s USING(capture_id)
         WHERE s.track_id=? AND s.track_length=? AND s.formula=? AND s.weather_group=?
           AND l.eligible=1 AND l.lap_time_ms > 0
-    ''', (session.track_id, session.track_length, session.formula,
-          history.weather_group(session.weather))).fetchall()
+    ''',
+        (session.track_id, session.track_length, session.formula, history.weather_group(session.weather)),
+    ).fetchall()
     if not rows:
         return None
     best_ms = min(row[1] for row in rows)
@@ -66,19 +68,26 @@ def build_profile(history, session) -> dict | None:
             if start is not None and end is not None and end > start:
                 corner_times.setdefault(name, []).append(end - start)
 
-    sector_gaps = {sector: (statistics.median(values) - min(values)) / 1000
-                   for sector, values in sector_times.items() if len(values) >= MIN_LAPS}
+    sector_gaps = {
+        sector: (statistics.median(values) - min(values)) / 1000
+        for sector, values in sector_times.items()
+        if len(values) >= MIN_LAPS
+    }
     if sector_gaps:
         sector = max(sector_gaps, key=sector_gaps.get)
         profile['weakest_sector'] = {'sector': sector, 'typical_loss_s': round(sector_gaps[sector], 2)}
 
-    corner_gaps = [(name, (statistics.median(values) - min(values)) / 1000)
-                   for name, values in corner_times.items() if len(values) >= MIN_LAPS]
+    corner_gaps = [
+        (name, (statistics.median(values) - min(values)) / 1000)
+        for name, values in corner_times.items()
+        if len(values) >= MIN_LAPS
+    ]
     corner_gaps = [(name, gap) for name, gap in corner_gaps if gap >= MIN_CORNER_LOSS_S]
     corner_gaps.sort(key=lambda item: item[1], reverse=True)
     if corner_gaps:
-        profile['weakest_corners'] = [{'corner': name, 'typical_loss_s': round(gap, 2)}
-                                      for name, gap in corner_gaps[:TOP_CORNERS]]
+        profile['weakest_corners'] = [
+            {'corner': name, 'typical_loss_s': round(gap, 2)} for name, gap in corner_gaps[:TOP_CORNERS]
+        ]
     return profile
 
 
@@ -86,15 +95,21 @@ def describe(profile: dict | None) -> str | None:
     """The profile as one compact line for the AI prompt."""
     if not profile:
         return None
-    parts = [f"{profile['laps']} clean laps over {profile['sessions']} session(s) here; "
-             f"best {_fmt_lap(profile['best_lap_ms'])}, typical {_fmt_lap(profile['typical_lap_ms'])} "
-             f"(lap-to-lap spread {profile['spread_s']} s)"]
+    parts = [
+        f"{profile['laps']} clean laps over {profile['sessions']} session(s) here; "
+        f"best {_fmt_lap(profile['best_lap_ms'])}, typical {_fmt_lap(profile['typical_lap_ms'])} "
+        f"(lap-to-lap spread {profile['spread_s']} s)"
+    ]
     weak = profile.get('weakest_sector')
     if weak:
-        parts.append(f"most time left in sector {weak['sector']} "
-                     f"(typically {weak['typical_loss_s']} s off their best sector)")
+        parts.append(
+            f"most time left in sector {weak['sector']} "
+            f"(typically {weak['typical_loss_s']} s off their best sector)"
+        )
     corners = profile.get('weakest_corners')
     if corners:
-        parts.append('corners losing most vs their best: ' + ', '.join(
-            f"{c['corner']} {c['typical_loss_s']} s" for c in corners))
+        parts.append(
+            'corners losing most vs their best: '
+            + ', '.join(f"{c['corner']} {c['typical_loss_s']} s" for c in corners)
+        )
     return '; '.join(parts)

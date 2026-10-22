@@ -30,54 +30,148 @@ THREAT, STRATEGY, WEATHER, PACE = 'threat', 'strategy', 'weather', 'pace'
 
 # Multi-word phrases first (matched on the whole sentence), then single words.
 PHRASES = {
-    'holding up': {CONDITION}, 'how many stops': {STRATEGY}, 'one stop': {STRATEGY},
-    'two stop': {STRATEGY}, 'which tyre': {STRATEGY}, 'which tyres': {STRATEGY},
-    'what tyre': {STRATEGY}, 'what tyres': {STRATEGY}, 'what compound': {STRATEGY},
-    'win probability': {STRATEGY}, 'chances of': {STRATEGY}, 'our chances': {STRATEGY},
-    'the chances': {STRATEGY}, 'my chances': {STRATEGY}, 'the odds': {STRATEGY},
-    'in front': {AHEAD}, 'car ahead': {RIVAL, AHEAD}, 'car in front': {RIVAL, AHEAD},
-    'car behind': {RIVAL, BEHIND}, 'other cars': {RIVAL}, 'the field': {RIVAL},
-    'the others': {RIVAL}, 'coming in': {PIT}, 'lap time': {PACE}, 'lap times': {PACE},
-    'how am i doing': {PACE}, 'how are we doing': {PACE}, 'how far': {GAP},
-    'how close': {GAP}, 'under pressure': {THREAT}, 'closing in': {THREAT},
-    'is it going to rain': {WEATHER}, 'what lap': {WINDOW}, 'which lap': {WINDOW},
+    'holding up': {CONDITION},
+    'how many stops': {STRATEGY},
+    'one stop': {STRATEGY},
+    'two stop': {STRATEGY},
+    'which tyre': {STRATEGY},
+    'which tyres': {STRATEGY},
+    'what tyre': {STRATEGY},
+    'what tyres': {STRATEGY},
+    'what compound': {STRATEGY},
+    'win probability': {STRATEGY},
+    'chances of': {STRATEGY},
+    'our chances': {STRATEGY},
+    'the chances': {STRATEGY},
+    'my chances': {STRATEGY},
+    'the odds': {STRATEGY},
+    'in front': {AHEAD},
+    'car ahead': {RIVAL, AHEAD},
+    'car in front': {RIVAL, AHEAD},
+    'car behind': {RIVAL, BEHIND},
+    'other cars': {RIVAL},
+    'the field': {RIVAL},
+    'the others': {RIVAL},
+    'coming in': {PIT},
+    'lap time': {PACE},
+    'lap times': {PACE},
+    'how am i doing': {PACE},
+    'how are we doing': {PACE},
+    'how far': {GAP},
+    'how close': {GAP},
+    'under pressure': {THREAT},
+    'closing in': {THREAT},
+    'is it going to rain': {WEATHER},
+    'what lap': {WINDOW},
+    'which lap': {WINDOW},
     'stay out': {PIT_WEAK},
 }
 WORDS = {
     # tyres
-    'tyre': {TYRE}, 'tyres': {TYRE}, 'rubber': {TYRE}, 'boots': {TYRE}, 'rears': {TYRE},
-    'fronts': {TYRE}, 'tread': {TYRE},
-    'temp': {TEMP}, 'temps': {TEMP}, 'temperature': {TEMP}, 'temperatures': {TEMP},
-    'hot': {TEMP}, 'cold': {TEMP}, 'overheating': {TEMP}, 'warm': {TEMP}, 'cool': {TEMP},
-    'wear': {CONDITION}, 'worn': {CONDITION}, 'deg': {CONDITION}, 'degradation': {CONDITION},
-    'grip': {CONDITION}, 'condition': {CONDITION}, 'shape': {CONDITION}, 'lasting': {CONDITION},
-    'holding': {CONDITION}, 'feel': {CONDITION}, 'feeling': {CONDITION}, 'life': {CONDITION},
+    'tyre': {TYRE},
+    'tyres': {TYRE},
+    'rubber': {TYRE},
+    'boots': {TYRE},
+    'rears': {TYRE},
+    'fronts': {TYRE},
+    'tread': {TYRE},
+    'temp': {TEMP},
+    'temps': {TEMP},
+    'temperature': {TEMP},
+    'temperatures': {TEMP},
+    'hot': {TEMP},
+    'cold': {TEMP},
+    'overheating': {TEMP},
+    'warm': {TEMP},
+    'cool': {TEMP},
+    'wear': {CONDITION},
+    'worn': {CONDITION},
+    'deg': {CONDITION},
+    'degradation': {CONDITION},
+    'grip': {CONDITION},
+    'condition': {CONDITION},
+    'shape': {CONDITION},
+    'lasting': {CONDITION},
+    'holding': {CONDITION},
+    'feel': {CONDITION},
+    'feeling': {CONDITION},
+    'life': {CONDITION},
     # pit stops
-    'pit': {PIT}, 'pitting': {PIT}, 'box': {PIT}, 'boxing': {PIT}, 'window': {PIT, WINDOW},
-    'stop': {PIT_WEAK}, 'stops': {PIT_WEAK}, 'stopping': {PIT_WEAK},
+    'pit': {PIT},
+    'pitting': {PIT},
+    'box': {PIT},
+    'boxing': {PIT},
+    'window': {PIT, WINDOW},
+    'stop': {PIT_WEAK},
+    'stops': {PIT_WEAK},
+    'stopping': {PIT_WEAK},
     # who
-    'i': {SELF}, 'we': {SELF}, 'me': {SELF}, 'my': {SELF}, 'us': {SELF}, 'our': {SELF},
-    'rival': {RIVAL}, 'rivals': {RIVAL}, 'others': {RIVAL}, 'everyone': {RIVAL},
-    'opponent': {RIVAL}, 'opponents': {RIVAL}, 'they': {RIVAL}, "they're": {RIVAL},
-    'theyre': {RIVAL}, 'them': {RIVAL}, 'doing': {DOING},
+    'i': {SELF},
+    'we': {SELF},
+    'me': {SELF},
+    'my': {SELF},
+    'us': {SELF},
+    'our': {SELF},
+    'rival': {RIVAL},
+    'rivals': {RIVAL},
+    'others': {RIVAL},
+    'everyone': {RIVAL},
+    'opponent': {RIVAL},
+    'opponents': {RIVAL},
+    'they': {RIVAL},
+    "they're": {RIVAL},
+    'theyre': {RIVAL},
+    'them': {RIVAL},
+    'doing': {DOING},
     # gaps
-    'ahead': {AHEAD}, 'front': {AHEAD}, 'leader': {AHEAD},
-    'behind': {BEHIND}, 'chasing': {BEHIND}, 'following': {BEHIND},
-    'gap': {GAP}, 'gaps': {GAP}, 'interval': {GAP}, 'distance': {GAP},
+    'ahead': {AHEAD},
+    'front': {AHEAD},
+    'leader': {AHEAD},
+    'behind': {BEHIND},
+    'chasing': {BEHIND},
+    'following': {BEHIND},
+    'gap': {GAP},
+    'gaps': {GAP},
+    'interval': {GAP},
+    'distance': {GAP},
     # threats
-    'threat': {THREAT}, 'threats': {THREAT}, 'attacking': {THREAT}, 'attack': {THREAT},
-    'pressure': {THREAT}, 'catching': {THREAT}, 'closing': {THREAT}, 'defend': {THREAT},
+    'threat': {THREAT},
+    'threats': {THREAT},
+    'attacking': {THREAT},
+    'attack': {THREAT},
+    'pressure': {THREAT},
+    'catching': {THREAT},
+    'closing': {THREAT},
+    'defend': {THREAT},
     'danger': {THREAT},
     # strategy
-    'strategy': {STRATEGY}, 'plan': {STRATEGY}, 'undercut': {STRATEGY}, 'overcut': {STRATEGY},
-    'compound': {STRATEGY}, 'odds': {STRATEGY}, 'chances': {STRATEGY}, 'podium': {STRATEGY},
+    'strategy': {STRATEGY},
+    'plan': {STRATEGY},
+    'undercut': {STRATEGY},
+    'overcut': {STRATEGY},
+    'compound': {STRATEGY},
+    'odds': {STRATEGY},
+    'chances': {STRATEGY},
+    'podium': {STRATEGY},
     'strategies': {STRATEGY},
     # weather
-    'weather': {WEATHER}, 'rain': {WEATHER}, 'raining': {WEATHER}, 'forecast': {WEATHER},
-    'wet': {WEATHER}, 'drizzle': {WEATHER}, 'storm': {WEATHER}, 'clouds': {WEATHER},
-    'sky': {WEATHER}, 'shower': {WEATHER}, 'showers': {WEATHER},
+    'weather': {WEATHER},
+    'rain': {WEATHER},
+    'raining': {WEATHER},
+    'forecast': {WEATHER},
+    'wet': {WEATHER},
+    'drizzle': {WEATHER},
+    'storm': {WEATHER},
+    'clouds': {WEATHER},
+    'sky': {WEATHER},
+    'shower': {WEATHER},
+    'showers': {WEATHER},
     # pace
-    'pace': {PACE}, 'laptime': {PACE}, 'quick': {PACE}, 'slow': {PACE}, 'delta': {PACE},
+    'pace': {PACE},
+    'laptime': {PACE},
+    'quick': {PACE},
+    'slow': {PACE},
+    'delta': {PACE},
 }
 
 # Each intent's score is the sum of its weights for the concepts present.
@@ -92,14 +186,25 @@ WEIGHTS = {
     'pace': {PACE: 3.0},
 }
 # Ties go to the earlier intent (the old regex order).
-ORDER = ('rivals', 'threats', 'strategy', 'gap_behind', 'pit_window', 'gap_ahead',
-         'tyre_temps', 'weather', 'pace')
+ORDER = (
+    'rivals',
+    'threats',
+    'strategy',
+    'gap_behind',
+    'pit_window',
+    'gap_ahead',
+    'tyre_temps',
+    'weather',
+    'pace',
+)
 MIN_SCORE = 2.0
 
 _WAKE = re.compile(r'^(?:hey |ok |okay )?(?:engineer|race engineer|box box)\b[, ]*')
 # "when will Hamilton box", "is Leclerc going to pit", "is Verstappen coming in"
-_NAMED_STOP = re.compile(r'\b(?:when (?:is|will|does)|is|will) (?!(?:i|we|me|my|us|it|the|there|this|that|he|she)\b)'
-                         r"[a-z']+ (?:going to |gonna )?(?:pit|box|stop|coming in)")
+_NAMED_STOP = re.compile(
+    r'\b(?:when (?:is|will|does)|is|will) (?!(?:i|we|me|my|us|it|the|there|this|that|he|she)\b)'
+    r"[a-z']+ (?:going to |gonna )?(?:pit|box|stop|coming in)"
+)
 _FUZZY_VOCAB = sorted(w for w in WORDS if len(w) >= 4)
 
 
@@ -144,8 +249,7 @@ class IntentMatch:
 
 
 def score_intents(found: set[str]) -> dict[str, float]:
-    scores = {intent: sum(w for c, w in weights.items() if c in found)
-              for intent, weights in WEIGHTS.items()}
+    scores = {intent: sum(w for c, w in weights.items() if c in found) for intent, weights in WEIGHTS.items()}
     # Rivals: a stop/tyre/strategy question about someone else. With "we"/"I" in it
     # ("should we pit before the car ahead", "can we undercut them") it's our own call.
     rival = 0.0
@@ -157,9 +261,9 @@ def score_intents(found: set[str]) -> dict[str, float]:
         rival = 3.0
     scores['rivals'] = rival
     if WEATHER in found and PIT not in found:
-        scores['pit_window'] = min(scores['pit_window'], 1.5)   # "will it stop raining"
+        scores['pit_window'] = min(scores['pit_window'], 1.5)  # "will it stop raining"
     if STRATEGY in found:
-        scores['tyre_temps'] = min(scores['tyre_temps'], 2.0)   # "which tyres next"
+        scores['tyre_temps'] = min(scores['tyre_temps'], 2.0)  # "which tyres next"
     return scores
 
 

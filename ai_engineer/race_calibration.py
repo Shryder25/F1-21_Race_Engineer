@@ -16,8 +16,9 @@ Method (after f1-race-replay's Bayesian tyre model):
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from statistics import median
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -25,10 +26,10 @@ FUEL_EFFECT_S_PER_KG = 0.032
 STARTING_FUEL_KG = 110.0
 WARMUP_LAPS = {'SOFT': 1, 'MEDIUM': 2, 'HARD': 3, 'INTERMEDIATE': 2, 'WET': 2}
 MIN_STINT_LAPS = 6
-NEUTRAL_DEG = {'SOFT': 0.100, 'MEDIUM': 0.055, 'HARD': 0.032}   # matches track_analysis.BASE_DEG
+NEUTRAL_DEG = {'SOFT': 0.100, 'MEDIUM': 0.055, 'HARD': 0.032}  # matches track_analysis.BASE_DEG
 
 
-def theil_sen_slope(x: Sequence[float], y: Sequence[float]) -> Optional[float]:
+def theil_sen_slope(x: Sequence[float], y: Sequence[float]) -> float | None:
     """Median of all pairwise slopes: robust to the odd traffic or mistake lap."""
     xs, ys = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
     if len(xs) < 3:
@@ -46,7 +47,7 @@ def fuel_mass(lap_number: int, race_laps: int) -> float:
     return max(0.0, STARTING_FUEL_KG - (lap_number - 1) * burn)
 
 
-def stint_degradation(stint: Dict[str, Any], race_laps: int) -> Optional[float]:
+def stint_degradation(stint: dict[str, Any], race_laps: int) -> float | None:
     """Seconds lost per lap of tyre age for one stint, or None if it is unusable.
 
     ``stint`` = {'compound': 'MEDIUM', 'laps': [(lap_number, tyre_age, lap_time_s), ...]}
@@ -60,7 +61,7 @@ def stint_degradation(stint: Dict[str, Any], race_laps: int) -> Optional[float]:
     if np.median(times) <= 0:
         return None
     ok = np.abs(times - np.median(times)) < 0.04 * np.median(times)  # drop traffic / mistakes
-    laps = [lap for lap, good in zip(laps, ok) if good]
+    laps = [lap for lap, good in zip(laps, ok, strict=False) if good]
     if len(laps) < 4:
         return None
     ages = [age for _n, age, _t in laps]
@@ -69,13 +70,13 @@ def stint_degradation(stint: Dict[str, Any], race_laps: int) -> Optional[float]:
     return None if slope is None else max(0.0, slope)
 
 
-def pit_loss(in_lap_s: float, out_lap_s: float, green_lap_s: float) -> Optional[float]:
+def pit_loss(in_lap_s: float, out_lap_s: float, green_lap_s: float) -> float | None:
     """Time lost to one pit stop compared with two normal laps (None if implausible)."""
     loss = in_lap_s + out_lap_s - 2.0 * green_lap_s
     return loss if 10.0 <= loss <= 45.0 else None
 
 
-def summarize_races(races: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def summarize_races(races: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
     """Measured values for one circuit from several real races.
 
     Each race: {'name': '2021 British Grand Prix', 'race_laps': 52, 'rain': bool,
@@ -85,10 +86,10 @@ def summarize_races(races: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]
     races = list(races)
     if not races:
         return None
-    slopes: Dict[str, List[float]] = {}
-    stint_lengths: Dict[str, List[int]] = {}
-    losses: List[float] = []
-    stops: List[int] = []
+    slopes: dict[str, list[float]] = {}
+    stint_lengths: dict[str, list[int]] = {}
+    losses: list[float] = []
+    stops: list[int] = []
     for race in races:
         for stint in race.get('stints', []):
             compound = stint['compound']

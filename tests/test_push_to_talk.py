@@ -91,19 +91,24 @@ class BindingTests(unittest.TestCase):
         self.assertFalse(button.is_pressed(joy))
         joy.buttons[3] = True
         self.assertTrue(button.is_pressed(joy))
-        joy.hats[0] = (1, 1)            # diagonal up-right still counts as up
+        joy.hats[0] = (1, 1)  # diagonal up-right still counts as up
         self.assertTrue(up.is_pressed(joy))
         joy.hats[0] = (0, -1)
         self.assertFalse(up.is_pressed(joy))
-        self.assertFalse(ptt.Binding('button', 40).is_pressed(joy))   # out of range is never pressed
+        self.assertFalse(ptt.Binding('button', 40).is_pressed(joy))  # out of range is never pressed
         self.assertFalse(ptt.Binding('hat', 3, 'up').exists_on(joy))
 
 
 class WatcherStateTests(unittest.TestCase):
     def make(self, mode=ptt.HOLD, **kwargs):
         events = []
-        watcher = ptt.ButtonWatcher(ptt.Binding('button', 0), lambda: events.append('start'),
-                                    lambda: events.append('stop'), mode=mode, **kwargs)
+        watcher = ptt.ButtonWatcher(
+            ptt.Binding('button', 0),
+            lambda: events.append('start'),
+            lambda: events.append('stop'),
+            mode=mode,
+            **kwargs,
+        )
         return watcher, events
 
     def test_hold_talks_while_held(self):
@@ -128,7 +133,7 @@ class WatcherStateTests(unittest.TestCase):
     def test_contact_bounce_is_ignored(self):
         watcher, events = self.make(debounce_s=0.05)
         watcher.feed(True, 1.0)
-        watcher.feed(False, 1.01)       # bounce
+        watcher.feed(False, 1.01)  # bounce
         watcher.feed(True, 1.02)
         self.assertEqual(events, ['start'])
         watcher.feed(False, 2.0)
@@ -137,10 +142,10 @@ class WatcherStateTests(unittest.TestCase):
     def test_radio_left_open_closes_itself_and_needs_a_release(self):
         watcher, events = self.make(max_open_s=10)
         watcher.feed(True, 0.0)
-        watcher.feed(True, 10.5)        # held too long
+        watcher.feed(True, 10.5)  # held too long
         self.assertEqual(events, ['start', 'stop'])
         watcher.feed(True, 11.0)
-        self.assertEqual(events, ['start', 'stop'])   # still held: does not reopen
+        self.assertEqual(events, ['start', 'stop'])  # still held: does not reopen
         watcher.feed(False, 12.0)
         watcher.feed(True, 13.0)
         self.assertEqual(events, ['start', 'stop', 'start'])
@@ -160,18 +165,24 @@ class WatcherThreadTests(unittest.TestCase):
         pad, wheel = FakeJoystick('Xbox Controller'), FakeJoystick('Logitech G29')
         backend = FakeBackend([pad, wheel])
         events = []
-        watcher = ptt.ButtonWatcher(ptt.Binding('button', 4), lambda: events.append('start'),
-                                    lambda: events.append('stop'), device='g29',
-                                    backend_factory=lambda: backend, poll_hz=500, rescan_s=0.01)
+        watcher = ptt.ButtonWatcher(
+            ptt.Binding('button', 4),
+            lambda: events.append('start'),
+            lambda: events.append('stop'),
+            device='g29',
+            backend_factory=lambda: backend,
+            poll_hz=500,
+            rescan_s=0.01,
+        )
         self.assertTrue(watcher.start())
         self.addCleanup(watcher.stop)
         self.assertTrue(wait_for(lambda: watcher.device_name == 'Logitech G29'))
-        pad.buttons[4] = True            # other controller: ignored
+        pad.buttons[4] = True  # other controller: ignored
         time.sleep(0.05)
         self.assertEqual(events, [])
         wheel.buttons[4] = True
         self.assertTrue(wait_for(lambda: events == ['start']))
-        backend.joysticks = []           # unplugged while talking: radio closes
+        backend.joysticks = []  # unplugged while talking: radio closes
         backend.changed = True
         self.assertTrue(wait_for(lambda: events == ['start', 'stop']))
         watcher.stop()
@@ -180,8 +191,10 @@ class WatcherThreadTests(unittest.TestCase):
     def test_missing_pygame_reports_false(self):
         def broken():
             raise ImportError('No module named pygame')
-        watcher = ptt.ButtonWatcher(ptt.Binding('button', 0), lambda: None, lambda: None,
-                                    backend_factory=broken)
+
+        watcher = ptt.ButtonWatcher(
+            ptt.Binding('button', 0), lambda: None, lambda: None, backend_factory=broken
+        )
         self.assertFalse(watcher.start())
 
 
@@ -200,7 +213,7 @@ class RecorderTests(unittest.TestCase):
     def test_records_between_begin_and_end_with_preroll(self):
         recorder = self.make()
         for i in range(5):
-            recorder.feed(bytes([i]) * 200)          # only the last two chunks are kept
+            recorder.feed(bytes([i]) * 200)  # only the last two chunks are kept
         recorder.begin()
         self.assertTrue(recorder.recording)
         recorder.feed(b'\x09' * 400)
@@ -212,9 +225,9 @@ class RecorderTests(unittest.TestCase):
     def test_a_quick_tap_is_ignored(self):
         recorder = self.make()
         recorder.begin()
-        recorder.feed(b'\x00' * 100)                 # 0.05 s
+        recorder.feed(b'\x00' * 100)  # 0.05 s
         self.assertIsNone(recorder.end())
-        self.assertIsNone(recorder.end())            # end without begin is safe
+        self.assertIsNone(recorder.end())  # end without begin is safe
 
     def test_no_microphone_returns_false(self):
         try:
@@ -224,6 +237,7 @@ class RecorderTests(unittest.TestCase):
 
         def broken(device_index=None):
             raise OSError('no microphone')
+
         self.assertFalse(ptt.MicRecorder(microphone_factory=broken).start())
 
 
@@ -249,8 +263,12 @@ class PushToTalkTests(unittest.TestCase):
                 sent.append((text, free_form))
 
         logs = []
-        radio = ptt.PushToTalk(Dispatcher(), FakeRecorder(), lambda audio: 'how are the rears',
-                               on_log=lambda m, status: logs.append((m, status)))
+        radio = ptt.PushToTalk(
+            Dispatcher(),
+            FakeRecorder(),
+            lambda audio: 'how are the rears',
+            on_log=lambda m, status: logs.append((m, status)),
+        )
         self.addCleanup(radio.shutdown)
         radio.on_start()
         self.assertTrue(radio.recently_active())
@@ -302,11 +320,13 @@ class FakeClient:
         self.prompts.append(user)
         if self.reply is None:
             from ai_client import AIUnavailable
+
             raise AIUnavailable('offline')
         return {'voice': self.reply, 'advice': ''}
 
     def chat(self, system, user):
         from ai_client import AIUnavailable
+
         raise AIUnavailable('offline')
 
 
@@ -325,16 +345,19 @@ class FreeFormQuestionTests(unittest.TestCase):
 
     def test_offline_falls_back_to_rules_when_the_question_matches_a_command(self):
         brain = EngineerBrain(lambda: RACE_CTX, FakeClient(None))
-        self.assertEqual(brain.answer_question("what's the gap to the guy ahead", 'gap_ahead'),
-                         'Gap to Hamilton ahead is 1.2.')
+        self.assertEqual(
+            brain.answer_question("what's the gap to the guy ahead", 'gap_ahead'),
+            'Gap to Hamilton ahead is 1.2.',
+        )
         self.assertEqual(brain.answer_question('is my front wing damaged'), UNKNOWN_QUESTION_REPLY)
         self.assertEqual(brain.last_source, 'fallback')
 
     def test_session_mode_still_answers_instantly(self):
         client = FakeClient('should not be used')
         brain = EngineerBrain(lambda: {'session_mode': 'time_trial'}, client)
-        self.assertEqual(brain.answer_question('who is behind me', 'gap_behind'),
-                         'No other cars in time trial.')
+        self.assertEqual(
+            brain.answer_question('who is behind me', 'gap_behind'), 'No other cars in time trial.'
+        )
         self.assertEqual(client.prompts, [])
 
 
@@ -388,14 +411,15 @@ class DispatcherFreeFormTests(unittest.TestCase):
 class FinderAndSettingsTests(unittest.TestCase):
     def test_finder_reports_a_new_press_and_ignores_buttons_already_held(self):
         wheel = FakeJoystick('Fanatec CSL DD')
-        wheel.buttons[0] = True                     # e.g. a shifter that is always "on"
+        wheel.buttons[0] = True  # e.g. a shifter that is always "on"
         backend = FakeBackend([FakeJoystick('Xbox Controller'), wheel])
         ticks = iter(range(1000))
-        clock = lambda: next(ticks) * 0.01          # noqa: E731
+        clock = lambda: next(ticks) * 0.01  # noqa: E731
 
         def sleep(_s):
             if clock() > 0.5:
                 wheel.buttons[7] = True
+
         lines = []
         found = ptt.find_button(backend, out=lines.append, clock=clock, sleep=sleep)
         self.assertEqual(found, (1, 'Fanatec CSL DD', ptt.Binding('button', 7)))
@@ -407,10 +431,11 @@ class FinderAndSettingsTests(unittest.TestCase):
 
         calls = []
 
-        def sleep(_s):                              # the first sleep is before the baseline
+        def sleep(_s):  # the first sleep is before the baseline
             calls.append(_s)
             if len(calls) > 1:
                 pad.hats[0] = (-1, 0)
+
         found = ptt.find_button(backend, out=lambda *_: None, sleep=sleep)
         self.assertEqual(found[2], ptt.Binding('hat', 0, 'left'))
         lines = []
@@ -419,9 +444,15 @@ class FinderAndSettingsTests(unittest.TestCase):
 
     def test_finder_times_out(self):
         ticks = iter(range(10000))
-        self.assertIsNone(ptt.find_button(FakeBackend([FakeJoystick()]), timeout_s=1,
-                                          out=lambda *_: None, clock=lambda: next(ticks) * 0.1,
-                                          sleep=lambda _s: None))
+        self.assertIsNone(
+            ptt.find_button(
+                FakeBackend([FakeJoystick()]),
+                timeout_s=1,
+                out=lambda *_: None,
+                clock=lambda: next(ticks) * 0.1,
+                sleep=lambda _s: None,
+            )
+        )
 
     def test_saved_choice_is_used_and_command_line_wins(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -430,11 +461,11 @@ class FinderAndSettingsTests(unittest.TestCase):
             ptt.save_config(ptt.Binding('hat', 0, 'up'), 'Logitech G29', ptt.TOGGLE, path)
             self.assertEqual(json.loads(path.read_text())['button'], 'hat0:up')
             saved = ptt.resolve_settings(config_path=path)
-            self.assertEqual((saved.binding.label, saved.device, saved.mode),
-                             ('hat0:up', 'Logitech G29', ptt.TOGGLE))
+            self.assertEqual(
+                (saved.binding.label, saved.device, saved.mode), ('hat0:up', 'Logitech G29', ptt.TOGGLE)
+            )
             override = ptt.resolve_settings('3', None, ptt.HOLD, config_path=path)
-            self.assertEqual((override.binding.label, override.device, override.mode),
-                             ('3', None, ptt.HOLD))
+            self.assertEqual((override.binding.label, override.device, override.mode), ('3', None, ptt.HOLD))
             path.write_text('{"button": "banana"}')
             self.assertIsNone(ptt.resolve_settings(config_path=path))
             with self.assertRaises(ValueError):
@@ -456,16 +487,18 @@ class FinderAndSettingsTests(unittest.TestCase):
             original = ptt._snapshot
             first = [True]
 
-            def snapshot(joystick):                 # baseline sees nothing pressed
+            def snapshot(joystick):  # baseline sees nothing pressed
                 if first[0]:
                     first[0] = False
                     return (False,) * len(joystick.buttons), tuple(joystick.hats)
                 return original(joystick)
+
             ptt._snapshot = snapshot
             self.addCleanup(setattr, ptt, '_snapshot', original)
             self.assertEqual(ptt.run_button_finder(ptt.HOLD, path, lambda: backend), 0)
-            self.assertEqual(json.loads(path.read_text()),
-                             {'button': '2', 'device': 'Thrustmaster T300RS', 'mode': 'hold'})
+            self.assertEqual(
+                json.loads(path.read_text()), {'button': '2', 'device': 'Thrustmaster T300RS', 'mode': 'hold'}
+            )
             self.assertTrue(backend.closed)
 
 
@@ -486,8 +519,9 @@ class StartTests(unittest.TestCase):
 
         recorder = Recorder()
         settings = ptt.Settings(ptt.Binding('button', 1))
-        radio = ptt.start(settings, object(), backend_factory=lambda: backend,
-                          recorder=recorder, recognizer=object())
+        radio = ptt.start(
+            settings, object(), backend_factory=lambda: backend, recorder=recorder, recognizer=object()
+        )
         self.assertIsNotNone(radio)
         wheel.buttons[1] = True
         self.assertTrue(wait_for(lambda: recorder.recording))
@@ -499,8 +533,10 @@ class StartTests(unittest.TestCase):
         class NoMic:
             def start(self):
                 return False
-        self.assertIsNone(ptt.start(ptt.Settings(ptt.Binding('button', 1)), object(),
-                                    recorder=NoMic(), recognizer=object()))
+
+        self.assertIsNone(
+            ptt.start(ptt.Settings(ptt.Binding('button', 1)), object(), recorder=NoMic(), recognizer=object())
+        )
 
 
 if __name__ == '__main__':

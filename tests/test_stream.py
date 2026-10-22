@@ -4,10 +4,10 @@ import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
-from analysis import AnalysisEngine
-from simulate_telemetry import build_session_packet, build_lap_packet, build_telemetry_packet
-from test_analysis import SilentVoice
 import web_hud
+from analysis import AnalysisEngine
+from simulate_telemetry import build_lap_packet, build_session_packet, build_telemetry_packet
+from test_analysis import SilentVoice
 
 
 def header_change(packet, uid=None, packet_format=None, player=None):
@@ -24,6 +24,7 @@ def header_change(packet, uid=None, packet_format=None, player=None):
 class StreamTests(unittest.TestCase):
     def setUp(self):
         from telemetry_stream import TelemetryStream
+
         self.engine = AnalysisEngine(SilentVoice())
         self.stream = TelemetryStream(self.engine)
         self.session = build_session_packet(0, 1, 11)

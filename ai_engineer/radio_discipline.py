@@ -22,12 +22,31 @@ DEFAULT_CALLS_PER_LAP = 4
 
 # Topics that are never budgeted, whatever their priority. CRITICAL and STRATEGY priority
 # calls (box box, pit window, undercut, Plan B, a rival's stop) are always urgent too.
-URGENT_TOPICS = frozenset({
-    'safety_car', 'safety_car_in', 'flag_red', 'flag_yellow', 'penalty', 'critical_wear',
-    'wing_damage', 'weather_rain', 'tyre_temperature', 'pit_window', 'undercut', 'rival_pit',
-    'rival_preempt', 'plan_b', 'drs_behind', 'own_pit_stop', 'lights_out', 'chequered',
-    'race_winner', 'race_finish', 'lap_deleted',
-})
+URGENT_TOPICS = frozenset(
+    {
+        'safety_car',
+        'safety_car_in',
+        'flag_red',
+        'flag_yellow',
+        'penalty',
+        'critical_wear',
+        'wing_damage',
+        'weather_rain',
+        'tyre_temperature',
+        'pit_window',
+        'undercut',
+        'rival_pit',
+        'rival_preempt',
+        'plan_b',
+        'drs_behind',
+        'own_pit_stop',
+        'lights_out',
+        'chequered',
+        'race_winner',
+        'race_finish',
+        'lap_deleted',
+    }
+)
 
 
 def is_urgent(topic: str | None, priority) -> bool:
@@ -41,12 +60,12 @@ class CallBudget:
         self.per_lap = per_lap if per_lap and per_lap > 0 else None
         self.lap = None
         self.used = 0
-        self.skipped = 0            # over-budget calls dropped this lap (HUD/debug)
+        self.skipped = 0  # over-budget calls dropped this lap (HUD/debug)
 
-    def reset(self):
+    def reset(self) -> None:
         self.lap, self.used, self.skipped = None, 0, 0
 
-    def new_lap(self, lap_num):
+    def new_lap(self, lap_num: int) -> None:
         if lap_num != self.lap:
             self.lap, self.used, self.skipped = lap_num, 0, 0
 
@@ -70,12 +89,12 @@ class CallBudget:
 
 @dataclass
 class LoadThresholds:
-    corner_speed_kph: float = 200.0    # a high-load corner is at least this fast...
-    corner_g: float = 3.5              # ...with at least this much lateral G
-    straight_g: float = 1.5            # back on a straight once lateral G stays below this...
-    straight_s: float = 0.4            # ...for this long (so an S-bend counts as one corner)
-    brake: float = 0.5                 # brake pedal (0-1) counted as a heavy braking zone
-    stale_s: float = 1.0               # no telemetry for this long: don't hold the radio
+    corner_speed_kph: float = 200.0  # a high-load corner is at least this fast...
+    corner_g: float = 3.5  # ...with at least this much lateral G
+    straight_g: float = 1.5  # back on a straight once lateral G stays below this...
+    straight_s: float = 0.4  # ...for this long (so an S-bend counts as one corner)
+    brake: float = 0.5  # brake pedal (0-1) counted as a heavy braking zone
+    stale_s: float = 1.0  # no telemetry for this long: don't hold the radio
 
 
 class DriverLoadGate:
@@ -94,12 +113,17 @@ class DriverLoadGate:
         self._calm_since = None
         self._last_update = None
 
-    def reset(self):
+    def reset(self) -> None:
         self.in_corner = self.braking = False
         self._calm_since = self._last_update = None
 
-    def update(self, speed_kph: float | None, lateral_g: float | None, brake: float | None = None,
-               now: float | None = None):
+    def update(
+        self,
+        speed_kph: float | None,
+        lateral_g: float | None,
+        brake: float | None = None,
+        now: float | None = None,
+    ):
         now = self.clock() if now is None else now
         self._last_update = now
         g = abs(lateral_g or 0.0)

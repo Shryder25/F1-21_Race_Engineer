@@ -16,10 +16,9 @@ from dataclasses import replace
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 
 import pit_wall
-import race_sim as sim
 import web_hud
 from analysis import AnalysisEngine
-from packets import CarStatusData, SessionData, TyreStint, SessionHistoryData, parse_player_lap_data
+from packets import CarStatusData, SessionData, SessionHistoryData, TyreStint, parse_player_lap_data
 from simulate_telemetry import build_lap_packet
 from test_analysis import SilentVoice
 
@@ -30,10 +29,16 @@ SOFT, MEDIUM, HARD = 16, 17, 18
 def lap(position, distance, last_ms=0, pit_status=0, stops=0, result=2):
     base = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 2), 0)
     lap_num = int(distance // TRACK) + 1 if distance >= 0 else 1
-    return replace(base, car_position=position, current_lap_num=lap_num,
-                   lap_distance=distance % TRACK if distance >= 0 else distance,
-                   last_lap_time_ms=last_ms, pit_status=pit_status, num_pit_stops=stops,
-                   result_status=result)
+    return replace(
+        base,
+        car_position=position,
+        current_lap_num=lap_num,
+        lap_distance=distance % TRACK if distance >= 0 else distance,
+        last_lap_time_ms=last_ms,
+        pit_status=pit_status,
+        num_pit_stops=stops,
+        result_status=result,
+    )
 
 
 def status(compound=MEDIUM, age=3):
@@ -44,7 +49,7 @@ def run_field(wall, speeds, offsets, until, step=0.25, statuses=None):
     """Drive cars at constant speeds (m/s); offsets are seconds behind the start."""
     t = 0.0
     while t <= until + 1e-9:
-        dists = [v * (t - o) for v, o in zip(speeds, offsets)]
+        dists = [v * (t - o) for v, o in zip(speeds, offsets, strict=False)]
         order = sorted(range(len(dists)), key=lambda i: -dists[i])
         laps = [None] * len(dists)
         for pos, i in enumerate(order, start=1):
@@ -74,7 +79,7 @@ class TimingTowerTests(unittest.TestCase):
         run_field(wall, [50.0, 25.0], [0.0, 0.0], until=60.0)
         slow = wall.rows[1]
         self.assertEqual(slow['laps_down'], 1)
-        self.assertGreater(slow['gap_s'], 29.0)          # gap is still a time, measured a lap apart
+        self.assertGreater(slow['gap_s'], 29.0)  # gap is still a time, measured a lap apart
         # Loops every car has passed are forgotten.
         self.assertGreaterEqual(min(wall.first_crossing), wall.oldest_loop)
         self.assertLess(len(wall.first_crossing), 40)
@@ -95,7 +100,7 @@ class TimingTowerTests(unittest.TestCase):
         wall.reset(TRACK)
         run_field(wall, [50.0, 50.0], [0.0, 2.0], until=65.0)
         revision = wall.history_revision
-        wall.update([lap(1, 1500.0), lap(2, 1400.0)], 30.0, 0)   # back to lap 2
+        wall.update([lap(1, 1500.0), lap(2, 1400.0)], 30.0, 0)  # back to lap 2
         self.assertGreater(wall.history_revision, revision)
         self.assertEqual(sorted(wall.gap_history[0]), [1])
         self.assertEqual(wall.crossings, {})
@@ -144,14 +149,25 @@ class StintTests(unittest.TestCase):
     def test_session_history_stints_win_over_status_tracking(self):
         wall = pit_wall.PitWall()
         wall.reset(TRACK)
-        history = SessionHistoryData(0, 9, 3, (1, 1, 1), [], [
-            TyreStint(0, 1, 4, SOFT, SOFT, False), TyreStint(1, 5, 9, HARD, HARD, True)])
-        wall.update([lap(1, 8500.0), lap(2, 8400.0)], 1.0, 0, [status(HARD), status(MEDIUM)],
-                    histories={0: history})
+        history = SessionHistoryData(
+            0,
+            9,
+            3,
+            (1, 1, 1),
+            [],
+            [TyreStint(0, 1, 4, SOFT, SOFT, False), TyreStint(1, 5, 9, HARD, HARD, True)],
+        )
+        wall.update(
+            [lap(1, 8500.0), lap(2, 8400.0)], 1.0, 0, [status(HARD), status(MEDIUM)], histories={0: history}
+        )
         stints = wall.stints()
-        self.assertEqual(stints[0]['stints'], [
-            {'compound': 'S', 'start_lap': 1, 'end_lap': 4, 'open': False},
-            {'compound': 'H', 'start_lap': 5, 'end_lap': 9, 'open': True}])
+        self.assertEqual(
+            stints[0]['stints'],
+            [
+                {'compound': 'S', 'start_lap': 1, 'end_lap': 4, 'open': False},
+                {'compound': 'H', 'start_lap': 5, 'end_lap': 9, 'open': True},
+            ],
+        )
         # No history for car 1: built from its Car Status compound.
         self.assertEqual(stints[1]['stints'], [{'compound': 'M', 'start_lap': 9, 'end_lap': 9, 'open': True}])
 
@@ -163,8 +179,10 @@ class StintTests(unittest.TestCase):
             compound = HARD if n >= 4 else MEDIUM
             wall.update([lap(1, (n - 1) * TRACK + 500.0, stops=stops)], float(n), 0, [status(compound)])
         sets = wall.stints()[0]['stints']
-        self.assertEqual([(s['compound'], s['start_lap'], s['end_lap'], s['open']) for s in sets],
-                         [('M', 1, 4, False), ('H', 5, 7, True)])
+        self.assertEqual(
+            [(s['compound'], s['start_lap'], s['end_lap'], s['open']) for s in sets],
+            [('M', 1, 4, False), ('H', 5, 7, True)],
+        )
 
     def test_revision_moves_only_when_stints_change(self):
         wall = pit_wall.PitWall()
@@ -212,8 +230,10 @@ class EngineWiringTests(unittest.TestCase):
     def test_strategy_odds_from_the_race_simulation(self):
         engine = AnalysisEngine(SilentVoice(), race_simulation='sync', sim_runs=60)
         engine.update_session(self.RACE, 1, 0)
-        laps = [replace(lap(i + 1, 19 * 5891.0 + 100), current_lap_num=20, last_lap_time_ms=90000)
-                for i in range(6)]
+        laps = [
+            replace(lap(i + 1, 19 * 5891.0 + 100), current_lap_num=20, last_lap_time_ms=90000)
+            for i in range(6)
+        ]
         engine.update_car_status(status(age=12), [status(age=12 + i) for i in range(6)])
         engine.update_field(laps, 2, 1000.0)
         engine.latest_lap = laps[2]
@@ -228,9 +248,11 @@ class EngineWiringTests(unittest.TestCase):
         self.assertGreaterEqual(odds['p_points'], odds['p_podium'])
         self.assertGreaterEqual(odds['p_podium'], odds['p_win'])
         self.assertEqual(odds['plans'][0]['label'], odds['recommended'])
-        self.assertEqual(odds['history'], [{'lap': 20, 'p_win': odds['p_win'],
-                                            'p_podium': odds['p_podium'], 'p_points': odds['p_points']}])
-        self.assertIs(engine.strategy_odds(), odds)        # same result: cached, not rebuilt
+        self.assertEqual(
+            odds['history'],
+            [{'lap': 20, 'p_win': odds['p_win'], 'p_podium': odds['p_podium'], 'p_points': odds['p_points']}],
+        )
+        self.assertIs(engine.strategy_odds(), odds)  # same result: cached, not rebuilt
         json.dumps(odds, allow_nan=False)
 
 
@@ -249,7 +271,7 @@ class StateStoreTests(unittest.TestCase):
         version2, delta = web_hud.web_state_message(version, now=0)
         delta = json.loads(delta)
         self.assertEqual(delta['type'], 'delta')
-        self.assertEqual(delta['state'], {'speed': 123})       # gear did not change
+        self.assertEqual(delta['state'], {'speed': 123})  # gear did not change
         self.assertGreater(version2, version)
         _, empty = web_hud.web_state_message(version2, now=0)
         self.assertEqual(json.loads(empty)['state'], {})
@@ -257,7 +279,7 @@ class StateStoreTests(unittest.TestCase):
     def test_values_are_snapshotted_when_set(self):
         trail = [[1.0, 2.0]]
         web_hud.update_web_state({'track_map': trail})
-        trail.append([3.0, 4.0])                                 # the engine keeps mutating its list
+        trail.append([3.0, 4.0])  # the engine keeps mutating its list
         self.assertEqual(web_hud.get_web_state(now=0)['track_map'], [[1.0, 2.0]])
         self.assertEqual(json.loads(web_hud.web_state_json(now=0))['track_map'], [[1.0, 2.0]])
 
@@ -301,9 +323,13 @@ class WebSocketTests(unittest.TestCase):
     def connect(self):
         sock = socket.create_connection(('127.0.0.1', self.port), timeout=5)
         key = base64.b64encode(os.urandom(16)).decode()
-        sock.sendall((f'GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
-                      f'Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n'
-                      f'Sec-WebSocket-Version: 13\r\n\r\n').encode())
+        sock.sendall(
+            (
+                f'GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
+                f'Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n'
+                f'Sec-WebSocket-Version: 13\r\n\r\n'
+            ).encode()
+        )
         reader = sock.makefile('rb')
         head = b''
         while not head.endswith(b'\r\n\r\n'):
@@ -382,6 +408,7 @@ class WebSocketTests(unittest.TestCase):
 
     def test_polling_endpoint_still_serves_the_whole_state(self):
         import urllib.request
+
         web_hud.update_web_state({'speed': 199})
         with urllib.request.urlopen(f'http://127.0.0.1:{self.port}/api/telemetry', timeout=5) as res:
             state = json.loads(res.read())

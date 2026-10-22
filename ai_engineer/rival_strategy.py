@@ -51,7 +51,7 @@ WET = race_strategy.WET_COMPOUNDS
 # player's own ideal-wear target (strategy_ml.IDEAL_WEAR_PCT); wide on purpose.
 STOP_WEAR_PRIOR_PCT = 60.0
 STOP_WEAR_PRIOR_SD = 10.0
-PRIOR_PSEUDO_STOPS = 2.0            # how many real stops the priors are worth
+PRIOR_PSEUDO_STOPS = 2.0  # how many real stops the priors are worth
 LIFE_FACTOR_PRIOR_SD = 0.2
 # Plan estimate: every first-stop lap is weighted by exp(-extra race time / this), so a flat
 # cost curve gives a wide spread. A no-stop plan gets this fraction of its stint as spread.
@@ -63,16 +63,16 @@ PLAN_SD_MIN = 1.5
 PLAN_MODEL_REL_SD = 0.2
 # Once the rival's own wear has been measured the generic plan is only a weak prior.
 PLAN_SD_WITH_WEAR = 2.0
-GAME_WINDOW_SD = 3.0                # same compound as the player; more when it differs
+GAME_WINDOW_SD = 3.0  # same compound as the player; more when it differs
 MIN_SD = 0.8
 OVERDUE_SD = 1.0
-MIN_WEAR_LAPS = 2                   # wear increments needed before the wear estimate counts
-HIDDEN_WEAR_AGE = 2                 # wear still zero after this many laps = restricted telemetry
-COMPOUND_TEMPERATURE_S = 4.0        # race-time difference that makes one set e^1 times likelier
-RAIN_WEATHER = 3                    # session weather: 3 light rain, 4 heavy rain, 5 storm
+MIN_WEAR_LAPS = 2  # wear increments needed before the wear estimate counts
+HIDDEN_WEAR_AGE = 2  # wear still zero after this many laps = restricted telemetry
+COMPOUND_TEMPERATURE_S = 4.0  # race-time difference that makes one set e^1 times likelier
+RAIN_WEATHER = 3  # session weather: 3 light rain, 4 heavy rain, 5 storm
 HEAVY_RAIN_WEATHER = 4
-DRY_WEATHER_MAX = 1                 # clear or light cloud: inters/wets are due to come off
-TRANSITION_PSEUDO = 2.0             # model's next-compound guess is worth this many observed stops
+DRY_WEATHER_MAX = 1  # clear or light cloud: inters/wets are due to come off
+TRANSITION_PSEUDO = 2.0  # model's next-compound guess is worth this many observed stops
 SNAPSHOT_DISTANCE_M = fitted_models.SNAPSHOT_DISTANCE_M
 LEVEL = fitted_models.DEFAULT_LEVEL
 
@@ -115,9 +115,13 @@ def typical_sequence(track_id: int | None, track_length: int | None, total_laps:
         if profile is not None:
             length = float(track_length or track_analysis.REFERENCE_LAP_M)
             plan = track_analysis.plan_strategy(
-                profile, length, track_analysis.degradation_rates(profile),
-                track_analysis.compound_life(profile, length), wet=False,
-                race_fraction=total_laps / max(1, profile['race_laps']))
+                profile,
+                length,
+                track_analysis.degradation_rates(profile),
+                track_analysis.compound_life(profile, length),
+                wet=False,
+                race_fraction=total_laps / max(1, profile['race_laps']),
+            )
             if plan.get('best'):
                 sequence = [s['compound'] for s in plan['best']['stints']]
         _typical_cache[key] = sequence
@@ -139,32 +143,39 @@ def typical_next(sequence: list[str], compound: str, stops_done: int) -> str | N
 # What the field has shown so far
 # ──────────────────────────────────────────────
 
+
 @dataclass
 class FieldStats:
     """Learned from rival stops this race: wear at the stop and stint length against the plan."""
-    stop_wear: list = field(default_factory=list)      # worst-tyre wear % when a car boxed
-    life_ratio: list = field(default_factory=list)     # actual stint / planned stint at its start
-    transitions: dict = field(default_factory=dict)    # (from, to) compound -> stops seen
+
+    stop_wear: list = field(default_factory=list)  # worst-tyre wear % when a car boxed
+    life_ratio: list = field(default_factory=list)  # actual stint / planned stint at its start
+    transitions: dict = field(default_factory=dict)  # (from, to) compound -> stops seen
 
     def stop_wear_pct(self) -> tuple[float, float]:
         """(mean, sd) wear at which cars box, prior blended with what has been seen."""
         k, n = PRIOR_PSEUDO_STOPS, len(self.stop_wear)
         mean = (STOP_WEAR_PRIOR_PCT * k + sum(self.stop_wear)) / (k + n)
-        ss = STOP_WEAR_PRIOR_SD ** 2 * k + sum((w - mean) ** 2 for w in self.stop_wear)
+        ss = STOP_WEAR_PRIOR_SD**2 * k + sum((w - mean) ** 2 for w in self.stop_wear)
         return mean, max(3.0, math.sqrt(ss / (k + n)))
 
     def life_factor(self) -> tuple[float, float]:
         """(mean, sd) of how long cars run compared with the plan (1.0 = as planned)."""
         k, n = PRIOR_PSEUDO_STOPS, len(self.life_ratio)
         mean = (k + sum(self.life_ratio)) / (k + n)
-        ss = LIFE_FACTOR_PRIOR_SD ** 2 * k + sum((r - mean) ** 2 for r in self.life_ratio)
+        ss = LIFE_FACTOR_PRIOR_SD**2 * k + sum((r - mean) ** 2 for r in self.life_ratio)
         return mean, math.sqrt(ss / (k + n))
 
     def next_compound_counts(self, compound: str) -> dict:
         return {to: n for (frm, to), n in self.transitions.items() if frm == compound}
 
-    def record_stop(self, wear_pct: float | None, life_ratio: float | None,
-                    from_compound: str | None = None, to_compound: str | None = None):
+    def record_stop(
+        self,
+        wear_pct: float | None,
+        life_ratio: float | None,
+        from_compound: str | None = None,
+        to_compound: str | None = None,
+    ):
         if from_compound in DRY and to_compound in DRY:
             key = (from_compound, to_compound)
             self.transitions[key] = self.transitions.get(key, 0) + 1
@@ -176,29 +187,35 @@ class FieldStats:
     def as_dict(self) -> dict:
         wear, wear_sd = self.stop_wear_pct()
         factor, factor_sd = self.life_factor()
-        return {'stops_seen': max(len(self.stop_wear), len(self.life_ratio)),
-                'stop_wear_pct': round(wear, 1), 'stop_wear_sd': round(wear_sd, 1),
-                'life_factor': round(factor, 3), 'life_factor_sd': round(factor_sd, 3),
-                'transitions': {f'{a}>{b}': n for (a, b), n in sorted(self.transitions.items())}}
+        return {
+            'stops_seen': max(len(self.stop_wear), len(self.life_ratio)),
+            'stop_wear_pct': round(wear, 1),
+            'stop_wear_sd': round(wear_sd, 1),
+            'life_factor': round(factor, 3),
+            'life_factor_sd': round(factor_sd, 3),
+            'transitions': {f'{a}>{b}': n for (a, b), n in sorted(self.transitions.items())},
+        }
 
 
 # ──────────────────────────────────────────────
 # Prediction
 # ──────────────────────────────────────────────
 
+
 @dataclass
 class RivalState:
     """Everything the predictor needs to know about one car."""
+
     car_index: int
-    compound: str | None                 # SOFT / MEDIUM / HARD / INTERMEDIATE / WET
+    compound: str | None  # SOFT / MEDIUM / HARD / INTERMEDIATE / WET
     tyre_age: int
     current_lap: int
-    actual_compound: str | None = None   # 'C3', 'INTER', ...
+    actual_compound: str | None = None  # 'C3', 'INTER', ...
     name: str | None = None
     position: int | None = None
-    lap_fraction: float = 0.0            # how far round the current lap (0-1)
-    wear_pct: float | None = None        # worst tyre now; None when hidden
-    wear_ages: list = field(default_factory=list)        # tyre age at the start of each lap...
+    lap_fraction: float = 0.0  # how far round the current lap (0-1)
+    wear_pct: float | None = None  # worst tyre now; None when hidden
+    wear_ages: list = field(default_factory=list)  # tyre age at the start of each lap...
     wear_increments: list = field(default_factory=list)  # ...and the wear added over it
     stops_done: int = 0
     compounds_used: tuple = ()
@@ -210,10 +227,10 @@ class RaceContext:
     total_laps: int
     track_length: int | None = None
     pit_loss_s: float = race_strategy.DEFAULT_PIT_LOSS_S
-    game_window: tuple | None = None     # (ideal, latest) the game gives the player
+    game_window: tuple | None = None  # (ideal, latest) the game gives the player
     player_start_compound: str | None = None
     player_stops: int = 0
-    weather: int | None = None           # session weather code (0 clear .. 5 storm)
+    weather: int | None = None  # session weather code (0 clear .. 5 storm)
 
 
 @dataclass
@@ -228,18 +245,18 @@ class RivalPrediction:
     stops_done: int
     current_lap: int
     total_laps: int
-    will_stop: bool                      # another stop expected before the flag
-    must_stop: bool                      # still owes the two-compound stop
-    stop_lap: int | None                 # expected in-lap of the next stop
-    stop_lap_range: list                 # [soonest, expected, latest] at LEVEL (latest None = after the flag)
-    stop_lap_mean: float | None          # normal approximation, for sampling
+    will_stop: bool  # another stop expected before the flag
+    must_stop: bool  # still owes the two-compound stop
+    stop_lap: int | None  # expected in-lap of the next stop
+    stop_lap_range: list  # [soonest, expected, latest] at LEVEL (latest None = after the flag)
+    stop_lap_mean: float | None  # normal approximation, for sampling
     stop_lap_sd: float | None
     stop_before_flag_prob: float
     next_compound: str | None
     next_compound_probs: dict
     stops_left: int
-    basis: str                           # 'wear' when the rival's own wear is used, else 'age'
-    sources: dict                        # each estimate: {'plan': [mean, sd], 'wear': ..., 'game_window': ...}
+    basis: str  # 'wear' when the rival's own wear is used, else 'age'
+    sources: dict  # each estimate: {'plan': [mean, sd], 'wear': ..., 'game_window': ...}
     summary: str
 
     def as_dict(self) -> dict:
@@ -263,8 +280,8 @@ def _blend(estimates: list[tuple[float, float]]) -> tuple[float, float]:
     """Precision-weighted mean; the spread grows when the estimates disagree."""
     weights = [1.0 / (sd * sd) for _m, sd in estimates]
     total = sum(weights)
-    mean = sum(w * m for w, (m, _sd) in zip(weights, estimates)) / total
-    spread = sum(w * (m - mean) ** 2 for w, (m, _sd) in zip(weights, estimates)) / total
+    mean = sum(w * m for w, (m, _sd) in zip(weights, estimates, strict=False)) / total
+    spread = sum(w * (m - mean) ** 2 for w, (m, _sd) in zip(weights, estimates, strict=False)) / total
     return mean, max(MIN_SD, math.sqrt(1.0 / total + spread))
 
 
@@ -273,8 +290,9 @@ def _must_stop(compound: str, used) -> bool:
     return not (used & set(WET)) and len(used & set(DRY)) < 2
 
 
-def first_stop_distribution(plan, tyre_age: float, current_lap: int, life_scale: float,
-                            temperature_s: float = 0.0) -> tuple[float, float] | None:
+def first_stop_distribution(
+    plan, tyre_age: float, current_lap: int, life_scale: float, temperature_s: float = 0.0
+) -> tuple[float, float] | None:
     """(mean, sd) of the first stop lap over every lap that is nearly as good as the best.
 
     The cost of a strategy is often flat around its best stop lap (low degradation, short
@@ -313,10 +331,19 @@ def _stop_cost(ctx: RaceContext) -> float:
     return ctx.pit_loss_s + position_cost_s(ctx.track_id)
 
 
-def _plan_estimate(state: RivalState, ctx: RaceContext, compound: str, life_scale: float,
-                   laps_remaining: int):
-    plan = race_strategy.plan_race(laps_remaining, compound, state.tyre_age, state.current_lap,
-                                   _stop_cost(ctx), state.compounds_used, 1.0, life_scale)
+def _plan_estimate(
+    state: RivalState, ctx: RaceContext, compound: str, life_scale: float, laps_remaining: int
+):
+    plan = race_strategy.plan_race(
+        laps_remaining,
+        compound,
+        state.tyre_age,
+        state.current_lap,
+        _stop_cost(ctx),
+        state.compounds_used,
+        1.0,
+        life_scale,
+    )
     if plan is None:
         return None, None
     if plan.best.stops:
@@ -331,18 +358,25 @@ def _plan_estimate(state: RivalState, ctx: RaceContext, compound: str, life_scal
 
 
 def _wear_estimate(state: RivalState, ctx: RaceContext, fitted, field_stats: FieldStats):
-    if (state.wear_pct is None or fitted is None or len(state.wear_increments) < MIN_WEAR_LAPS
-            or fitted_models.compound_key(state.actual_compound) is None):
+    if (
+        state.wear_pct is None
+        or fitted is None
+        or len(state.wear_increments) < MIN_WEAR_LAPS
+        or fitted_models.compound_key(state.actual_compound) is None
+    ):
         return None
     model = fitted.wear_model(ctx.track_id, state.actual_compound, ctx.total_laps)
     stint = model.condition(state.wear_ages, state.wear_increments)
     threshold, threshold_sd = field_stats.stop_wear_pct()
     laps = stint.laps_until(threshold, state.tyre_age, state.wear_pct, LEVEL)
     if laps.mid is None:
-        return None                     # not within the lookahead: no information
+        return None  # not within the lookahead: no information
     z = fitted_models.z_score(LEVEL)
-    sd_model = ((laps.high - laps.low) / (2 * z) if laps.low is not None and laps.high is not None
-                else max(3.0, laps.mid * 0.3))
+    sd_model = (
+        (laps.high - laps.low) / (2 * z)
+        if laps.low is not None and laps.high is not None
+        else max(3.0, laps.mid * 0.3)
+    )
     rate = max(0.3, stint.rate(state.tyre_age, LEVEL).mid or 0.3)
     sd = math.hypot(sd_model, threshold_sd / rate)
     mean = state.current_lap + state.lap_fraction + laps.mid - 0.5
@@ -351,8 +385,14 @@ def _wear_estimate(state: RivalState, ctx: RaceContext, fitted, field_stats: Fie
 
 def _window_estimate(state: RivalState, ctx: RaceContext, compound: str):
     window = ctx.game_window
-    if (not window or not window[0] or state.stops_done or ctx.player_stops
-            or compound in WET or not ctx.player_start_compound):
+    if (
+        not window
+        or not window[0]
+        or state.stops_done
+        or ctx.player_stops
+        or compound in WET
+        or not ctx.player_start_compound
+    ):
         return None
     player = race_strategy.normalise_compound(ctx.player_start_compound)
     if player not in DRY:
@@ -362,9 +402,15 @@ def _window_estimate(state: RivalState, ctx: RaceContext, compound: str):
     return float(window[0]) * ratio, sd
 
 
-def _compound_choice(state: RivalState, ctx: RaceContext, compound: str, stop_lap: int,
-                     life_scale: float, typical: str | None,
-                     field_counts: dict | None = None) -> tuple[dict, int]:
+def _compound_choice(
+    state: RivalState,
+    ctx: RaceContext,
+    compound: str,
+    stop_lap: int,
+    life_scale: float,
+    typical: str | None,
+    field_counts: dict | None = None,
+) -> tuple[dict, int]:
     """Probability of each next set, and the stops left after this one on the likeliest.
 
     Three equal-weight views of a dry stop, then what the field has actually fitted:
@@ -384,11 +430,12 @@ def _compound_choice(state: RivalState, ctx: RaceContext, compound: str, stop_la
         return {race_strategy.next_compound(compound): 1.0}, 0
     used = {c for c in state.compounds_used if c in DRY} | ({compound} if compound in DRY else set())
     if compound in WET:
-        used |= set(WET)                    # back to slicks: the two-compound rule is waived
+        used |= set(WET)  # back to slicks: the two-compound rule is waived
     costs, stops_after = {}, {}
     for option in DRY:
-        plan = race_strategy.plan_race(laps_after, option, 0, stop_lap + 1, _stop_cost(ctx),
-                                       used | {option}, 1.0, life_scale)
+        plan = race_strategy.plan_race(
+            laps_after, option, 0, stop_lap + 1, _stop_cost(ctx), used | {option}, 1.0, life_scale
+        )
         if plan is not None:
             costs[option] = plan.best.total_time_s
             stops_after[option] = plan.best.stops
@@ -406,8 +453,10 @@ def _compound_choice(state: RivalState, ctx: RaceContext, compound: str, stop_la
     counts = {c: n for c, n in (field_counts or {}).items() if c in probs}
     seen = sum(counts.values())
     if seen:
-        probs = {c: (TRANSITION_PSEUDO * p + counts.get(c, 0)) / (TRANSITION_PSEUDO + seen)
-                 for c, p in probs.items()}
+        probs = {
+            c: (TRANSITION_PSEUDO * p + counts.get(c, 0)) / (TRANSITION_PSEUDO + seen)
+            for c, p in probs.items()
+        }
     probs = {c: round(p, 3) for c, p in sorted(probs.items(), key=lambda kv: -kv[1])}
     likeliest = next(iter(probs))
     return probs, stops_after[likeliest]
@@ -426,9 +475,13 @@ def _weather_estimate(state: RivalState, ctx: RaceContext, compound: str):
     return None
 
 
-def predict_rival(state: RivalState, ctx: RaceContext, fitted=None,
-                  field_stats: FieldStats | None = None,
-                  typical: list[str] | None = None) -> RivalPrediction | None:
+def predict_rival(
+    state: RivalState,
+    ctx: RaceContext,
+    fitted=None,
+    field_stats: FieldStats | None = None,
+    typical: list[str] | None = None,
+) -> RivalPrediction | None:
     """Next stop lap and compound for one rival, or None when there is nothing to predict."""
     compound = race_strategy.normalise_compound(state.compound)
     laps_remaining = ctx.total_laps - state.current_lap + 1
@@ -464,7 +517,7 @@ def predict_rival(state: RivalState, ctx: RaceContext, fitted=None,
         # A tyre that is wrong for the conditions overrides the stint maths.
         sources['weather'] = weather_est
         mean, sd = min(mean, weather_est[0]), weather_est[1]
-    if mean < state.current_lap:          # should have stopped already: expect it any moment
+    if mean < state.current_lap:  # should have stopped already: expect it any moment
         mean, sd = float(state.current_lap), min(sd, OVERDUE_SD)
     flag = ctx.total_laps + 0.5
     if must_stop:
@@ -482,26 +535,49 @@ def predict_rival(state: RivalState, ctx: RaceContext, fitted=None,
         stop_lap = int(min(ctx.total_laps, max(state.current_lap, round(mean))))
         low = int(min(stop_lap, max(state.current_lap, round(mean - z * sd))))
         high = round(mean + z * sd)
-        high = None if high > ctx.total_laps and not must_stop else int(max(stop_lap, min(high, ctx.total_laps)))
+        high = (
+            None if high > ctx.total_laps and not must_stop else int(max(stop_lap, min(high, ctx.total_laps)))
+        )
         stop_range = [low, stop_lap, high]
         stops_done = state.stops_done
         typical_set = typical_next(typical or [], compound, stops_done)
-        probs, stops_after = _compound_choice(state, ctx, compound, stop_lap, life_scale, typical_set,
-                                              field_stats.next_compound_counts(compound))
+        probs, stops_after = _compound_choice(
+            state,
+            ctx,
+            compound,
+            stop_lap,
+            life_scale,
+            typical_set,
+            field_stats.next_compound_counts(compound),
+        )
         next_set = next(iter(probs))
         stops_left = 1 + stops_after
 
     prediction = RivalPrediction(
-        car_index=state.car_index, name=state.name, position=state.position, compound=compound,
-        actual_compound=state.actual_compound, tyre_age=state.tyre_age,
+        car_index=state.car_index,
+        name=state.name,
+        position=state.position,
+        compound=compound,
+        actual_compound=state.actual_compound,
+        tyre_age=state.tyre_age,
         wear_pct=None if state.wear_pct is None else round(state.wear_pct, 1),
-        stops_done=state.stops_done, current_lap=state.current_lap, total_laps=ctx.total_laps,
-        will_stop=will_stop, must_stop=must_stop, stop_lap=stop_lap, stop_lap_range=stop_range,
-        stop_lap_mean=round(mean, 2), stop_lap_sd=round(sd, 2),
-        stop_before_flag_prob=round(before_flag, 3), next_compound=next_set,
-        next_compound_probs=probs, stops_left=stops_left,
+        stops_done=state.stops_done,
+        current_lap=state.current_lap,
+        total_laps=ctx.total_laps,
+        will_stop=will_stop,
+        must_stop=must_stop,
+        stop_lap=stop_lap,
+        stop_lap_range=stop_range,
+        stop_lap_mean=round(mean, 2),
+        stop_lap_sd=round(sd, 2),
+        stop_before_flag_prob=round(before_flag, 3),
+        next_compound=next_set,
+        next_compound_probs=probs,
+        stops_left=stops_left,
         basis='wear' if 'wear' in sources else 'age',
-        sources={k: [round(m, 2), round(s, 2)] for k, (m, s) in sources.items()}, summary='')
+        sources={k: [round(m, 2), round(s, 2)] for k, (m, s) in sources.items()},
+        summary='',
+    )
     prediction.summary = describe(prediction)
     return prediction
 
@@ -550,15 +626,16 @@ def sample_next_compound(p: RivalPrediction, rng: random.Random | None = None) -
 # Collecting each car's stints from the packets
 # ──────────────────────────────────────────────
 
+
 @dataclass
 class Stint:
     compound: str
     actual: str | None
     start_lap: int
     start_age: int
-    observations: dict = field(default_factory=dict)    # lap -> (tyre age, worst wear or None)
-    planned_age: float | None = None                    # stop age the first prediction expected
-    planned_factor: float = 1.0                         # field life factor that prediction used
+    observations: dict = field(default_factory=dict)  # lap -> (tyre age, worst wear or None)
+    planned_age: float | None = None  # stop age the first prediction expected
+    planned_factor: float = 1.0  # field life factor that prediction used
     end_lap: int | None = None
     age_at_stop: int | None = None
     wear_at_stop: float | None = None
@@ -575,7 +652,7 @@ class CarTrack:
     pit_entry_lap: int | None = None
     active: bool = False
     age: int | None = None
-    wear: float | None = None              # worst tyre now (None until seen)
+    wear: float | None = None  # worst tyre now (None until seen)
     wear_hidden: bool = False
 
     @property
@@ -589,15 +666,15 @@ class CarTrack:
 class RivalTracker:
     """Per-car stints, wear and stops for every car, built from Lap Data, Status and Damage."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.cars: dict[int, CarTrack] = {}
         self.player_index: int | None = None
         self.track_length: int | None = None
         self.field = FieldStats()
-        self.stops_log: list[dict] = []     # every stop seen: car, lap, from/to compound, age, wear
+        self.stops_log: list[dict] = []  # every stop seen: car, lap, from/to compound, age, wear
         self._cache: dict[int, tuple] = {}
 
     def _car(self, index) -> CarTrack:
@@ -617,11 +694,16 @@ class RivalTracker:
                 car.pit_entry_lap = lap.current_lap_num
             car.in_pits = in_pits
             stint = car.stint
-            if (stint is not None and not in_pits and car.age is not None
-                    and lap.lap_distance >= SNAPSHOT_DISTANCE_M and lap.current_lap_num not in stint.observations):
+            if (
+                stint is not None
+                and not in_pits
+                and car.age is not None
+                and lap.lap_distance >= SNAPSHOT_DISTANCE_M
+                and lap.current_lap_num not in stint.observations
+            ):
                 stint.observations[lap.current_lap_num] = (car.age, None if car.wear_hidden else car.wear)
 
-    def update_status(self, all_status):
+    def update_status(self, all_status: list) -> None:
         for index, status in enumerate(all_status or ()):
             compound = race_strategy.normalise_compound(status.compound_name)
             if compound is None:
@@ -636,7 +718,7 @@ class RivalTracker:
                 self._close_stint(index, car, compound, actual, age)
             car.age = age
 
-    def update_damage(self, all_damage):
+    def update_damage(self, all_damage: list) -> None:
         for index, damage in enumerate(all_damage or ()):
             if not all(math.isfinite(w) and 0.0 <= w <= 100.0 for w in damage.tyres_wear):
                 continue
@@ -652,12 +734,23 @@ class RivalTracker:
         wears = [w for _a, w in old.observations.values() if w is not None]
         old.wear_at_stop = max(wears) if wears else None
         # Stint length against the first prediction, expressed against an unscaled plan.
-        ratio = (old.age_at_stop / old.planned_age * old.planned_factor
-                 if old.planned_age and old.age_at_stop is not None and old.planned_age > 0 else None)
+        ratio = (
+            old.age_at_stop / old.planned_age * old.planned_factor
+            if old.planned_age and old.age_at_stop is not None and old.planned_age > 0
+            else None
+        )
         if index != self.player_index:
             self.field.record_stop(old.wear_at_stop, ratio, old.compound, compound)
-            self.stops_log.append({'car_index': index, 'lap': old.end_lap, 'from': old.compound,
-                                   'to': compound, 'age': old.age_at_stop, 'wear': old.wear_at_stop})
+            self.stops_log.append(
+                {
+                    'car_index': index,
+                    'lap': old.end_lap,
+                    'from': old.compound,
+                    'to': compound,
+                    'age': old.age_at_stop,
+                    'wear': old.wear_at_stop,
+                }
+            )
         car.pit_entry_lap = None
         car.stints.append(Stint(compound, actual, max(1, car.lap_num), age))
 
@@ -668,7 +761,7 @@ class RivalTracker:
         stint = car.stint
         laps = sorted(stint.observations)
         ages, incs = [], []
-        for a, b in zip(laps, laps[1:]):
+        for a, b in zip(laps, laps[1:], strict=False):
             (age_a, wear_a), (_age_b, wear_b) = stint.observations[a], stint.observations[b]
             if b == a + 1 and wear_a is not None and wear_b is not None and wear_b >= wear_a:
                 ages.append(age_a)
@@ -677,20 +770,40 @@ class RivalTracker:
         if track_length:
             fraction = min(1.0, max(0.0, car.lap_distance / track_length))
         return RivalState(
-            car_index=index, compound=stint.compound, tyre_age=car.age, current_lap=max(1, car.lap_num),
-            actual_compound=stint.actual, name=name, position=car.position, lap_fraction=fraction,
+            car_index=index,
+            compound=stint.compound,
+            tyre_age=car.age,
+            current_lap=max(1, car.lap_num),
+            actual_compound=stint.actual,
+            name=name,
+            position=car.position,
+            lap_fraction=fraction,
             wear_pct=None if car.wear_hidden or car.wear is None else car.wear,
-            wear_ages=ages, wear_increments=incs, stops_done=len(car.stints) - 1,
-            compounds_used=car.compounds_used())
+            wear_ages=ages,
+            wear_increments=incs,
+            stops_done=len(car.stints) - 1,
+            compounds_used=car.compounds_used(),
+        )
 
     def predict(self, index, ctx: RaceContext, fitted=None, name=None) -> RivalPrediction | None:
         """Prediction for one car, cached until its lap, stint or observations change."""
         car = self.cars.get(index)
         if car is None or not car.active or car.in_pits or car.stint is None:
             return None
-        key = (car.lap_num, len(car.stints), len(car.stint.observations), car.age, car.stops,
-               name, ctx.total_laps, ctx.track_id, ctx.game_window, ctx.player_stops,
-               len(self.field.stop_wear), len(self.field.life_ratio))
+        key = (
+            car.lap_num,
+            len(car.stints),
+            len(car.stint.observations),
+            car.age,
+            car.stops,
+            name,
+            ctx.total_laps,
+            ctx.track_id,
+            ctx.game_window,
+            ctx.player_stops,
+            len(self.field.stop_wear),
+            len(self.field.life_ratio),
+        )
         cached = self._cache.get(index)
         if cached and cached[0] == key:
             return cached[1]
@@ -711,8 +824,9 @@ class RivalTracker:
         cached = self._cache.get(index)
         return cached[1] if cached else None
 
-    def predict_all(self, ctx: RaceContext, fitted=None, names: dict | None = None,
-                    exclude: int | None = None) -> list[RivalPrediction]:
+    def predict_all(
+        self, ctx: RaceContext, fitted=None, names: dict | None = None, exclude: int | None = None
+    ) -> list[RivalPrediction]:
         names = names or {}
         out = []
         for index in sorted(self.cars):

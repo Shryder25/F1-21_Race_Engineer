@@ -16,7 +16,7 @@ An AI race engineer for the F1 2021 game. It reads the game's live UDP telemetry
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - F1 2021 (PC)
 - [Ollama](https://ollama.com/download), installed once. The engineer starts it and pulls the model for you.
 - Python packages:
@@ -122,7 +122,9 @@ Entry point: `main.py`, which runs `ai_engineer/main.py`.
 |---|---|
 | `packets.py` | Parses the F1 2021 UDP packet formats. |
 | `telemetry_stream.py` | Validates packets and pairs them per game frame. |
-| `analysis.py` | The engine: lap and sector timing, tyre alerts, corner diagnostics, track map, AI context. |
+| `analysis.py` | The engine (`AnalysisEngine`): wires the pipeline stages together and runs them on every frame. |
+| `pipeline/` | The engine's stages, each only calling the ones below it: `state` (typed per-session values), `radio` (when to speak, tyre and braking calls), `models` (wear, degradation, fuel), `strategy` (plan, undercut, rival stops, race sim), `track_map`, `outputs` (HUD, history, AI prompt), `laps` (delta, sectors, corners), `ingest` (one handler per packet) and `config` (loads `config.toml`). |
+| `log_setup.py` | Logging: readable terminal lines or JSON lines. |
 | `physics_models.py` | Instant physics tyre, fuel and opponent-threat model (no history needed). |
 | `strategy_ml.py`, `fitted_models.py` | Tyre wear and fuel models learned from recorded laps. |
 | `race_strategy.py` | Stop count, compounds, undercut and overcut. |
@@ -142,11 +144,21 @@ Entry point: `main.py`, which runs `ai_engineer/main.py`.
 
 Tools in `tools/`: `backtest.py`, `fit_models.py`, `channels.py`, `golden_sessions.py`, `build_real_race_calibration.py`.
 
-## Tests
+## Settings and logs
+
+- **Settings**: `config.toml` at the repo root holds every tuneable threshold (tyre temperatures, calls per lap, when the driver counts as busy, rival-call gaps, simulator runs, voice, AI timeout, ports), each one commented. The shipped values are the defaults. Command-line flags override the file; `--config FILE` uses another one. A misspelt key is an error at startup.
+- **Logs**: `--log-level DEBUG|INFO|WARNING|ERROR` (`--debug` = DEBUG), `--log-format json` for one JSON object per line, `--log-file FILE` to also keep them as JSON lines. Logs go to stderr; the live console dashboard stays on stdout.
+- **As a package**: `pip install -e ".[dev]"` gives an `f1-race-engineer` command (same flags as `python main.py`) plus ruff and mypy.
+
+## Tests and checks
+
+All of these run in CI as part of the `tests` check:
 
 ```bash
-cd tests
-python -m unittest discover -v
+ruff check .            # lint
+ruff format .           # format (CI runs ruff format --check)
+mypy                    # strict type check of ai_engineer/pipeline
+cd tests && python -m unittest discover -v
 ```
 
 ## More docs

@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "f1-21-race-engineer"
+version = "0.1.0"
+description = "AI race engineer for F1 2021: live UDP telemetry, tyre/fuel/strategy models, voice radio and a web pit wall."
+readme = "README.md"
+requires-python = ">=3.11"            # tomllib (config.toml) is standard library from 3.11
+dependencies = [
+    "numpy>=1.26",
+    "pyttsx3>=2.90",                  # system voice, and the fallback for Kokoro
+    "SpeechRecognition>=3.10",        # voice commands
+    "openai-whisper>=20231117",       # offline speech-to-text (default radio engine)
+    "PyAudio>=0.2.14",                # microphone (needs PortAudio on Linux/macOS)
+    "pygame>=2.5",                    # push-to-talk button on a wheel or controller
+    "kokoro-onnx>=0.4",               # natural engineer voice
+    "sounddevice>=0.4",
+    "pyarrow>=14",                    # channel store (Parquet) and the MoTeC i2 export
+]
+
+[project.optional-dependencies]
+# Linters and type checker, pinned to the versions CI runs (.github/workflows/tests.yml).
+dev = ["ruff==0.16.9", "mypy==2.3.1"]
+
+[project.scripts]
+f1-race-engineer = "ai_engineer.cli:main"
+
+[project.urls]
+Repository = "https://github.com/Shryder25/F1-21_Race_Engineer"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai_engineer", "ai_engineer.*"]
+
+[tool.setuptools.package-data]
+ai_engineer = ["templates/*", "static/*", "requirements.txt"]
+
+# ── ruff: lint + format ───────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+# The engine imports its modules flat (ai_engineer/ is on sys.path), so these folders are
+# where ruff finds first-party modules for import sorting.
+src = ["ai_engineer", "tests", "tests/golden", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",     # line length: the formatter wraps code; long strings and comments may stay
+    "UP042",    # (str, Enum) -> StrEnum changes str() of the members: not a safe rewrite
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts and tests put ai_engineer/ on sys.path before importing from it.
+"main.py" = ["E402"]
+"ai_engineer/main.py" = ["E402"]
+"tests/**" = ["E402"]
+"tools/**" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "preserve"    # the code base mixes ' and "; don't churn every string
+
+# ── mypy: strict on the typed pipeline ────────────────────────────────
+
+[tool.mypy]
+mypy_path = "ai_engineer"
+explicit_package_bases = true
+files = ["ai_engineer/pipeline", "ai_engineer/log_setup.py"]
+strict = true
+# Other modules are read for their types but not reported on: they are not fully
+# annotated yet. Widen `files` as more of them are typed.
+follow_imports = "silent"

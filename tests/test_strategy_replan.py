@@ -17,7 +17,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_enginee
 import race_sim as sim
 import race_strategy as rs
 import strategy_replan as rp
-from analysis import AnalysisEngine, PROACTIVE_KEYS
+from analysis import PROACTIVE_KEYS, AnalysisEngine
 from engineer_brain import format_context, rule_based_answer
 from test_analysis import SilentVoice
 from test_race_sim import RACE, SILVERSTONE, candidates, field, lap, status
@@ -26,14 +26,22 @@ INTER = 7
 
 
 def cand(compounds, pit_laps):
-    return sim.Candidate(sim.plan_label(len(pit_laps), compounds), len(pit_laps), list(compounds), list(pit_laps))
+    return sim.Candidate(
+        sim.plan_label(len(pit_laps), compounds), len(pit_laps), list(compounds), list(pit_laps)
+    )
 
 
 def outcome(c, ref=False, gain=0.0, places=0.0, p=0.0):
-    return SimpleNamespace(label=c.label, stops=c.stops, compounds=list(c.compounds), pit_laps=list(c.pit_laps),
-                           is_reference=ref,
-                           vs_reference=None if ref else {'time_gain_s': gain, 'time_gain_range_s': [0, 0],
-                                                          'position_gain': places, 'p_better': p})
+    return SimpleNamespace(
+        label=c.label,
+        stops=c.stops,
+        compounds=list(c.compounds),
+        pit_laps=list(c.pit_laps),
+        is_reference=ref,
+        vs_reference=None
+        if ref
+        else {'time_gain_s': gain, 'time_gain_range_s': [0, 0], 'position_gain': places, 'p_better': p},
+    )
 
 
 PLAN_A = cand(['MEDIUM', 'HARD'], [30])
@@ -52,8 +60,11 @@ class Rig:
         self.n += 1
         self.r.pending = list(reasons)
         self.r.note_submitted(self.n)
-        result = SimpleNamespace(lap=lap_num, runs=100, outcomes=[
-            outcome(self.r.plan_a, ref=True), outcome(challenger, gain=gain, places=places, p=p)])
+        result = SimpleNamespace(
+            lap=lap_num,
+            runs=100,
+            outcomes=[outcome(self.r.plan_a, ref=True), outcome(challenger, gain=gain, places=places, p=p)],
+        )
         return self.r.consider(result, self.n, lap_num)
 
 
@@ -67,7 +78,7 @@ class PairedComparisonTests(unittest.TestCase):
         by = {o.label: o for o in result.outcomes}
         self.assertTrue(by['No-stop (S)'].is_reference)
         self.assertIsNone(by['No-stop (S)'].vs_reference)
-        self.assertEqual(by['Twin'].vs_reference['time_gain_s'], 0.0)       # same draws, same plan
+        self.assertEqual(by['Twin'].vs_reference['time_gain_s'], 0.0)  # same draws, same plan
         self.assertEqual(by['Twin'].vs_reference['p_better'], 0.0)
         better = by['One-stop (S-H)'].vs_reference
         self.assertGreater(better['time_gain_s'], 5.0)
@@ -87,8 +98,9 @@ class PairedComparisonTests(unittest.TestCase):
         state = sim.RaceState(SILVERSTONE, 30, 11, field(6, player=2), raining=True)
         stay = cand(['MEDIUM', 'HARD'], [20])
         inters = rp._candidate(['MEDIUM', 'INTERMEDIATE'], [11], ', box now')
-        result = sim.simulate(state, [stay, inters], reference=0, runs=80, seed=2,
-                              profile={'sc_probability': 0})
+        result = sim.simulate(
+            state, [stay, inters], reference=0, runs=80, seed=2, profile={'sc_probability': 0}
+        )
         self.assertEqual(result.p_rain, 1.0)
         vs = next(o for o in result.outcomes if not o.is_reference).vs_reference
         self.assertGreater(vs['time_gain_s'], 30)
@@ -98,7 +110,7 @@ class PairedComparisonTests(unittest.TestCase):
 class TriggerTests(unittest.TestCase):
     def test_lap_safety_car_vsc_rain(self):
         r = rp.Replanner()
-        self.assertEqual(r.observe(10, 0, 0), [])          # first look: baseline only
+        self.assertEqual(r.observe(10, 0, 0), [])  # first look: baseline only
         self.assertEqual(r.observe(10, 0, 0), [])
         self.assertEqual(r.observe(11, 0, 0), ['lap'])
         self.assertEqual(r.events, 0)
@@ -106,9 +118,9 @@ class TriggerTests(unittest.TestCase):
         self.assertEqual(r.observe(11, 2, 0), ['vsc'])
         self.assertEqual(r.observe(11, 0, 0), ['green_flag'])
         self.assertEqual(r.observe(11, 0, 3), ['rain'])
-        self.assertEqual(r.observe(11, 0, 4), [])          # heavier rain: still wet, no new trigger
+        self.assertEqual(r.observe(11, 0, 4), [])  # heavier rain: still wet, no new trigger
         self.assertEqual(r.observe(11, 0, 2), ['drying'])
-        self.assertEqual(r.events, 3)                       # SC, VSC, rain
+        self.assertEqual(r.events, 3)  # SC, VSC, rain
         self.assertTrue(r.has_event_pending)
         r.note_submitted('k')
         self.assertEqual(r.pending, [])
@@ -117,12 +129,12 @@ class TriggerTests(unittest.TestCase):
         r = rp.Replanner()
         laps = [lap(i + 1, 20) for i in range(10)]
         r.observe(20, 0, 0, laps, 4, lambda i: f'D{i}')
-        laps[5] = replace(laps[5], num_pit_stops=1)          # P6, one place behind P5: nearby
+        laps[5] = replace(laps[5], num_pit_stops=1)  # P6, one place behind P5: nearby
         self.assertEqual(r.observe(20, 0, 0, laps, 4, lambda i: f'D{i}'), ['rival_stop'])
         self.assertEqual(r.rival_name, 'D5')
-        laps[9] = replace(laps[9], num_pit_stops=1)          # P10, five places back: not a trigger
+        laps[9] = replace(laps[9], num_pit_stops=1)  # P10, five places back: not a trigger
         self.assertEqual(r.observe(20, 0, 0, laps, 4, lambda i: f'D{i}'), [])
-        laps[4] = replace(laps[4], num_pit_stops=1)          # our own stop is not a rival's
+        laps[4] = replace(laps[4], num_pit_stops=1)  # our own stop is not a rival's
         self.assertEqual(r.observe(20, 0, 0, laps, 4), [])
         self.assertEqual(r.events, 1)
 
@@ -136,13 +148,13 @@ class PlanATests(unittest.TestCase):
         a = self.r.sync_plan_a(self.plan, 21, 0, 'Medium', 32)
         self.assertEqual(a.compounds, self.plan.best.compounds)
         other = rs.plan_race(31, 'MEDIUM', 11, 22, rs.pit_loss_s(SILVERSTONE), deg_scale=3.0)
-        self.assertIs(self.r.sync_plan_a(other, 22, 0, 'Medium', 31), a)   # the plan we are on stays
+        self.assertIs(self.r.sync_plan_a(other, 22, 0, 'Medium', 31), a)  # the plan we are on stays
 
     def test_stop_made_moves_plan_on(self):
         self.r.adopt(cand(['MEDIUM', 'HARD', 'SOFT'], [25, 40]), 0)
         a = self.r.sync_plan_a(self.plan, 26, 1, 'Hard', 27)
         self.assertEqual((a.compounds, a.pit_laps, a.stops), (['HARD', 'SOFT'], [40], 1))
-        a = self.r.sync_plan_a(self.plan, 26, 1, 'Soft', 27)                # fitted softs instead
+        a = self.r.sync_plan_a(self.plan, 26, 1, 'Soft', 27)  # fitted softs instead
         self.assertEqual(a.compounds, ['SOFT', 'SOFT'])
 
     def test_unplanned_stop_and_flashback_start_again(self):
@@ -156,7 +168,7 @@ class PlanATests(unittest.TestCase):
         self.r.adopt(cand(['MEDIUM', 'HARD', 'SOFT'], [25, 26]), 0)
         a = self.r.sync_plan_a(self.plan, 27, 0, 'Medium', 26)
         self.assertEqual(a.pit_laps, [27, 28])
-        a = self.r.sync_plan_a(self.plan, 51, 0, 'Medium', 2)                 # one lap left: no time to stop twice
+        a = self.r.sync_plan_a(self.plan, 51, 0, 'Medium', 2)  # one lap left: no time to stop twice
         self.assertEqual(a.pit_laps, [51])
         self.assertEqual(a.compounds, ['MEDIUM', 'HARD'])
 
@@ -175,16 +187,20 @@ class PlanATests(unittest.TestCase):
         wet = self.r.candidates(self.plan, 21, False, True, 'Medium')
         self.assertIn((['MEDIUM', 'INTERMEDIATE'], [21]), [(c.compounds, c.pit_laps) for c in wet])
         self.r.pending = ['rival_stop']
-        self.assertTrue(any(c.label.endswith('box now') for c in self.r.candidates(self.plan, 21, False, False, 'Medium')))
+        self.assertTrue(
+            any(c.label.endswith('box now') for c in self.r.candidates(self.plan, 21, False, False, 'Medium'))
+        )
 
     def test_pit_now_and_same_plan(self):
         self.assertEqual(rp.pit_now(cand(['M', 'H', 'S'], [25, 26]), 24).pit_laps, [24, 26])
-        self.assertIsNone(rp.pit_now(cand(['M', 'H', 'S'], [25, 26]), 25))         # already this lap
+        self.assertIsNone(rp.pit_now(cand(['M', 'H', 'S'], [25, 26]), 25))  # already this lap
         self.assertIsNone(rp.pit_now(cand(['M'], []), 20))
         self.assertTrue(rp.same_plan(cand(['M', 'H'], [24]), cand(['M', 'H'], [26]), 20))
         self.assertFalse(rp.same_plan(cand(['M', 'H'], [24]), cand(['M', 'H'], [27]), 20))
         self.assertFalse(rp.same_plan(cand(['M', 'H'], [24]), cand(['M', 'S'], [24]), 20))
-        self.assertFalse(rp.same_plan(cand(['M', 'H'], [21]), cand(['M', 'H'], [20]), 20))   # box now is a call
+        self.assertFalse(
+            rp.same_plan(cand(['M', 'H'], [21]), cand(['M', 'H'], [20]), 20)
+        )  # box now is a call
 
 
 class DecisionTests(unittest.TestCase):
@@ -193,18 +209,18 @@ class DecisionTests(unittest.TestCase):
         self.assertIsNone(rig.run(20, gain=2.0, places=0.2))
         self.assertEqual(rig.r.status, 'holding')
         self.assertFalse(rig.r.challenger['clears_margin'])
-        self.assertIsNone(rig.run(21, gain=8.0, p=0.5))          # quicker on average, not often enough
+        self.assertIsNone(rig.run(21, gain=8.0, p=0.5))  # quicker on average, not often enough
         self.assertEqual(rig.r.plan_a.label, PLAN_A.label)
 
     def test_routine_rerun_needs_two_in_a_row(self):
         rig = Rig()
         self.assertIsNone(rig.run(20, gain=5.0))
         self.assertEqual(rig.r.status, 'watching')
-        self.assertIsNone(rig.run(21, gain=1.0))                  # lost it: streak resets
+        self.assertIsNone(rig.run(21, gain=1.0))  # lost it: streak resets
         self.assertIsNone(rig.run(22, gain=5.0))
         call = rig.run(23, gain=5.0)
         self.assertIsNotNone(call)
-        self.assertEqual(rig.r.plan_a.compounds, PLAN_B.compounds)   # Plan B is now the plan
+        self.assertEqual(rig.r.plan_a.compounds, PLAN_B.compounds)  # Plan B is now the plan
         self.assertEqual(rig.r.status, 'switched')
         self.assertIn('Plan B, Plan B', call.message)
         self.assertIn('We go two stops. Box next lap for hards.', call.message)
@@ -221,8 +237,10 @@ class DecisionTests(unittest.TestCase):
         box_now = rp._candidate(['MEDIUM', 'HARD'], [20], ', box now')
         call = rig.run(20, gain=9.0, reasons=('safety_car',), challenger=box_now)
         self.assertIsNotNone(call)
-        self.assertEqual(call.message, 'Safety car. Plan B, Plan B. Box this lap for hards. Box, box. '
-                                       'Gains about 9 seconds.')
+        self.assertEqual(
+            call.message,
+            'Safety car. Plan B, Plan B. Box this lap for hards. Box, box. Gains about 9 seconds.',
+        )
         self.assertEqual(call.reasons, ['safety_car'])
         again = rig.run(20, gain=6.0, reasons=('rain',), challenger=PLAN_B)
         self.assertTrue(again.message.startswith('Rain is here. Plan B'))
@@ -254,12 +272,14 @@ class DecisionTests(unittest.TestCase):
         rig = Rig()
         rig.r.pending = ['safety_car']
         rig.r.note_submitted('old')
-        result = SimpleNamespace(lap=20, runs=100, outcomes=[outcome(PLAN_A, ref=True), outcome(PLAN_B, gain=9, p=0.9)])
-        self.assertIsNone(rig.r.consider(result, 'old', 23))      # two laps late
+        result = SimpleNamespace(
+            lap=20, runs=100, outcomes=[outcome(PLAN_A, ref=True), outcome(PLAN_B, gain=9, p=0.9)]
+        )
+        self.assertIsNone(rig.r.consider(result, 'old', 23))  # two laps late
         self.assertIsNone(rig.r.consider(result, 'never-sent', 20))
         rig.r.pending = ['safety_car']
         rig.r.note_submitted('moved')
-        rig.r.adopt(PLAN_B, 0)                                     # Plan A changed while it ran
+        rig.r.adopt(PLAN_B, 0)  # Plan A changed while it ran
         result2 = SimpleNamespace(lap=20, runs=100, outcomes=result.outcomes)
         self.assertIsNone(rig.r.consider(result2, 'moved', 20))
 
@@ -295,11 +315,11 @@ class LiveWiringTests(unittest.TestCase):
         self.assertTrue(first.outcomes[0].is_reference or any(o.is_reference for o in first.outcomes))
         self.assertIsNotNone(e.replanner.plan_a)
         e.update_race_simulation()
-        self.assertIs(e.sim_runner.latest, first)                # nothing changed: no re-run
+        self.assertIs(e.sim_runner.latest, first)  # nothing changed: no re-run
         e.session = replace(RACE, safety_car_status=1)
         e.update_race_simulation()
-        self.assertIsNot(e.sim_runner.latest, first)             # SC: re-run straight away
-        self.assertTrue(any(o.pit_laps[:1] == [20] for o in e.sim_runner.latest.outcomes))   # a stop under it
+        self.assertIsNot(e.sim_runner.latest, first)  # SC: re-run straight away
+        self.assertTrue(any(o.pit_laps[:1] == [20] for o in e.sim_runner.latest.outcomes))  # a stop under it
         self.assertEqual(e.sim_runner.latest.lap, 20)
 
     def test_event_reruns_are_throttled(self):
@@ -311,13 +331,13 @@ class LiveWiringTests(unittest.TestCase):
         e.field_laps = laps
         e.update_race_simulation()
         second = e.sim_runner.latest
-        self.assertIsNot(second, first)                          # rival stop: re-run
+        self.assertIsNot(second, first)  # rival stop: re-run
         laps[1] = replace(laps[1], num_pit_stops=1)
         e.update_race_simulation()
-        self.assertIs(e.sim_runner.latest, second)               # a second one moments later waits
+        self.assertIs(e.sim_runner.latest, second)  # a second one moments later waits
         e._last_event_submit -= rp.MIN_EVENT_INTERVAL_S + 0.1
         e.update_race_simulation()
-        self.assertIsNot(e.sim_runner.latest, second)            # ... then runs
+        self.assertIsNot(e.sim_runner.latest, second)  # ... then runs
 
     def test_plan_b_call_reaches_radio_hud_and_ai(self):
         e = self.engine

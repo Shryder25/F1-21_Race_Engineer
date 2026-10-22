@@ -52,6 +52,7 @@ class ReplayFinished(EOFError):
 
 class Record(namedtuple('Record', 't_ns data')):
     """One datagram: arrival time in nanoseconds since recording start, and its raw bytes."""
+
     __slots__ = ()
 
     @property
@@ -62,6 +63,7 @@ class Record(namedtuple('Record', 't_ns data')):
 # ──────────────────────────────────────────────
 # Writing
 # ──────────────────────────────────────────────
+
 
 class RecordingWriter:
     """Append datagrams to a new recording file. Use as a context manager or call close().
@@ -122,6 +124,7 @@ class RecordingWriter:
 # Reading
 # ──────────────────────────────────────────────
 
+
 class RecordingReader:
     """Iterate the records of a recording. Opening reads and checks the header.
 
@@ -144,8 +147,9 @@ class RecordingReader:
             if magic != MAGIC:
                 raise RecordingError(f'{self.path}: not a UDP recording (bad magic)')
             if version > FORMAT_VERSION:
-                raise RecordingError(f'{self.path}: format version {version} is newer than '
-                                     f'this reader ({FORMAT_VERSION})')
+                raise RecordingError(
+                    f'{self.path}: format version {version} is newer than this reader ({FORMAT_VERSION})'
+                )
             self.format_version = version
             blob = self._read_exact(meta_len)
             if blob is None:
@@ -202,6 +206,7 @@ def read_records(path):
 # ──────────────────────────────────────────────
 # Replay
 # ──────────────────────────────────────────────
+
 
 def parse_speed(text):
     """'1', '1x', '10x', '2.5' -> float multiplier; 'max' / 'asap' / '0' -> None (no waiting)."""
@@ -300,8 +305,8 @@ class ReplaySource:
 # Recording from a live socket
 # ──────────────────────────────────────────────
 
-def record_socket(sock, writer, duration=None, should_stop=None, on_progress=None,
-                  progress_interval=1.0):
+
+def record_socket(sock, writer, duration=None, should_stop=None, on_progress=None, progress_interval=1.0):
     """Record every datagram arriving on a bound UDP socket until duration, should_stop() or
     Ctrl+C. Returns the number recorded."""
     sock.settimeout(0.2)
@@ -318,7 +323,7 @@ def record_socket(sock, writer, duration=None, should_stop=None, on_progress=Non
                 on_progress(writer)
             try:
                 data, _ = sock.recvfrom(MAX_DATAGRAM)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except ConnectionResetError:  # Windows reports ICMP errors on UDP sockets
                 continue
@@ -343,9 +348,14 @@ def summarize(path):
             packet_id = record.data[5] if len(record.data) > 5 else None
             by_packet_id[packet_id] = by_packet_id.get(packet_id, 0) + 1
         return {
-            'path': str(path), 'format_version': reader.format_version,
-            'compressed': reader.compressed, 'metadata': reader.metadata,
-            'start_unix_ns': reader.start_unix_ns, 'datagrams': count, 'payload_bytes': size,
+            'path': str(path),
+            'format_version': reader.format_version,
+            'compressed': reader.compressed,
+            'metadata': reader.metadata,
+            'start_unix_ns': reader.start_unix_ns,
+            'datagrams': count,
+            'payload_bytes': size,
             'duration_s': 0.0 if first is None else (last - first) / 1e9,
-            'by_packet_id': by_packet_id, 'truncated': reader.truncated,
+            'by_packet_id': by_packet_id,
+            'truncated': reader.truncated,
         }

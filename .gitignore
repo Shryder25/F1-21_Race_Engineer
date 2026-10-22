@@ -13,3 +13,8 @@ recordings/
 
 # Saved push-to-talk button (python main.py --find-ptt-button)
 push_to_talk.json
+
+# Packaging (pip install -e . / python -m build)
+*.egg-info/
+build/
+dist/

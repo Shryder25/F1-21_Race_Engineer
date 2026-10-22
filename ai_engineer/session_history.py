@@ -25,14 +25,34 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from packets import (ACTUAL_COMPOUNDS, CAR_SETUPS_PACKET_SIZE, FINAL_CLASSIFICATION_PACKET_SIZE,
-                     HEADER_SIZE, PARTICIPANTS_PACKET_SIZE, SECTOR_VALID,
-                     SESSION_HISTORY_PACKET_SIZE, VISUAL_COMPOUNDS, CarSetupData,
-                     FinalClassificationData, PacketHeader, SessionHistoryData, parse_car_setups,
-                     parse_final_classification, parse_participants, parse_session_history)
+from packets import (
+    ACTUAL_COMPOUNDS,
+    CAR_SETUPS_PACKET_SIZE,
+    FINAL_CLASSIFICATION_PACKET_SIZE,
+    HEADER_SIZE,
+    PARTICIPANTS_PACKET_SIZE,
+    SECTOR_VALID,
+    SESSION_HISTORY_PACKET_SIZE,
+    VISUAL_COMPOUNDS,
+    CarSetupData,
+    FinalClassificationData,
+    PacketHeader,
+    SessionHistoryData,
+    parse_car_setups,
+    parse_final_classification,
+    parse_participants,
+    parse_session_history,
+)
 
-RESULT_STATUS = {0: 'invalid', 1: 'inactive', 2: 'active', 3: 'finished', 4: 'disqualified',
-                 5: 'not classified', 6: 'retired'}
+RESULT_STATUS = {
+    0: 'invalid',
+    1: 'inactive',
+    2: 'active',
+    3: 'finished',
+    4: 'disqualified',
+    5: 'not classified',
+    6: 'retired',
+}
 
 
 def valid_history(history: SessionHistoryData) -> bool:
@@ -56,51 +76,78 @@ def lap_rows(history: SessionHistoryData, completed_only: bool = True) -> list[d
         if completed_only and lap.lap_time_ms <= 0:
             continue
         stint = stint_for_lap(history, lap.lap_num)
-        rows.append({
-            'car_index': history.car_index, 'lap_num': lap.lap_num, 'lap_time_ms': lap.lap_time_ms,
-            's1_ms': lap.sector_ms[0] or None, 's2_ms': lap.sector_ms[1] or None,
-            's3_ms': lap.sector_ms[2] or None, 'valid': lap.valid,
-            'sectors_valid': tuple(bool(lap.valid_flags & SECTOR_VALID[s]) for s in (1, 2, 3)),
-            'valid_flags': lap.valid_flags,
-            'stint_num': stint.stint_num if stint else None,
-            'actual_compound': stint.actual_compound if stint else None,
-            'visual_compound': stint.visual_compound if stint else None,
-            'tyre_age_laps': lap.lap_num - stint.start_lap if stint else None,
-            'in_lap': bool(stint and not stint.is_open and lap.lap_num == stint.end_lap),
-            'out_lap': bool(stint and stint.stint_num > 0 and lap.lap_num == stint.start_lap),
-        })
+        rows.append(
+            {
+                'car_index': history.car_index,
+                'lap_num': lap.lap_num,
+                'lap_time_ms': lap.lap_time_ms,
+                's1_ms': lap.sector_ms[0] or None,
+                's2_ms': lap.sector_ms[1] or None,
+                's3_ms': lap.sector_ms[2] or None,
+                'valid': lap.valid,
+                'sectors_valid': tuple(bool(lap.valid_flags & SECTOR_VALID[s]) for s in (1, 2, 3)),
+                'valid_flags': lap.valid_flags,
+                'stint_num': stint.stint_num if stint else None,
+                'actual_compound': stint.actual_compound if stint else None,
+                'visual_compound': stint.visual_compound if stint else None,
+                'tyre_age_laps': lap.lap_num - stint.start_lap if stint else None,
+                'in_lap': bool(stint and not stint.is_open and lap.lap_num == stint.end_lap),
+                'out_lap': bool(stint and stint.stint_num > 0 and lap.lap_num == stint.start_lap),
+            }
+        )
     return rows
 
 
 def stint_rows(history: SessionHistoryData) -> list[dict]:
-    return [{'car_index': history.car_index, 'stint_num': s.stint_num,
-             'actual_compound': s.actual_compound, 'visual_compound': s.visual_compound,
-             'compound': s.compound_name, 'start_lap': s.start_lap, 'end_lap': s.end_lap,
-             'laps': s.laps, 'is_open': s.is_open}
-            for s in history.stints]
+    return [
+        {
+            'car_index': history.car_index,
+            'stint_num': s.stint_num,
+            'actual_compound': s.actual_compound,
+            'visual_compound': s.visual_compound,
+            'compound': s.compound_name,
+            'start_lap': s.start_lap,
+            'end_lap': s.end_lap,
+            'laps': s.laps,
+            'is_open': s.is_open,
+        }
+        for s in history.stints
+    ]
 
 
 def classification_row(c: FinalClassificationData) -> dict:
-    return {'car_index': c.car_index, 'position': c.position, 'num_laps': c.num_laps,
-            'grid_position': c.grid_position, 'points': c.points, 'num_pit_stops': c.num_pit_stops,
-            'result_status': c.result_status, 'result': RESULT_STATUS.get(c.result_status, 'unknown'),
-            'best_lap_time_ms': c.best_lap_time_ms, 'total_race_time_s': c.total_race_time_s,
-            'penalties_time_s': c.penalties_time_s, 'num_penalties': c.num_penalties,
-            'tyre_stints_actual': list(c.tyre_stints_actual),
-            'tyre_stints_visual': list(c.tyre_stints_visual),
-            'tyre_stints': [VISUAL_COMPOUNDS.get(v, ACTUAL_COMPOUNDS.get(a, 'Unknown'))
-                            for a, v in zip(c.tyre_stints_actual, c.tyre_stints_visual)]}
+    return {
+        'car_index': c.car_index,
+        'position': c.position,
+        'num_laps': c.num_laps,
+        'grid_position': c.grid_position,
+        'points': c.points,
+        'num_pit_stops': c.num_pit_stops,
+        'result_status': c.result_status,
+        'result': RESULT_STATUS.get(c.result_status, 'unknown'),
+        'best_lap_time_ms': c.best_lap_time_ms,
+        'total_race_time_s': c.total_race_time_s,
+        'penalties_time_s': c.penalties_time_s,
+        'num_penalties': c.num_penalties,
+        'tyre_stints_actual': list(c.tyre_stints_actual),
+        'tyre_stints_visual': list(c.tyre_stints_visual),
+        'tyre_stints': [
+            VISUAL_COMPOUNDS.get(v, ACTUAL_COMPOUNDS.get(a, 'Unknown'))
+            for a, v in zip(c.tyre_stints_actual, c.tyre_stints_visual, strict=False)
+        ],
+    }
 
 
 @dataclass
 class SessionLog:
     """Latest Session History per car, Final Classification and setups for one session."""
+
     session_uid: int | None = None
     player_index: int | None = None
-    histories: dict = field(default_factory=dict)        # car index -> SessionHistoryData
-    classification: list = field(default_factory=list)   # FinalClassificationData
-    setups: dict = field(default_factory=dict)           # car index -> CarSetupData (visible ones)
-    names: dict = field(default_factory=dict)            # car index -> driver name
+    histories: dict = field(default_factory=dict)  # car index -> SessionHistoryData
+    classification: list = field(default_factory=list)  # FinalClassificationData
+    setups: dict = field(default_factory=dict)  # car index -> CarSetupData (visible ones)
+    names: dict = field(default_factory=dict)  # car index -> driver name
 
     # ── live updates; each returns what changed so callers write only that ──
 
@@ -148,8 +195,7 @@ class SessionLog:
         return rows
 
     def classification_rows(self) -> list[dict]:
-        return [dict(classification_row(c), driver=self.names.get(c.car_index))
-                for c in self.classification]
+        return [dict(classification_row(c), driver=self.names.get(c.car_index)) for c in self.classification]
 
     def pit_laps(self, car_index: int) -> list[int]:
         """Laps the car came in on (the last lap of every set but the one on the car)."""
@@ -159,18 +205,26 @@ class SessionLog:
         return [s.end_lap for s in history.stints if not s.is_open and s.stint_num + 1 < len(history.stints)]
 
     def to_dict(self) -> dict:
-        return {'session_uid': self.session_uid, 'player_index': self.player_index,
-                'stints': self.all_stint_rows(), 'laps': self.all_lap_rows(),
-                'classification': self.classification_rows(),
-                'setups': {i: s.as_dict() for i, s in sorted(self.setups.items())}}
+        return {
+            'session_uid': self.session_uid,
+            'player_index': self.player_index,
+            'stints': self.all_stint_rows(),
+            'laps': self.all_lap_rows(),
+            'classification': self.classification_rows(),
+            'setups': {i: s.as_dict() for i, s in sorted(self.setups.items())},
+        }
 
 
 # ──────────────────────────────────────────────
 # Reading recordings (.f1rec, docs/udp-recording-format.md)
 # ──────────────────────────────────────────────
 
-LOGGED_PACKET_SIZES = {4: PARTICIPANTS_PACKET_SIZE, 5: CAR_SETUPS_PACKET_SIZE,
-                       8: FINAL_CLASSIFICATION_PACKET_SIZE, 11: SESSION_HISTORY_PACKET_SIZE}
+LOGGED_PACKET_SIZES = {
+    4: PARTICIPANTS_PACKET_SIZE,
+    5: CAR_SETUPS_PACKET_SIZE,
+    8: FINAL_CLASSIFICATION_PACKET_SIZE,
+    11: SESSION_HISTORY_PACKET_SIZE,
+}
 
 
 def apply_datagram(logs: dict, data: bytes) -> SessionLog | None:
@@ -186,8 +240,11 @@ def apply_datagram(logs: dict, data: bytes) -> SessionLog | None:
     except (struct.error, ValueError):
         return None
     pid = header.packet_id
-    if (header.packet_format != 2021 or LOGGED_PACKET_SIZES.get(pid) != len(data)
-            or not 0 <= header.player_car_index < 22):
+    if (
+        header.packet_format != 2021
+        or LOGGED_PACKET_SIZES.get(pid) != len(data)
+        or not 0 <= header.player_car_index < 22
+    ):
         return None
     log = logs.get(header.session_uid)
     if log is None:

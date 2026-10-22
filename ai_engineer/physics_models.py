@@ -28,18 +28,18 @@ class OverheatRisk(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class CompoundParams:
-    alpha: float                # linear ageing degradation, s/lap
-    beta: float                 # quadratic ageing degradation, s/lap^2
-    kappa: float                # lap-time cost of full wear, s
-    a_wear: float                # grip sensitivity to wear
-    t_star: float                # ideal tyre temperature, C
-    sigma: float                 # thermal window half-width, C
-    t_hot: float                  # overheat penalty onset, C
-    t_crit: float                 # critical overheating temperature, C
-    t_cold: float                 # cold/graining penalty onset, C
-    expected_life_laps: float    # expected competitive life, laps
-    wear_cliff: float            # wear fraction (0-1) at which the tyre falls off a cliff
-    competitive_loss_s: float    # cumulative loss (s) at which the tyre is no longer competitive
+    alpha: float  # linear ageing degradation, s/lap
+    beta: float  # quadratic ageing degradation, s/lap^2
+    kappa: float  # lap-time cost of full wear, s
+    a_wear: float  # grip sensitivity to wear
+    t_star: float  # ideal tyre temperature, C
+    sigma: float  # thermal window half-width, C
+    t_hot: float  # overheat penalty onset, C
+    t_crit: float  # critical overheating temperature, C
+    t_cold: float  # cold/graining penalty onset, C
+    expected_life_laps: float  # expected competitive life, laps
+    wear_cliff: float  # wear fraction (0-1) at which the tyre falls off a cliff
+    competitive_loss_s: float  # cumulative loss (s) at which the tyre is no longer competitive
 
 
 # Coefficients per F1 2021/24 compound (same source values used by Box-Box: formula1.wiki,
@@ -59,10 +59,10 @@ _COMPOUND_PARAMS: dict[str, CompoundParams] = {
     "WET": CompoundParams(0.035, 0.00045, 2.20, 0.28, 55, 5.00, 60, 65, 45, 18, 0.88, 2.20),
 }
 
-AGE_WEAR_LAMBDA = 0.55     # blend weight between age-based and wear-based degradation
-PHI_MIN = 0.55             # minimum thermal-shape factor (grip never zeroes out from temperature alone)
-GAMMA_HOT = 0.04           # overheat penalty, s per degree over t_hot
-GAMMA_COLD = 0.03          # cold penalty, s per degree under t_cold
+AGE_WEAR_LAMBDA = 0.55  # blend weight between age-based and wear-based degradation
+PHI_MIN = 0.55  # minimum thermal-shape factor (grip never zeroes out from temperature alone)
+GAMMA_HOT = 0.04  # overheat penalty, s per degree over t_hot
+GAMMA_COLD = 0.03  # cold penalty, s per degree under t_cold
 THERMAL_RATE_BOOST = 0.02  # extra degradation rate, s/lap, while running hot
 
 
@@ -72,26 +72,27 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 
 def _compound_params(name: str | None) -> CompoundParams:
     key = (name or "MEDIUM").upper()
-    if key.startswith("INTER"):           # 'Inter', 'Intermediate' (not 'INTERMEDIATEMEDIATE')
+    if key.startswith("INTER"):  # 'Inter', 'Intermediate' (not 'INTERMEDIATEMEDIATE')
         key = "INTERMEDIATE"
     return _COMPOUND_PARAMS.get(key, _COMPOUND_PARAMS["MEDIUM"])
 
 
 @dataclass
 class TireResult:
-    grip_factor: float            # 0-1, current grip relative to a fresh tyre at ideal temperature
-    health_score: float           # 0-100, blended health indicator for display
-    deg_rate_s_per_lap: float     # expected extra lap-time cost next lap, s
-    remaining_laps: float         # laps of competitive life left on this set
-    performance_loss_s: float     # cumulative lap-time cost versus a fresh tyre, s
+    grip_factor: float  # 0-1, current grip relative to a fresh tyre at ideal temperature
+    health_score: float  # 0-100, blended health indicator for display
+    deg_rate_s_per_lap: float  # expected extra lap-time cost next lap, s
+    remaining_laps: float  # laps of competitive life left on this set
+    performance_loss_s: float  # cumulative lap-time cost versus a fresh tyre, s
     overheat_risk: OverheatRisk
     compound: str
     age_laps: int
-    limiting_factor: str          # which budget runs out first: wear / age / performance
+    limiting_factor: str  # which budget runs out first: wear / age / performance
 
 
-def evaluate_tire(compound: str | None, age_laps: float | None, tyres_wear: tuple | None,
-                  tyres_surface_temp: tuple | None) -> TireResult:
+def evaluate_tire(
+    compound: str | None, age_laps: float | None, tyres_wear: tuple | None, tyres_surface_temp: tuple | None
+) -> TireResult:
     """Score one tyre set's current grip, health and remaining competitive life.
 
     ``tyres_wear`` is (RL, RR, FL, FR) percent as the game reports it; ``tyres_surface_temp``
@@ -102,7 +103,7 @@ def evaluate_tire(compound: str | None, age_laps: float | None, tyres_wear: tupl
     age = max(0.0, float(age_laps or 0))
 
     if tyres_wear:
-        wear_frac = _clamp(sum(tyres_wear) / 400.0, 0.0, 1.0)   # average of 4 wheels, 0-100% each
+        wear_frac = _clamp(sum(tyres_wear) / 400.0, 0.0, 1.0)  # average of 4 wheels, 0-100% each
     else:
         wear_frac = _clamp(age / max(params.expected_life_laps, 1.0), 0.0, 1.0)
 
@@ -112,13 +113,13 @@ def evaluate_tire(compound: str | None, age_laps: float | None, tyres_wear: tupl
 
     if mean_temp is not None:
         z = (mean_temp - params.t_star) / max(params.sigma, 1e-6)
-        phi = _clamp(math.exp(-0.5 * z * z), PHI_MIN, 1.0)      # Gaussian thermal grip window
+        phi = _clamp(math.exp(-0.5 * z * z), PHI_MIN, 1.0)  # Gaussian thermal grip window
     else:
         phi = 1.0
 
     grip = _clamp((1.0 - params.a_wear * wear_frac) * phi, 0.0, 1.0)
 
-    dt_age = params.alpha * age + params.beta * (age ** 2)
+    dt_age = params.alpha * age + params.beta * (age**2)
     dt_wear = params.kappa * wear_frac
     dt_thermal = 0.0
     if mean_temp is not None:
@@ -147,7 +148,9 @@ def evaluate_tire(compound: str | None, age_laps: float | None, tyres_wear: tupl
         + 0.25 * (1.0 - wear_frac / max(params.wear_cliff, 1e-6))
         + 0.25 * (remaining / max(params.expected_life_laps, 1e-6))
         + 0.15 * (1.0 - performance_loss / max(params.competitive_loss_s, 1e-6)),
-        0.0, 1.0)
+        0.0,
+        1.0,
+    )
 
     if peak_temp is None:
         overheat = OverheatRisk.NONE
@@ -163,10 +166,16 @@ def evaluate_tire(compound: str | None, age_laps: float | None, tyres_wear: tupl
         overheat = OverheatRisk.NONE
 
     return TireResult(
-        grip_factor=round(grip, 4), health_score=round(health, 1),
-        deg_rate_s_per_lap=round(deg_rate, 4), remaining_laps=round(remaining, 1),
-        performance_loss_s=round(performance_loss, 3), overheat_risk=overheat,
-        compound=(compound or "MEDIUM").upper(), age_laps=int(age), limiting_factor=limiting)
+        grip_factor=round(grip, 4),
+        health_score=round(health, 1),
+        deg_rate_s_per_lap=round(deg_rate, 4),
+        remaining_laps=round(remaining, 1),
+        performance_loss_s=round(performance_loss, 3),
+        overheat_risk=overheat,
+        compound=(compound or "MEDIUM").upper(),
+        age_laps=int(age),
+        limiting_factor=limiting,
+    )
 
 
 # ──────────────────────────────────────────────
@@ -182,13 +191,14 @@ FUEL_PUSH_THRESHOLD_LAPS = 1.5
 class FuelResult:
     fuel_kg: float
     consumption_kg_per_lap: float | None
-    margin_laps: float | None      # positive = spare laps of fuel beyond the finish, with reserve held back
+    margin_laps: float | None  # positive = spare laps of fuel beyond the finish, with reserve held back
     can_push: bool | None
     must_save: bool | None
 
 
-def evaluate_fuel(fuel_kg: float | None, consumption_kg_per_lap: float | None,
-                  laps_remaining: int | None) -> FuelResult:
+def evaluate_fuel(
+    fuel_kg: float | None, consumption_kg_per_lap: float | None, laps_remaining: int | None
+) -> FuelResult:
     """Score fuel margin from a learned per-lap burn rate (see strategy_ml.fuel_per_lap)."""
     if fuel_kg is None:
         return FuelResult(0.0, consumption_kg_per_lap, None, None, None)
@@ -197,8 +207,13 @@ def evaluate_fuel(fuel_kg: float | None, consumption_kg_per_lap: float | None,
         margin = (fuel_kg - FUEL_RESERVE_MIN_KG) / consumption_kg_per_lap - float(laps_remaining)
         must_save = margin < FUEL_SAVE_THRESHOLD_LAPS
         can_push = margin > FUEL_PUSH_THRESHOLD_LAPS
-    return FuelResult(round(fuel_kg, 2), consumption_kg_per_lap,
-                      round(margin, 2) if margin is not None else None, can_push, must_save)
+    return FuelResult(
+        round(fuel_kg, 2),
+        consumption_kg_per_lap,
+        round(margin, 2) if margin is not None else None,
+        can_push,
+        must_save,
+    )
 
 
 # ──────────────────────────────────────────────
@@ -220,18 +235,22 @@ THREAT_MEDIUM = 30.0
 class OpponentThreat:
     car_index: int
     position: int | None
-    threat_score: float        # 0-100
-    threat_level: str          # LOW / MEDIUM / HIGH
-    gap_s: float                # signed: positive = ahead of the player, negative = behind
+    threat_score: float  # 0-100
+    threat_level: str  # LOW / MEDIUM / HIGH
+    gap_s: float  # signed: positive = ahead of the player, negative = behind
     pace_delta_s: float | None  # positive = this car is faster per lap than the player
     laps_to_catch: float | None
     factors: list[str]
-    driver_name: str | None = None   # radio name from the Participants packet, if known
+    driver_name: str | None = None  # radio name from the Participants packet, if known
 
 
-def evaluate_opponent_threat(car_index: int, position: int | None, gap_s: float,
-                             pace_delta_s: float | None,
-                             driver_name: str | None = None) -> OpponentThreat:
+def evaluate_opponent_threat(
+    car_index: int,
+    position: int | None,
+    gap_s: float,
+    pace_delta_s: float | None,
+    driver_name: str | None = None,
+) -> OpponentThreat:
     """Score how much pressure one nearby car puts on the player right now.
 
     ``gap_s`` follows RaceRadio's convention: positive means the car is ahead of the player
@@ -257,9 +276,9 @@ def evaluate_opponent_threat(car_index: int, position: int | None, gap_s: float,
 
     laps_to_catch = None
     if pace_delta_s is not None and abs(pace_delta_s) > 1e-6:
-        if gap_s < 0 and pace_delta_s < 0:        # behind and closing
+        if gap_s < 0 and pace_delta_s < 0:  # behind and closing
             laps_to_catch = abs_gap / (-pace_delta_s)
-        elif gap_s > 0 and pace_delta_s > 0:       # ahead and pulling away is not a catch
+        elif gap_s > 0 and pace_delta_s > 0:  # ahead and pulling away is not a catch
             laps_to_catch = None
     if laps_to_catch is not None and laps_to_catch <= THREAT_CATCH_LAPS_CAP:
         score += 18.0 * (1.0 - laps_to_catch / THREAT_CATCH_LAPS_CAP)
@@ -269,7 +288,13 @@ def evaluate_opponent_threat(car_index: int, position: int | None, gap_s: float,
     level = "HIGH" if score >= THREAT_HIGH else "MEDIUM" if score >= THREAT_MEDIUM else "LOW"
 
     return OpponentThreat(
-        car_index=car_index, position=position, threat_score=round(score, 1), threat_level=level,
-        gap_s=round(gap_s, 2), pace_delta_s=round(pace_delta_s, 3) if pace_delta_s is not None else None,
-        laps_to_catch=round(laps_to_catch, 1) if laps_to_catch is not None else None, factors=factors,
-        driver_name=driver_name)
+        car_index=car_index,
+        position=position,
+        threat_score=round(score, 1),
+        threat_level=level,
+        gap_s=round(gap_s, 2),
+        pace_delta_s=round(pace_delta_s, 3) if pace_delta_s is not None else None,
+        laps_to_catch=round(laps_to_catch, 1) if laps_to_catch is not None else None,
+        factors=factors,
+        driver_name=driver_name,
+    )

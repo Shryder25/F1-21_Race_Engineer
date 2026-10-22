@@ -15,10 +15,13 @@ Flow for every voice command:
 from __future__ import annotations
 
 import re
-from typing import Callable
+from collections.abc import Callable
 
-from ai_client import AIClient, AITimeout, AIUnavailable
 import session_modes
+from ai_client import AIClient, AITimeout, AIUnavailable
+from log_setup import get_logger
+
+log = get_logger('engineer')
 
 # Radio lines are under 25 words; with thinking off this leaves plenty of room for the JSON.
 RADIO_MAX_TOKENS = 220
@@ -35,8 +38,10 @@ COMMAND_QUESTIONS = {
     'rivals': 'When are the cars around me going to box, and onto which tyres?',
 }
 
-UNKNOWN_QUESTION_REPLY = ("Copy, can't answer that one without the AI. "
-                          "Ask me about gaps, tyres, pace, the pit window, weather or strategy.")
+UNKNOWN_QUESTION_REPLY = (
+    "Copy, can't answer that one without the AI. "
+    "Ask me about gaps, tyres, pace, the pit window, weather or strategy."
+)
 
 SYSTEM_PROMPT = """You are the driver's Formula 1 race engineer speaking over team radio.
 Rules:
@@ -69,8 +74,7 @@ def _fmt_lap(ms):
     return f'{int(seconds // 60)}:{seconds % 60:06.3f}'
 
 
-_BASIS = {'track': 'fitted on this track', 'pooled': 'fitted on other tracks',
-          'prior': 'built-in estimate'}
+_BASIS = {'track': 'fitted on this track', 'pooled': 'fitted on other tracks', 'prior': 'built-in estimate'}
 
 
 def _fmt_range(r) -> str:
@@ -96,18 +100,36 @@ def format_context(ctx: dict, topics: set | None = None) -> str:
     add('Track', ctx.get('track'))
     add('Session', ctx.get('session_type'))
     add('Session mode', ctx.get('session_mode') if ctx.get('session_mode') != 'unknown' else None)
-    add('Lap', f"{ctx['lap']} of {ctx['total_laps']}" if ctx.get('lap') and ctx.get('total_laps')
-        else ctx.get('lap'))
+    add(
+        'Lap',
+        f"{ctx['lap']} of {ctx['total_laps']}"
+        if ctx.get('lap') and ctx.get('total_laps')
+        else ctx.get('lap'),
+    )
     add('Position', ctx.get('position'))
     add('Weather', ctx.get('weather'), topic='weather')
     conditions = ctx.get('track_conditions')
     if conditions:
-        add('Track wetness (0 dry, 1 standing water; from weather and lap times by tyre type)', (
-            f"{conditions['wetness']} +/- {conditions['sd']}, {conditions['trend']}, quickest tyre "
-            f"{conditions['best_tyre']}" + (f", switch to {conditions['switch_to']} in "
-                                            f"{conditions['switch_in_laps']} laps" if conditions.get('switch_to') else '')
-            + f"; basis: {conditions['basis']}"
-            + (''.join(f"; forecast +{f['in_min']} min rain {f['rain_pct']}%" for f in conditions['forecast_rain'][:4]))), topic='weather')
+        add(
+            'Track wetness (0 dry, 1 standing water; from weather and lap times by tyre type)',
+            (
+                f"{conditions['wetness']} +/- {conditions['sd']}, {conditions['trend']}, quickest tyre "
+                f"{conditions['best_tyre']}"
+                + (
+                    f", switch to {conditions['switch_to']} in {conditions['switch_in_laps']} laps"
+                    if conditions.get('switch_to')
+                    else ''
+                )
+                + f"; basis: {conditions['basis']}"
+                + (
+                    ''.join(
+                        f"; forecast +{f['in_min']} min rain {f['rain_pct']}%"
+                        for f in conditions['forecast_rain'][:4]
+                    )
+                )
+            ),
+            topic='weather',
+        )
     add('Track temp C', ctx.get('track_temp_c'), topic='weather')
     add('Air temp C', ctx.get('air_temp_c'), topic='weather')
     add('Safety car out', ctx.get('safety_car') or None)
@@ -118,9 +140,16 @@ def format_context(ctx: dict, topics: set | None = None) -> str:
     add('Last lap', _fmt_lap(ctx.get('last_lap_ms')))
     add('Best lap', _fmt_lap(ctx.get('best_lap_ms')))
     add('Race pace (avg of last 3)', _fmt_lap(ctx.get('race_pace_ms')))
-    add('Delta to best lap (s)', None if ctx.get('delta_to_best_ms') is None
-        else round(ctx['delta_to_best_ms'] / 1000, 2), topic='pace')
-    add('Tyre fall-off, fuel-corrected (s per lap, + means slower)', ctx.get('pace_trend_s_per_lap'), topic='tyres')
+    add(
+        'Delta to best lap (s)',
+        None if ctx.get('delta_to_best_ms') is None else round(ctx['delta_to_best_ms'] / 1000, 2),
+        topic='pace',
+    )
+    add(
+        'Tyre fall-off, fuel-corrected (s per lap, + means slower)',
+        ctx.get('pace_trend_s_per_lap'),
+        topic='tyres',
+    )
     add('Tyre compound', ctx.get('compound'))
     add('Tyre age (laps)', ctx.get('tyre_age_laps'))
     add('Tyre surface temps C', ctx.get('tyre_surface_c'), topic='tyres')
@@ -128,60 +157,101 @@ def format_context(ctx: dict, topics: set | None = None) -> str:
     add('Game pit window (ideal, latest lap)', ctx.get('game_pit_window'), topic='strategy')
     prediction = ctx.get('pit_prediction')
     if prediction:
-        add('ML pit prediction', (
-            f"worst-tyre wear {prediction['wear_now_pct']}%, +{prediction['wear_per_lap_pct']}% per lap "
-            f"(range {_fmt_range(prediction.get('wear_per_lap_range'))}), "
-            f"ideal stop lap {prediction['ideal_lap']} (range {_fmt_range(prediction.get('ideal_lap_range'))}), "
-            f"latest lap {prediction['latest_lap']} (range {_fmt_range(prediction.get('latest_lap_range'))}), "
-            f"can finish without stopping: {prediction['finish_without_stop']}"
-            + (f" (chance {round(prediction['finish_without_stop_prob'] * 100)}%)"
-               if prediction.get('finish_without_stop_prob') is not None else '')
-            + f", based on {prediction['samples']} laps ({_BASIS.get(prediction.get('basis'), 'fit')})"), topic='strategy')
+        add(
+            'ML pit prediction',
+            (
+                f"worst-tyre wear {prediction['wear_now_pct']}%, +{prediction['wear_per_lap_pct']}% per lap "
+                f"(range {_fmt_range(prediction.get('wear_per_lap_range'))}), "
+                f"ideal stop lap {prediction['ideal_lap']} (range {_fmt_range(prediction.get('ideal_lap_range'))}), "
+                f"latest lap {prediction['latest_lap']} (range {_fmt_range(prediction.get('latest_lap_range'))}), "
+                f"can finish without stopping: {prediction['finish_without_stop']}"
+                + (
+                    f" (chance {round(prediction['finish_without_stop_prob'] * 100)}%)"
+                    if prediction.get('finish_without_stop_prob') is not None
+                    else ''
+                )
+                + f", based on {prediction['samples']} laps ({_BASIS.get(prediction.get('basis'), 'fit')})"
+            ),
+            topic='strategy',
+        )
     else:
         add('ML pit prediction', 'not enough lap data yet', topic='strategy')
     model = ctx.get('tyre_fuel_model')
     if model:
-        add('Tyre model ranges [low, expected, high]', (
-            f"wear per lap {_fmt_range(model['wear_per_lap_pct'])}%, wear in 5 laps "
-            f"{_fmt_range(model['wear_in_5_laps_pct'])}%, fall-off {_fmt_range(model['deg_s_per_lap'])} s/lap; "
-            f"{_BASIS.get(model['basis'], 'fit')} from {model['fit_laps']} laps"
-            + (' (simulator data only)' if model.get('simulated_fit') else '')
-            + f" plus {model['stint_laps']} laps this stint"), topic='tyres')
+        add(
+            'Tyre model ranges [low, expected, high]',
+            (
+                f"wear per lap {_fmt_range(model['wear_per_lap_pct'])}%, wear in 5 laps "
+                f"{_fmt_range(model['wear_in_5_laps_pct'])}%, fall-off {_fmt_range(model['deg_s_per_lap'])} s/lap; "
+                f"{_BASIS.get(model['basis'], 'fit')} from {model['fit_laps']} laps"
+                + (' (simulator data only)' if model.get('simulated_fit') else '')
+                + f" plus {model['stint_laps']} laps this stint"
+            ),
+            topic='tyres',
+        )
     fuel = ctx.get('fuel')
     if fuel:
-        add('Fuel', f"{fuel['fuel_kg']} kg, burn {fuel['per_lap_kg']} kg per lap "
-                    f"(range {_fmt_range(fuel.get('per_lap_kg_range'))}), "
-                    f"{fuel['laps_of_fuel']} laps of fuel, margin {fuel['margin_laps']} laps "
-                    f"(range {_fmt_range(fuel.get('margin_laps_range'))})", topic='fuel')
+        add(
+            'Fuel',
+            f"{fuel['fuel_kg']} kg, burn {fuel['per_lap_kg']} kg per lap "
+            f"(range {_fmt_range(fuel.get('per_lap_kg_range'))}), "
+            f"{fuel['laps_of_fuel']} laps of fuel, margin {fuel['margin_laps']} laps "
+            f"(range {_fmt_range(fuel.get('margin_laps_range'))})",
+            topic='fuel',
+        )
     add("Driver's own history at this track", ctx.get('driver_profile'), topic='pace')
     add('Last lap sector times ms', ctx.get('last_lap_sectors_ms'), topic='pace')
     add('Last lap sector deltas to personal best ms', ctx.get('last_lap_sector_deltas_ms'), topic='pace')
     tire = ctx.get('tire_health')
     if tire:
-        add('Tyre physics model', (
-            f"grip {tire['grip_factor']:.2f}, health {tire['health_score']:.0f}%, "
-            f"~{tire['remaining_laps']:.0f} competitive laps left (limited by {tire['limiting_factor']}), "
-            f"overheat risk {tire['overheat_risk']}"), topic='tyres')
+        add(
+            'Tyre physics model',
+            (
+                f"grip {tire['grip_factor']:.2f}, health {tire['health_score']:.0f}%, "
+                f"~{tire['remaining_laps']:.0f} competitive laps left (limited by {tire['limiting_factor']}), "
+                f"overheat risk {tire['overheat_risk']}"
+            ),
+            topic='tyres',
+        )
     threats = ctx.get('opponent_threats')
     if threats:
-        add('Nearby cars ranked by threat', '; '.join(
-            f"{t.get('driver_name') or 'Unknown driver'} {t['threat_level']} "
-            f"({t['gap_s']:+.1f}s{', ' + ', '.join(t['factors']) if t['factors'] else ''})"
-            for t in threats), topic='field')
+        add(
+            'Nearby cars ranked by threat',
+            '; '.join(
+                f"{t.get('driver_name') or 'Unknown driver'} {t['threat_level']} "
+                f"({t['gap_s']:+.1f}s{', ' + ', '.join(t['factors']) if t['factors'] else ''})"
+                for t in threats
+            ),
+            topic='field',
+        )
     strategy = ctx.get('strategy')
     if strategy:
         best = strategy['best']
-        stints = ', '.join(f"{c.lower()} {n} laps" for c, n in zip(best['compounds'], best['stint_laps']))
-        add('Race strategy model', (
-            f"best is {best['stops']} stop(s): {stints}; box at end of lap(s) {best['pit_laps'] or 'none'}; "
-            f"pit loss {strategy['pit_loss_s']}s")
-            + ''.join(f"; {o['stops']} stop(s) is {o['slower_by_s']}s slower" for o in strategy['alternatives']), topic='strategy')
+        stints = ', '.join(
+            f"{c.lower()} {n} laps" for c, n in zip(best['compounds'], best['stint_laps'], strict=False)
+        )
+        add(
+            'Race strategy model',
+            (
+                f"best is {best['stops']} stop(s): {stints}; box at end of lap(s) {best['pit_laps'] or 'none'}; "
+                f"pit loss {strategy['pit_loss_s']}s"
+            )
+            + ''.join(
+                f"; {o['stops']} stop(s) is {o['slower_by_s']}s slower" for o in strategy['alternatives']
+            ),
+            topic='strategy',
+        )
         undercut = strategy.get('undercut_on_car_ahead')
         if undercut:
-            add('Undercut on car ahead', (
-                f"gap {undercut['gap_s']}s, boxing this lap gains {undercut['gain_s']}s "
-                f"(rival on {undercut['rival_tyre_age']}-lap {undercut['rival_compound']}), "
-                f"works: {undercut['works']}"), topic='strategy')
+            add(
+                'Undercut on car ahead',
+                (
+                    f"gap {undercut['gap_s']}s, boxing this lap gains {undercut['gain_s']}s "
+                    f"(rival on {undercut['rival_tyre_age']}-lap {undercut['rival_compound']}), "
+                    f"works: {undercut['works']}"
+                ),
+                topic='strategy',
+            )
         if strategy.get('last_call'):
             add('Last strategy call', strategy['last_call']['message'], topic='strategy')
         add('Game rejoin position if boxing now', strategy.get('game_rejoin_position'), topic='strategy')
@@ -190,39 +260,62 @@ def format_context(ctx: dict, topics: set | None = None) -> str:
             add('Rival stop predictions', ' '.join(r['summary'] for r in rivals['nearby']), topic='field')
         sim = strategy.get('simulation')
         if sim and sim.get('options') and not (sim.get('inputs') or {}).get('settled'):
-            add(f"Race simulation ({sim['runs']} Monte Carlo races from lap {sim['lap']})", (
-                '; '.join(f"{o['label']}: best {round(o['p_best'] * 100)}% of runs, expected P{o['position_range'][1]} "
-                          f"(P{o['position_range'][0]}-P{o['position_range'][2]}), podium {round(o['p_podium'] * 100)}%"
-                          for o in sim['options'])
-                + f"; chance of a Safety Car {round(sim['p_safety_car'] * 100)}%, VSC {round(sim['p_vsc'] * 100)}%, "
-                  f"rain {round(sim['p_rain'] * 100)}%; pit loss {sim['pit_loss_s'][1]}s "
-                  f"({sim['pit_loss_s'][0]}-{sim['pit_loss_s'][2]}s); overtaking difficulty {sim['overtaking']}/5"), topic='strategy')
+            add(
+                f"Race simulation ({sim['runs']} Monte Carlo races from lap {sim['lap']})",
+                (
+                    '; '.join(
+                        f"{o['label']}: best {round(o['p_best'] * 100)}% of runs, expected P{o['position_range'][1]} "
+                        f"(P{o['position_range'][0]}-P{o['position_range'][2]}), podium {round(o['p_podium'] * 100)}%"
+                        for o in sim['options']
+                    )
+                    + f"; chance of a Safety Car {round(sim['p_safety_car'] * 100)}%, VSC {round(sim['p_vsc'] * 100)}%, "
+                    f"rain {round(sim['p_rain'] * 100)}%; pit loss {sim['pit_loss_s'][1]}s "
+                    f"({sim['pit_loss_s'][0]}-{sim['pit_loss_s'][2]}s); overtaking difficulty {sim['overtaking']}/5"
+                ),
+                topic='strategy',
+            )
         replan = strategy.get('replan')
         if replan and replan.get('plan_a'):
             a = replan['plan_a']
             text = f"{a['label']}, box lap(s) {a['pit_laps'] or 'none'}; status {replan['status']}"
             ch = replan.get('challenger')
             if ch:
-                text += (f"; best alternative {ch['label']} gains {ch['time_gain_s']}s / "
-                         f"{ch['position_gain']} places, ahead in {round(ch['p_better'] * 100)}% of runs")
+                text += (
+                    f"; best alternative {ch['label']} gains {ch['time_gain_s']}s / "
+                    f"{ch['position_gain']} places, ahead in {round(ch['p_better'] * 100)}% of runs"
+                )
             if replan.get('call_active') and replan.get('last_call'):
-                text += f"; Plan B called on lap {replan['last_call']['lap']}: {replan['last_call']['message']}"
+                text += (
+                    f"; Plan B called on lap {replan['last_call']['lap']}: {replan['last_call']['message']}"
+                )
             add('Current plan (Plan A, the plan we are on)', text, topic='strategy')
         spread = strategy.get('uncertainty')
         if spread and spread.get('worse') and spread.get('better'):
-            add('Strategy across the tyre-model range', (
-                f"if tyres go off faster: {spread['worse']['stops']} stop(s) at lap(s) "
-                f"{spread['worse']['pit_laps'] or 'none'}; if they last longer: "
-                f"{spread['better']['stops']} stop(s) at lap(s) {spread['better']['pit_laps'] or 'none'}"), topic='strategy')
+            add(
+                'Strategy across the tyre-model range',
+                (
+                    f"if tyres go off faster: {spread['worse']['stops']} stop(s) at lap(s) "
+                    f"{spread['worse']['pit_laps'] or 'none'}; if they last longer: "
+                    f"{spread['better']['stops']} stop(s) at lap(s) {spread['better']['pit_laps'] or 'none'}"
+                ),
+                topic='strategy',
+            )
     current = ctx.get('current_lap')
     if current:
-        add('Current lap', f"sector {current['sector']}, running time {_fmt_lap(current.get('time_ms')) or 'n/a'}"
-            + (', lap INVALID (track limits)' if current.get('invalid') else ''))
+        add(
+            'Current lap',
+            f"sector {current['sector']}, running time {_fmt_lap(current.get('time_ms')) or 'n/a'}"
+            + (', lap INVALID (track limits)' if current.get('invalid') else ''),
+        )
     add('DRS open now', ctx.get('drs_open'), 'car')
     ers = ctx.get('ers')
     if ers:
-        add('ERS battery', f"{ers['battery_pct']}% charge, deploy mode {ers['deploy_mode']}, "
-                           f"{ers['used_this_lap_pct']}% of a full battery used this lap", 'car')
+        add(
+            'ERS battery',
+            f"{ers['battery_pct']}% charge, deploy mode {ers['deploy_mode']}, "
+            f"{ers['used_this_lap_pct']}% of a full battery used this lap",
+            'car',
+        )
     add('Tyre inner (carcass) temps C', ctx.get('tyre_inner_c'), 'tyres')
     add('Tyre pressures psi', ctx.get('tyre_pressures_psi'), 'tyres')
     add('Brake temps C', ctx.get('brake_temps_c'), 'car')
@@ -233,21 +326,31 @@ def format_context(ctx: dict, topics: set | None = None) -> str:
         add('Car damage/wear %', ', '.join(f'{k} {v}' for k, v in hurt.items()) or 'no damage', 'car')
     penalties = ctx.get('penalties')
     if penalties:
-        add('Penalties and warnings', (
-            f"{penalties['time_penalty_s']}s time penalty, {penalties['warnings']} track-limit/corner-cutting "
-            f"warnings, unserved drive-through {penalties['unserved_drive_through']}, unserved stop-go "
-            f"{penalties['unserved_stop_go']}; pit stops done {penalties['pit_stops_done']}; started "
-            f"P{penalties['grid_position']}"), 'rules')
+        add(
+            'Penalties and warnings',
+            (
+                f"{penalties['time_penalty_s']}s time penalty, {penalties['warnings']} track-limit/corner-cutting "
+                f"warnings, unserved drive-through {penalties['unserved_drive_through']}, unserved stop-go "
+                f"{penalties['unserved_stop_go']}; pit stops done {penalties['pit_stops_done']}; started "
+                f"P{penalties['grid_position']}"
+            ),
+            'rules',
+        )
     add('Recent race control', '; '.join(ctx.get('recent_race_events') or []) or None, 'rules')
     standings = ctx.get('standings')
     if standings:
-        add('Running order (P, driver, gap to leader s, interval s, last lap, best lap, tyre and age, stops)',
-            ' | '.join(_standing(row) for row in standings), 'field')
+        add(
+            'Running order (P, driver, gap to leader s, interval s, last lap, best lap, tyre and age, stops)',
+            ' | '.join(_standing(row) for row in standings),
+            'field',
+        )
     return '\n'.join(lines) if lines else 'No telemetry received yet.'
 
 
 def _standing(row: dict) -> str:
-    parts = [f"P{row.get('position')} {row.get('name') or 'Car'}" + (' (YOU)' if row.get('is_player') else '')]
+    parts = [
+        f"P{row.get('position')} {row.get('name') or 'Car'}" + (' (YOU)' if row.get('is_player') else '')
+    ]
     if row.get('status') and row['status'] != 'RUN':
         parts.append(row['status'])
     if row.get('laps_down'):
@@ -274,25 +377,31 @@ def _standing(row: dict) -> str:
 # Words that show what a free-form question is about, so only that data goes to the model.
 _TOPIC_WORDS = {
     'car': r'battery|ers|deploy|deployment|energy|hybrid|harvest|overtake (?:mode|button)|damage|damaged|wing|floor|'
-           r'gearbox|engine|brakes?|drs|car',
+    r'gearbox|engine|brakes?|drs|car',
     'tyres': r'tyres?|tires?|wear|worn|grip|deg|degradation|compound|softs?|mediums?|hards?|temps?|temperatures?|'
-             r'pressures?|psi|graining|blister\w*|overheat\w*',
+    r'pressures?|psi|graining|blister\w*|overheat\w*',
     'fuel': r'fuel|lift and coast|lift|coast|save|saving|mix',
     'strategy': r'pit|box|boxing|stop|stops|strategy|plan|undercut|overcut|window|chances?|odds|win|podium|points|'
-                r'safety car|vsc|finish',
+    r'safety car|vsc|finish',
     'field': r'who|leader|leading|lead|p\d+|positions?|standings|order|ahead|behind|front|rivals?|others|field|'
-             r'fastest|team ?mate|threats?|attack\w*|defend\w*|catch\w*|overtak\w*|pass\w*|gap|gaps|driver|everyone',
+    r'fastest|team ?mate|threats?|attack\w*|defend\w*|catch\w*|overtak\w*|pass\w*|gap|gaps|driver|everyone',
     'pace': r'pace|lap ?times?|sectors?|faster|slower|delta|improve|corners?|turns?|lose|losing|gain|quicker|'
-            r'time|braking|push|best',
+    r'time|braking|push|best',
     'weather': r'weather|rain\w*|wet|dry|forecast|track temp\w*|air temp\w*|inters?|intermediates?|cloud\w*|sun\w*',
     'rules': r'penalt\w*|warnings?|track limits|limits|drive ?through|stop ?go|invalid|flags?|yellow|blue|red flag|'
-             r'race control|investigation|steward\w*|incident',
+    r'race control|investigation|steward\w*|incident',
 }
 _TOPIC_RE = {topic: re.compile(rf'\b(?:{words})\b') for topic, words in _TOPIC_WORDS.items()}
 COMMAND_TOPICS = {
-    'weather': {'weather'}, 'tyre_temps': {'tyres'}, 'pit_window': {'strategy', 'tyres'},
-    'gap_ahead': {'field'}, 'gap_behind': {'field'}, 'pace': {'pace', 'tyres'},
-    'threats': {'field'}, 'strategy': {'strategy', 'tyres', 'field'}, 'rivals': {'field', 'strategy'},
+    'weather': {'weather'},
+    'tyre_temps': {'tyres'},
+    'pit_window': {'strategy', 'tyres'},
+    'gap_ahead': {'field'},
+    'gap_behind': {'field'},
+    'pace': {'pace', 'tyres'},
+    'threats': {'field'},
+    'strategy': {'strategy', 'tyres', 'field'},
+    'rivals': {'field', 'strategy'},
 }
 
 
@@ -309,8 +418,10 @@ def _names_a_driver(question: str, ctx: dict) -> bool:
     words = set(re.findall(r'[a-z]+', (question or '').lower()))
     names = [row.get('name') for row in ctx.get('standings') or []]
     names += [ctx.get('car_ahead_name'), ctx.get('car_behind_name')]
-    return any(name and any(part in words for part in re.findall(r'[a-z]+', name.lower()) if len(part) > 2)
-               for name in names)
+    return any(
+        name and any(part in words for part in re.findall(r'[a-z]+', name.lower()) if len(part) > 2)
+        for name in names
+    )
 
 
 def build_prompt(command: str, ctx: dict, *, focused: bool = True) -> tuple[str, str]:
@@ -323,8 +434,10 @@ def build_prompt(command: str, ctx: dict, *, focused: bool = True) -> tuple[str,
     topics = question_topics(command) if focused else None
     if topics is not None and 'field' not in topics and _names_a_driver(question, ctx):
         topics.add('field')
-    user = (f'Driver asks: "{question}"\n\nCurrent data:\n{format_context(ctx, topics)}\n\n'
-            'Answer as the race engineer.')
+    user = (
+        f'Driver asks: "{question}"\n\nCurrent data:\n{format_context(ctx, topics)}\n\n'
+        'Answer as the race engineer.'
+    )
     return SYSTEM_PROMPT, user
 
 
@@ -356,6 +469,7 @@ def clean_radio_text(text: str, max_words: int = 45) -> str:
 # Rule-based fallback (no AI needed)
 # ──────────────────────────────────────────────
 
+
 def _say_seconds(value: float) -> str:
     return f'{value:.1f}'
 
@@ -367,8 +481,11 @@ def _mode_blocks(command: str, ctx: dict) -> str | None:
         return None
     label = session_modes.MODE_LABELS[mode]
     if command in ('gap_ahead', 'gap_behind', 'threats') and not session_modes.reports_gaps(mode):
-        return 'No other cars in time trial.' if mode == session_modes.TIME_TRIAL \
+        return (
+            'No other cars in time trial.'
+            if mode == session_modes.TIME_TRIAL
             else f'Gaps are only tracked in the race, not in {label.lower()}.'
+        )
     if command == 'pit_window' and not session_modes.has_pit_strategy(mode):
         return f'No pit stops in {label.lower()}.'
     if command in ('strategy', 'rivals') and mode != session_modes.RACE:
@@ -383,8 +500,10 @@ def rule_based_answer(command: str, ctx: dict) -> str:
     if command == 'weather':
         if not ctx.get('weather'):
             return 'No weather data yet.'
-        text = (f"{ctx['weather'].capitalize()}. Track {ctx.get('track_temp_c')} degrees, "
-                f"air {ctx.get('air_temp_c')}.")
+        text = (
+            f"{ctx['weather'].capitalize()}. Track {ctx.get('track_temp_c')} degrees, "
+            f"air {ctx.get('air_temp_c')}."
+        )
         conditions = ctx.get('track_conditions')
         if conditions and conditions.get('radio'):
             text += ' ' + conditions['radio']
@@ -402,7 +521,7 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         temps = ctx.get('tyre_surface_c')
         if not temps:
             return 'No tyre data yet.'
-        text = (f"Fronts {temps['FL']} and {temps['FR']}, rears {temps['RL']} and {temps['RR']}.")
+        text = f"Fronts {temps['FL']} and {temps['FR']}, rears {temps['RL']} and {temps['RR']}."
         wear = ctx.get('tyre_wear_pct')
         if wear:
             text += f" Worst wear {max(wear.values()):.0f} percent."
@@ -412,8 +531,10 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         if prediction and prediction.get('finish_without_stop'):
             chance = prediction.get('finish_without_stop_prob')
             if chance is not None and chance < 0.8:
-                return (f"Tyres should reach the flag, but it's close: "
-                        f"{round(chance * 100)} percent. We'll keep watching.")
+                return (
+                    f"Tyres should reach the flag, but it's close: "
+                    f"{round(chance * 100)} percent. We'll keep watching."
+                )
             return 'Tyres should reach the flag. No stop needed at the moment.'
         if prediction and prediction.get('ideal_lap'):
             soonest, _mid, latest = prediction.get('ideal_lap_range') or (None, None, None)
@@ -422,8 +543,10 @@ def rule_based_answer(command: str, ctx: dict) -> str:
                 window = f", window lap {soonest} to {latest}"
             elif soonest and not latest:
                 window = f", from lap {soonest}"
-            return (f"Box around lap {prediction['ideal_lap']}{window}. "
-                    f"Latest lap {prediction['latest_lap'] or 'unknown'}.")
+            return (
+                f"Box around lap {prediction['ideal_lap']}{window}. "
+                f"Latest lap {prediction['latest_lap'] or 'unknown'}."
+            )
         window = ctx.get('game_pit_window')
         if window:
             return f'Game window is lap {window[0]} to {window[1]}.'
@@ -448,8 +571,11 @@ def rule_based_answer(command: str, ctx: dict) -> str:
             text = replan['last_call']['message'] + ' ' + text
         undercut = strategy.get('undercut_on_car_ahead')
         if undercut:
-            text += (' Undercut on the car ahead is on.' if undercut['works']
-                     else ' Undercut on the car ahead will not work yet.')
+            text += (
+                ' Undercut on the car ahead is on.'
+                if undercut['works']
+                else ' Undercut on the car ahead will not work yet.'
+            )
         return text
     if command == 'rivals':
         strategy = ctx.get('strategy') or {}
@@ -478,8 +604,14 @@ INSTANT_MAX_WORDS = 5
 
 
 class EngineerBrain:
-    def __init__(self, context_provider: Callable[[], dict], client: AIClient | None = None, *,
-                 rules_first: bool = False, focused: bool = True):
+    def __init__(
+        self,
+        context_provider: Callable[[], dict],
+        client: AIClient | None = None,
+        *,
+        rules_first: bool = False,
+        focused: bool = True,
+    ):
         """``rules_first``: the fixed commands are answered at once from the live data (no AI
         wait, no load on the graphics card); the AI handles everything else.
         ``focused``: send the AI only the data the question is about (shorter, faster)."""
@@ -487,13 +619,13 @@ class EngineerBrain:
         self.client = client
         self.rules_first = rules_first
         self.focused = focused
-        self.last_source = None     # 'ai' or 'fallback' or 'rules' - useful for the HUD and tests
-        self.last_advice = ''        # longer note from the last AI answer, for an on-screen log
+        self.last_source = None  # 'ai' or 'fallback' or 'rules' - useful for the HUD and tests
+        self.last_advice = ''  # longer note from the last AI answer, for an on-screen log
 
     def answer(self, command: str) -> str:
         ctx = self.context_provider()
         blocked = _mode_blocks(command, ctx)
-        if blocked:                       # e.g. "gap ahead" in time trial: answer instantly, no AI needed
+        if blocked:  # e.g. "gap ahead" in time trial: answer instantly, no AI needed
             self.last_source = 'rules'
             self.last_advice = ''
             return blocked
@@ -542,13 +674,17 @@ class EngineerBrain:
             return None
         system, user = build_prompt(question, ctx, focused=self.focused)
         # Radio answers are short: no long reasoning, small token budget (much lower latency).
-        fast = {'fast': True, 'max_tokens': RADIO_MAX_TOKENS} if getattr(self.client, 'supports_fast', False) else {}
+        fast = (
+            {'fast': True, 'max_tokens': RADIO_MAX_TOKENS}
+            if getattr(self.client, 'supports_fast', False)
+            else {}
+        )
         if fast and hasattr(self.client, 'radio_voice'):
             # Local Ollama: stream the reply and speak as soon as the radio line is complete.
             try:
                 voice = self.client.radio_voice(system, user, max_tokens=RADIO_MAX_TOKENS)
             except AITimeout as error:
-                print(f'[Engineer] AI too slow ({error}); answering from rules.')
+                log.warning(f'AI too slow ({error}); answering from rules.')
                 return None
             except AIUnavailable:
                 voice = None
@@ -566,10 +702,10 @@ class EngineerBrain:
                     self.last_advice = str(result.get('advice') or '').strip()
                     return voice
             except AITimeout as error:
-                print(f'[Engineer] AI too slow ({error}); answering from rules.')
+                log.warning(f'AI too slow ({error}); answering from rules.')
                 return None
             except AIUnavailable as error:
-                print(f'[Engineer] AI JSON reply unavailable ({error}); trying plain text.')
+                log.info(f'AI JSON reply unavailable ({error}); trying plain text.')
         try:
             text = clean_radio_text(self.client.chat(system, user, **fast))
             if text:
@@ -577,5 +713,5 @@ class EngineerBrain:
                 self.last_advice = ''
                 return text
         except AIUnavailable as error:
-            print(f'[Engineer] AI unavailable ({error}); answering from rules.')
+            log.warning(f'AI unavailable ({error}); answering from rules.')
         return None

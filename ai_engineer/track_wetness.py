@@ -40,7 +40,7 @@ FAMILIES = ('slick', 'inter', 'wet')
 FAMILY_OF = {'SOFT': 'slick', 'MEDIUM': 'slick', 'HARD': 'slick', 'INTERMEDIATE': 'inter', 'WET': 'wet'}
 
 WETNESS_GRID = np.array([0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.85, 1.0])
-PENALTY_S = {                     # per lap, for a REFERENCE_LAP_S dry lap
+PENALTY_S = {  # per lap, for a REFERENCE_LAP_S dry lap
     'slick': np.array([0.0, 1.8, 4.5, 9.0, 18.0, 28.0, 34.0, 44.0]),
     'inter': np.array([4.0, 4.0, 4.5, 5.5, 8.5, 13.0, 18.0, 24.0]),
     'wet': np.array([8.0, 8.0, 8.5, 9.0, 11.0, 13.0, 16.0, 19.0]),
@@ -48,23 +48,23 @@ PENALTY_S = {                     # per lap, for a REFERENCE_LAP_S dry lap
 REFERENCE_LAP_S = 90.0
 
 # ── Rain and drying physics (estimates) ──
-WET_TARGET = {3: 0.5, 4: 0.8, 5: 0.95}   # wetness steady rain soaks the track to, by weather code
-RAIN_TAU_MIN = 3.0                       # minutes for rain to close most of the gap to that level
-DRY_RATE_PER_MIN = 0.03                  # wetness lost per minute once it stops, at 30 C track temp
-DRY_TEMP_COEF = 0.03                     # +3% drying rate per degree of track temperature above 30 C
+WET_TARGET = {3: 0.5, 4: 0.8, 5: 0.95}  # wetness steady rain soaks the track to, by weather code
+RAIN_TAU_MIN = 3.0  # minutes for rain to close most of the gap to that level
+DRY_RATE_PER_MIN = 0.03  # wetness lost per minute once it stops, at 30 C track temp
+DRY_TEMP_COEF = 0.03  # +3% drying rate per degree of track temperature above 30 C
 DRY_TEMP_FACTOR_RANGE = (0.4, 2.0)
 SKY_DRY_FACTOR = {0: 1.2, 1: 1.0, 2: 0.8}  # clear sky dries faster than overcast
-PROCESS_SD_PER_SQRT_MIN = 0.02           # how fast the estimate's uncertainty grows between readings
-START_SD = {True: 0.15, False: 0.03}     # first look: raining (unsure how wet) / dry (almost sure)
+PROCESS_SD_PER_SQRT_MIN = 0.02  # how fast the estimate's uncertainty grows between readings
+START_SD = {True: 0.15, False: 0.03}  # first look: raining (unsure how wet) / dry (almost sure)
 
 # ── Lap-time observations ──
-OBS_SD_TWO_FAMILIES_S = 1.5              # two tyre types running together: the strong reading
-OBS_SD_OWN_DRY_S = 1.8                   # one tyre type, each car against its own dry laps
-OBS_SD_DRY_REFERENCE_S = 2.5             # one tyre type against the field's dry lap: looser (traffic, car pace)
+OBS_SD_TWO_FAMILIES_S = 1.5  # two tyre types running together: the strong reading
+OBS_SD_OWN_DRY_S = 1.8  # one tyre type, each car against its own dry laps
+OBS_SD_DRY_REFERENCE_S = 2.5  # one tyre type against the field's dry lap: looser (traffic, car pace)
 MIN_CARS_PER_FAMILY = 2
-DRY_REFERENCE_MAX_WETNESS = 0.05         # slick laps count towards the dry reference below this
+DRY_REFERENCE_MAX_WETNESS = 0.05  # slick laps count towards the dry reference below this
 DRY_REFERENCE_LAPS = 12
-OBS_WINDOW_LAPS = 1.3                    # laps within this many lap-lengths are compared
+OBS_WINDOW_LAPS = 1.3  # laps within this many lap-lengths are compared
 
 GRID = np.linspace(0.0, 1.0, 101)
 
@@ -125,25 +125,25 @@ class Reading:
 class TrackWetness:
     """Live wetness estimate: physics between readings, field lap times as the readings."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.wetness: float | None = None
         self.sd = 0.05
         self.weather = 0
         self.track_temp = 30.0
         self.forecast: tuple = ()
         self.last_t: float | None = None
-        self.records: deque = deque(maxlen=200)     # (time, car, family, lap seconds)
+        self.records: deque = deque(maxlen=200)  # (time, car, family, lap seconds)
         self.dry_laps: deque = deque(maxlen=DRY_REFERENCE_LAPS)
         self.lap_s = REFERENCE_LAP_S
         self.new_records = 0
         self.basis = 'weather'
         self.last_reading: Reading | None = None
-        self.history: deque = deque(maxlen=60)       # (time, wetness), for the trend
+        self.history: deque = deque(maxlen=60)  # (time, wetness), for the trend
         self._cars: dict[int, tuple] = {}
-        self.car_dry: dict[int, deque] = {}           # each car's own dry slick laps (fuel-corrected)
+        self.car_dry: dict[int, deque] = {}  # each car's own dry slick laps (fuel-corrected)
 
     # ── physics ──
     def update_weather(self, weather: int, track_temp: float, now: float, forecast: tuple = ()):
@@ -157,7 +157,7 @@ class TrackWetness:
             minutes = (now - self.last_t) / 60.0
             # Integrate under the weather that was in force since the last update.
             self.wetness = step(self.wetness, minutes, self.weather, self.track_temp)
-            self.sd = min(0.4, math.sqrt(self.sd ** 2 + PROCESS_SD_PER_SQRT_MIN ** 2 * minutes))
+            self.sd = min(0.4, math.sqrt(self.sd**2 + PROCESS_SD_PER_SQRT_MIN**2 * minutes))
         self.weather = weather
         self.last_t = now
         if not self.history or now - self.history[-1][0] >= 10.0:
@@ -181,12 +181,19 @@ class TrackWetness:
             if lap.current_lap_num > prev_lap:
                 status = statuses[index] if statuses and index < len(statuses) else None
                 fam = family(getattr(status, 'compound_name', None)) if status else None
-                clean = (not dirty and lap.num_pit_stops == prev_stops and prev_lap > 1
-                         and lap.last_lap_time_ms and not neutralised)
+                clean = (
+                    not dirty
+                    and lap.num_pit_stops == prev_stops
+                    and prev_lap > 1
+                    and lap.last_lap_time_ms
+                    and not neutralised
+                )
                 if clean and fam:
                     fuel = getattr(status, 'fuel_in_tank', 0.0) or 0.0
                     # Fuel-corrected, so laps late in the race compare fairly with early dry laps.
-                    self.add_lap(index, fam, lap.last_lap_time_ms / 1000.0 - fm.FUEL_EFFECT_S_PER_KG * fuel, now)
+                    self.add_lap(
+                        index, fam, lap.last_lap_time_ms / 1000.0 - fm.FUEL_EFFECT_S_PER_KG * fuel, now
+                    )
                 dirty = in_pits or neutralised or lap.num_pit_stops != prev_stops
             else:
                 dirty = dirty or in_pits or neutralised
@@ -207,7 +214,7 @@ class TrackWetness:
         latest: dict[int, tuple] = {}
         for t, car, fam, lap_s in self.records:
             if now - t <= window:
-                latest[car] = (fam, lap_s)          # each car once: its latest lap
+                latest[car] = (fam, lap_s)  # each car once: its latest lap
         out: dict[str, list] = {f: [] for f in FAMILIES}
         for car, (fam, lap_s) in latest.items():
             out[fam].append((car, lap_s) if with_cars else lap_s)
@@ -220,21 +227,37 @@ class TrackWetness:
         lap = self.lap_s
         for a, b in (('slick', 'inter'), ('inter', 'wet'), ('slick', 'wet')):
             if a in med and b in med:
-                return (med[a] - med[b], lambda w, a=a, b=b: penalty(a, w, lap) - penalty(b, w, lap),
-                        OBS_SD_TWO_FAMILIES_S, f'{a} vs {b} lap times')
+                return (
+                    med[a] - med[b],
+                    lambda w, a=a, b=b: penalty(a, w, lap) - penalty(b, w, lap),
+                    OBS_SD_TWO_FAMILIES_S,
+                    f'{a} vs {b} lap times',
+                )
         by_car = self._recent(now, with_cars=True)
         for f in ('inter', 'wet', 'slick'):
             # Each car against its own dry laps: removes the pace difference between cars.
-            diffs = [lap_s - float(np.median(self.car_dry[car])) for car, lap_s in by_car[f] if self.car_dry.get(car)]
+            diffs = [
+                lap_s - float(np.median(self.car_dry[car]))
+                for car, lap_s in by_car[f]
+                if self.car_dry.get(car)
+            ]
             if len(diffs) >= 3:
-                return (float(np.median(diffs)), lambda w, f=f: penalty(f, w, lap), OBS_SD_OWN_DRY_S,
-                        f'{f} lap times vs each car\'s dry laps')
+                return (
+                    float(np.median(diffs)),
+                    lambda w, f=f: penalty(f, w, lap),
+                    OBS_SD_OWN_DRY_S,
+                    f'{f} lap times vs each car\'s dry laps',
+                )
         if self.dry_laps and len(self.dry_laps) >= 3:
             ref = float(np.median(self.dry_laps))
             for f in ('inter', 'wet', 'slick'):
                 if f in med and len(recent[f]) >= 3:
-                    return (med[f] - ref, lambda w, f=f: penalty(f, w, lap), OBS_SD_DRY_REFERENCE_S,
-                            f'{f} lap times vs the dry lap')
+                    return (
+                        med[f] - ref,
+                        lambda w, f=f: penalty(f, w, lap),
+                        OBS_SD_DRY_REFERENCE_S,
+                        f'{f} lap times vs the dry lap',
+                    )
         return None
 
     def assimilate(self, now: float):
@@ -247,12 +270,12 @@ class TrackWetness:
             return
         raining = self.weather >= 3
         if not raining and self.wetness <= 0.0:
-            return                           # dry and not raining: a slow lap is fuel or traffic, not water
+            return  # dry and not raining: a slow lap is fuel or traffic, not water
         d, model, sd, basis = obs
         prior = np.exp(-0.5 * ((GRID - self.wetness) / max(self.sd, 1e-3)) ** 2)
         like = np.exp(-0.5 * ((d - model(GRID)) / sd) ** 2)
         post = prior * like
-        if post.sum() <= 1e-12:              # reading far outside the model: trust it, but loosely
+        if post.sum() <= 1e-12:  # reading far outside the model: trust it, but loosely
             post = like
         post = post / post.sum()
         if not raining:
@@ -311,11 +334,20 @@ class TrackWetness:
         if self.wetness is None:
             return None
         best = best_family(self.wetness)
-        out = {'wetness': round(self.wetness, 2), 'sd': round(self.sd, 2), 'trend': self.trend(),
-               'best_tyre': best, 'basis': self.basis, 'dry_lap_s': round(self.lap_s, 2),
-               'forecast_rain': [{'in_min': s.offset_min, 'weather': s.weather, 'rain_pct': s.rain_percentage}
-                                 for s in self.forecast[:6]],
-               'switch_in_laps': None, 'switch_to': None}
+        out = {
+            'wetness': round(self.wetness, 2),
+            'sd': round(self.sd, 2),
+            'trend': self.trend(),
+            'best_tyre': best,
+            'basis': self.basis,
+            'dry_lap_s': round(self.lap_s, 2),
+            'forecast_rain': [
+                {'in_min': s.offset_min, 'weather': s.weather, 'rain_pct': s.rain_percentage}
+                for s in self.forecast[:6]
+            ],
+            'switch_in_laps': None,
+            'switch_to': None,
+        }
         if current_family:
             for fam in FAMILIES:
                 if fam == current_family:
@@ -332,9 +364,14 @@ class TrackWetness:
             return None
         words = {'slick': 'slicks', 'inter': 'inters', 'wet': 'full wets'}
         pct = int(round(s['wetness'] * 100))
-        line = f"Track about {pct}% wet, {s['trend']}." if s['trend'] != 'steady' else f'Track about {pct}% wet.'
+        line = (
+            f"Track about {pct}% wet, {s['trend']}." if s['trend'] != 'steady' else f'Track about {pct}% wet.'
+        )
         k, to = s['switch_in_laps'], s['switch_to']
         if to is not None:
-            line += (f' {words[to].capitalize()} are the quicker tyre now.' if k == 0
-                     else f' {words[to].capitalize()} quicker in about {k} lap{"s" if k != 1 else ""}.')
+            line += (
+                f' {words[to].capitalize()} are the quicker tyre now.'
+                if k == 0
+                else f' {words[to].capitalize()} quicker in about {k} lap{"s" if k != 1 else ""}.'
+            )
         return line

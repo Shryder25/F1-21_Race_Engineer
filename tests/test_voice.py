@@ -94,9 +94,13 @@ class VoiceTests(unittest.TestCase):
 
     def test_priority_order_and_fifo_within_rank(self):
         self.block()
-        for message, rank in [('normal', Priority.NORMAL), ('sector one', Priority.TIMING),
-                              ('gap', Priority.RACE), ('pit', Priority.STRATEGY),
-                              ('sector two', Priority.TIMING)]:
+        for message, rank in [
+            ('normal', Priority.NORMAL),
+            ('sector one', Priority.TIMING),
+            ('gap', Priority.RACE),
+            ('pit', Priority.STRATEGY),
+            ('sector two', Priority.TIMING),
+        ]:
             self.assertTrue(self.voice.say(message, rank))
         self.release()
         self.wait_for(lambda: len(self.spoken) == 6)
@@ -143,9 +147,9 @@ class VoiceTests(unittest.TestCase):
                 urgent = f'urgent {rank}'
                 self.driver.held.add(message)
                 self.voice.say(message, Priority.LOW)
-                self.wait_for(lambda: message in self.spoken)
+                self.wait_for(lambda m=message: m in self.spoken)
                 self.voice.say(urgent, rank)
-                self.wait_for(lambda: urgent in self.spoken)
+                self.wait_for(lambda u=urgent: u in self.spoken)
                 self.assertIn(message, self.driver.stopped)
         self.assertEqual(len(self.driver.threads), 1)
         self.assertNotIn(threading.get_ident(), self.driver.threads)

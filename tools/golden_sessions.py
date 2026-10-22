@@ -24,8 +24,8 @@ from pathlib import Path
 GOLDEN = Path(__file__).resolve().parents[1] / 'tests' / 'golden'
 sys.path.insert(0, str(GOLDEN))
 
-import harness      # noqa: E402
-import recording    # noqa: E402
+import harness  # noqa: E402
+import recording  # noqa: E402
 
 # Lap data, car telemetry and motion arrive every frame; these are thinned by --every.
 PER_FRAME_PACKETS = (0, 2, 6)
@@ -44,8 +44,13 @@ def cmd_list(args):
     manifest = harness.load_manifest()
     for name, info in manifest['sessions'].items():
         rec, exp = harness.session_paths(name)
-        state = ('ready' if rec.exists() and exp.exists()
-                 else 'NEEDS A RECORDING' if info['source'] == 'needs-recording' else 'missing files')
+        state = (
+            'ready'
+            if rec.exists() and exp.exists()
+            else 'NEEDS A RECORDING'
+            if info['source'] == 'needs-recording'
+            else 'missing files'
+        )
         size = f'{rec.stat().st_size // 1024} KB' if rec.exists() else ''
         print(f'{name:32} {info["kind"]:12} {info["source"]:16} {state:18} {size}')
 
@@ -58,8 +63,9 @@ def cmd_check(args):
         if not rec.exists():
             print(f'-- {name}: skipped (no recording yet)')
             continue
-        problems = harness.compare(harness.load_expected(name), harness.replay(rec),
-                                   manifest.get('tolerances'))
+        problems = harness.compare(
+            harness.load_expected(name), harness.replay(rec), manifest.get('tolerances')
+        )
         if problems:
             failed += 1
             print(f'FAIL {name}')
@@ -85,14 +91,21 @@ def cmd_bless(args):
 def cmd_generate(args):
     import scenarios
     import synth
+
     manifest = harness.load_manifest()
     for name in _names(manifest, args.names, sources=('synthetic',)):
         scenario = scenarios.SCENARIOS[manifest['sessions'][name]['scenario']]
         rec, _ = harness.session_paths(name)
         rec.parent.mkdir(parents=True, exist_ok=True)
         datagrams = synth.simulate(scenario)
-        metadata = {'source': 'synthetic', 'scenario': scenario.name, 'generator': 'tests/golden/synth.py',
-                    'game': 'F1 2021 (simulated)', 'udp_format': 2021, 'description': scenario.description}
+        metadata = {
+            'source': 'synthetic',
+            'scenario': scenario.name,
+            'generator': 'tests/golden/synth.py',
+            'game': 'F1 2021 (simulated)',
+            'udp_format': 2021,
+            'description': scenario.description,
+        }
         with recording.ReproducibleWriter(rec, metadata) as writer:
             for t, data in datagrams:
                 writer.write(data, int(round(t * 1e9)))
@@ -124,7 +137,7 @@ def cmd_add(args):
     if info is None:
         sys.exit(f'Unknown slot {args.name}. Slots: {", ".join(manifest["sessions"])}')
     source = Path(args.recording)
-    recording.read_metadata(source)                 # fails loudly if it isn't a recording
+    recording.read_metadata(source)  # fails loudly if it isn't a recording
     rec, _ = harness.session_paths(args.name)
     rec.parent.mkdir(parents=True, exist_ok=True)
     if args.every > 1:
@@ -147,8 +160,10 @@ def cmd_add(args):
         info['note'] = args.note
     harness.save_manifest(manifest)
     cmd_bless(argparse.Namespace(names=[args.name]))
-    print('Now read tests/golden/sessions/%s/expected.json (or run `show`) and check every '
-          'call is one a real engineer should make, before committing.' % args.name)
+    print(
+        f'Now read tests/golden/sessions/{args.name}/expected.json (or run `show`) and check every '
+        'call is one a real engineer should make, before committing.'
+    )
 
 
 def cmd_show(args):
@@ -162,7 +177,9 @@ def cmd_show(args):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('list').set_defaults(func=cmd_list)
     for name, func in (('check', cmd_check), ('bless', cmd_bless)):
@@ -176,8 +193,12 @@ def main(argv=None):
     p = sub.add_parser('add', help='store a real recording in a slot and bless it')
     p.add_argument('name')
     p.add_argument('--recording', required=True)
-    p.add_argument('--every', type=int, default=1,
-                   help='keep one frame in N of lap/telemetry/motion packets (shrinks 60 Hz captures)')
+    p.add_argument(
+        '--every',
+        type=int,
+        default=1,
+        help='keep one frame in N of lap/telemetry/motion packets (shrinks 60 Hz captures)',
+    )
     p.add_argument('--note', default='', help='what happened in the session, for reviewers')
     p.set_defaults(func=cmd_add)
     p = sub.add_parser('show')

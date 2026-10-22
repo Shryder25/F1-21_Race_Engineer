@@ -77,8 +77,9 @@ File metadata (`f1_session` key, JSON): `track`, `track_id`, `track_length_m`, `
 
 ```python
 import channel_store
-cols, meta = channel_store.read_session('channels/x.parquet')     # numpy arrays, NaN for nulls
-laps = channel_store.lap_summary(cols)       # per lap: lap_time, samples, complete/invalid/pit/clean
+
+cols, meta = channel_store.read_session('channels/x.parquet')  # numpy arrays, NaN for nulls
+laps = channel_store.lap_summary(cols)  # per lap: lap_time, samples, complete/invalid/pit/clean
 grid, by_lap = channel_store.align_laps(cols, [4, 7], ['speed', 'throttle'], step_m=1.0)
 ```
 

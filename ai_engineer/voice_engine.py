@@ -9,6 +9,10 @@ import time
 from dataclasses import dataclass
 from enum import IntEnum
 
+from log_setup import get_logger
+
+log = get_logger('voice')
+
 try:
     import pyttsx3
 except ImportError:
@@ -44,9 +48,15 @@ class VoiceEngine:
 
     _MAX_PENDING = 64
 
-    def __init__(self, rate: int = 175, volume: float = 0.9,
-                 cooldown_seconds: float = 30.0, voice_index: int = 0,
-                 on_spoken=None, driver_factory=None):
+    def __init__(
+        self,
+        rate: int = 175,
+        volume: float = 0.9,
+        cooldown_seconds: float = 30.0,
+        voice_index: int = 0,
+        on_spoken=None,
+        driver_factory=None,
+    ):
         # driver_factory builds a pyttsx3-shaped speech driver (e.g. neural_voice's Kokoro
         # driver); None means the system voice through pyttsx3.
         self._driver_factory = driver_factory
@@ -89,11 +99,17 @@ class VoiceEngine:
 
     def _prune(self, now):
         self._pending[:] = [item for item in self._pending if item.expires > now]
-        self._last_said = {key: record for key, record in self._last_said.items()
-                           if record[1] > now}
+        self._last_said = {key: record for key, record in self._last_said.items() if record[1] > now}
 
-    def say(self, message: str, priority: Priority = Priority.NORMAL, *,
-            key: str | None = None, ttl: float = 15, cooldown: float | None = None) -> bool:
+    def say(
+        self,
+        message: str,
+        priority: Priority = Priority.NORMAL,
+        *,
+        key: str | None = None,
+        ttl: float = 15,
+        cooldown: float | None = None,
+    ) -> bool:
         """Queue current information, replacing a pending callout of the same topic.
 
         ``True`` means accepted, not spoken. Expired, replaced, interrupted, or
@@ -120,8 +136,9 @@ class VoiceEngine:
                     return False
                 self._pending.remove(lowest)
             self._sequence += 1
-            self._pending.append(_Callout(message, Priority(priority), self._sequence,
-                                          topic, now + ttl, max(0, interval)))
+            self._pending.append(
+                _Callout(message, Priority(priority), self._sequence, topic, now + ttl, max(0, interval))
+            )
             self._condition.notify_all()
             return True
 
@@ -147,7 +164,7 @@ class VoiceEngine:
             try:
                 self._on_spoken(item.message)
             except Exception as exc:
-                print(f'[VoiceEngine] Speech callback error: {exc}')
+                log.warning(f'Speech callback error: {exc}')
 
     def _worker(self):
         engine = None
@@ -156,7 +173,7 @@ class VoiceEngine:
             if self._driver_factory is not None:
                 engine = self._driver_factory()
             elif pyttsx3 is None:
-                print('[VoiceEngine] pyttsx3 unavailable. Voice disabled.')
+                log.warning('pyttsx3 unavailable. Voice disabled.')
                 return
             else:
                 engine = pyttsx3.init()
@@ -180,17 +197,23 @@ class VoiceEngine:
                     now = time.monotonic()
                     self._prune(now)
                     next_item = min(self._pending, key=lambda item: item.order, default=None)
-                    interrupt = (self._active is not None and next_item is not None
-                                 and next_item.priority <= Priority.TIMING
-                                 and next_item.priority < self._active.priority)
+                    interrupt = (
+                        self._active is not None
+                        and next_item is not None
+                        and next_item.priority <= Priority.TIMING
+                        and next_item.priority < self._active.priority
+                    )
                     if self._clear_requested or interrupt:
                         engine.stop()
                         self._active = None
                         self._clear_requested = False
                     if self._active is None and next_item is not None:
                         # Cornering/Braking filter: Never speak non-critical messages while driver is busy
-                        if (next_item.priority > Priority.CRITICAL and self._silence_filter
-                                and self._silence_filter()):
+                        if (
+                            next_item.priority > Priority.CRITICAL
+                            and self._silence_filter
+                            and self._silence_filter()
+                        ):
                             # Driver under heavy braking or cornering; hold message until straight
                             self._condition.wait(timeout=0.08)
                             continue
@@ -205,7 +228,7 @@ class VoiceEngine:
                     if self._active is not None or not self._pending:
                         self._condition.wait(timeout=0.01 if self._active else 0.05)
         except Exception as exc:
-            print(f'[VoiceEngine] Voice disabled: {exc}')
+            log.warning(f'Voice disabled: {exc}')
         finally:
             if engine is not None:
                 try:
@@ -213,7 +236,7 @@ class VoiceEngine:
                     if loop_started:
                         engine.endLoop()
                 except Exception as exc:
-                    print(f'[VoiceEngine] Speech cleanup error: {exc}')
+                    log.warning(f'Speech cleanup error: {exc}')
             with self._condition:
                 self._running = False
                 self._active = None

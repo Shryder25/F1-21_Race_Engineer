@@ -93,6 +93,7 @@ version, since old recordings are backtest fixtures.
 ```python
 import gzip, json, struct, zlib
 
+
 def read(path):
     raw = open(path, 'rb')
     f = gzip.open(path, 'rb') if raw.read(2) == b'\x1f\x8b' else open(path, 'rb')
@@ -106,7 +107,7 @@ def read(path):
         t_ns, length, crc = struct.unpack('<QHI', head)
         data = f.read(length)
         if len(data) < length:
-            return                      # truncated tail
+            return  # truncated tail
         assert zlib.crc32(data) == crc
         yield t_ns, data
 ```

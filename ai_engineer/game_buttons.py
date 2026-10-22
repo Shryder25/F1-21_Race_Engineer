@@ -15,32 +15,45 @@ import time
 
 # Button flags from the F1 2021 UDP spec (appendix "Button flags").
 BUTTON_FLAGS = {
-    'cross': 0x00001,       # Cross or A
-    'triangle': 0x00002,    # Triangle or Y
-    'circle': 0x00004,      # Circle or B
-    'square': 0x00008,      # Square or X
+    'cross': 0x00001,  # Cross or A
+    'triangle': 0x00002,  # Triangle or Y
+    'circle': 0x00004,  # Circle or B
+    'square': 0x00008,  # Square or X
     'dpad_left': 0x00010,
     'dpad_right': 0x00020,
     'dpad_up': 0x00040,
     'dpad_down': 0x00080,
-    'options': 0x00100,     # Options or Menu
-    'l1': 0x00200,          # L1 or LB
-    'r1': 0x00400,          # R1 or RB
-    'l2': 0x00800,          # L2 or LT
-    'r2': 0x01000,          # R2 or RT
-    'l3': 0x02000,          # left stick click
-    'r3': 0x04000,          # right stick click
-    'rs_left': 0x08000,     # right stick directions (F1 2021 added these)
+    'options': 0x00100,  # Options or Menu
+    'l1': 0x00200,  # L1 or LB
+    'r1': 0x00400,  # R1 or RB
+    'l2': 0x00800,  # L2 or LT
+    'r2': 0x01000,  # R2 or RT
+    'l3': 0x02000,  # left stick click
+    'r3': 0x04000,  # right stick click
+    'rs_left': 0x08000,  # right stick directions (F1 2021 added these)
     'rs_right': 0x10000,
     'rs_up': 0x20000,
     'rs_down': 0x40000,
     'special': 0x80000,
 }
 ALIASES = {
-    'a': 'cross', 'y': 'triangle', 'b': 'circle', 'x': 'square',
-    'lb': 'l1', 'rb': 'r1', 'lt': 'l2', 'rt': 'r2', 'menu': 'options',
-    'ls': 'l3', 'rs': 'r3', 'left_stick': 'l3', 'right_stick': 'r3',
-    'up': 'dpad_up', 'down': 'dpad_down', 'left': 'dpad_left', 'right': 'dpad_right',
+    'a': 'cross',
+    'y': 'triangle',
+    'b': 'circle',
+    'x': 'square',
+    'lb': 'l1',
+    'rb': 'r1',
+    'lt': 'l2',
+    'rt': 'r2',
+    'menu': 'options',
+    'ls': 'l3',
+    'rs': 'r3',
+    'left_stick': 'l3',
+    'right_stick': 'r3',
+    'up': 'dpad_up',
+    'down': 'dpad_down',
+    'left': 'dpad_left',
+    'right': 'dpad_right',
 }
 _NAMES_BY_FLAG = {flag: name for name, flag in BUTTON_FLAGS.items()}
 ALL_FLAGS = sum(BUTTON_FLAGS.values())
@@ -58,8 +71,10 @@ def parse_game_button(text) -> int:
         mask = 0
     if mask > 0 and mask & ALL_FLAGS == mask:
         return mask
-    raise ValueError(f'Unknown game button {text!r}: use a name like r1, l1, cross, dpad_up '
-                     f'(choices: {", ".join(BUTTON_FLAGS)})')
+    raise ValueError(
+        f'Unknown game button {text!r}: use a name like r1, l1, cross, dpad_up '
+        f'(choices: {", ".join(BUTTON_FLAGS)})'
+    )
 
 
 def button_label(mask: int) -> str:
@@ -68,8 +83,9 @@ def button_label(mask: int) -> str:
     return '+'.join(names) if names and sum(BUTTON_FLAGS[n] for n in names) == mask else hex(mask)
 
 
-def find_game_button(receive, parse, *, timeout_s: float = 30.0, out=print,
-                     clock=time.monotonic) -> int | None:
+def find_game_button(
+    receive, parse, *, timeout_s: float = 30.0, out=print, clock=time.monotonic
+) -> int | None:
     """Wait for a newly pressed button in the game's Buttons events.
 
     ``receive()`` returns the next datagram (or None on a socket timeout); ``parse(data)``
@@ -95,11 +111,13 @@ def find_game_button(receive, parse, *, timeout_s: float = 30.0, out=print,
             baseline = status
         new = status & ~baseline
         if new:
-            return new & -new                      # lowest new bit, one button
-        baseline &= status                         # a released button may be chosen later
+            return new & -new  # lowest new bit, one button
+        baseline &= status  # a released button may be chosen later
     if not seen_event:
-        out('No button events from the game. Check Settings > Telemetry: UDP Telemetry On, '
-            'UDP Format 2021, and the same port as the engineer.')
+        out(
+            'No button events from the game. Check Settings > Telemetry: UDP Telemetry On, '
+            'UDP Format 2021, and the same port as the engineer.'
+        )
     else:
         out('No new button press seen.')
     return None

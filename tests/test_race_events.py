@@ -9,8 +9,15 @@ from dataclasses import replace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'ai_engineer'))
 from analysis import AnalysisEngine
-from packets import (SessionData, CarStatusData, RaceEvent, parse_race_event, parse_participants,
-                     parse_player_lap_data, PARTICIPANT_FORMAT, HEADER_SIZE)
+from packets import (
+    PARTICIPANT_FORMAT,
+    CarStatusData,
+    RaceEvent,
+    SessionData,
+    parse_participants,
+    parse_player_lap_data,
+    parse_race_event,
+)
 from race_events import RaceControl
 from simulate_telemetry import build_header, build_lap_packet, build_session_packet
 from test_analysis import SilentVoice
@@ -44,9 +51,12 @@ class Field:
     def __init__(self, cars=6, player=2):
         template = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 3, 1), 0)
         self.player = player
-        self.laps = [replace(template, car_position=i + 1, grid_position=i + 1, result_status=2)
-                     if i < cars else replace(template, car_position=0, result_status=0)
-                     for i in range(22)]
+        self.laps = [
+            replace(template, car_position=i + 1, grid_position=i + 1, result_status=2)
+            if i < cars
+            else replace(template, car_position=0, result_status=0)
+            for i in range(22)
+        ]
 
     def set(self, index, **changes):
         self.laps[index] = replace(self.laps[index], **changes)
@@ -60,10 +70,13 @@ class Field:
 class PacketParsingTests(unittest.TestCase):
     def test_penalty_fastest_lap_and_retirement_bodies(self):
         penalty = parse_race_event(event_packet(b'PENA', bytes([4, 7, 3, 255, 5, 12, 0])))
-        self.assertEqual((penalty.code, penalty.penalty_type, penalty.vehicle_index, penalty.time_s,
-                          penalty.lap_num), ('PENA', 4, 3, 5, 12))
-        self.assertEqual((penalty.penalty_name, penalty.infringement_name),
-                         ('Time penalty', 'corner cutting'))
+        self.assertEqual(
+            (penalty.code, penalty.penalty_type, penalty.vehicle_index, penalty.time_s, penalty.lap_num),
+            ('PENA', 4, 3, 5, 12),
+        )
+        self.assertEqual(
+            (penalty.penalty_name, penalty.infringement_name), ('Time penalty', 'corner cutting')
+        )
         fastest = parse_race_event(event_packet(b'FTLP', struct.pack('<Bf', 1, 81.234)))
         self.assertEqual(fastest.vehicle_index, 1)
         self.assertAlmostEqual(fastest.lap_time_s, 81.234, places=3)
@@ -74,14 +87,16 @@ class PacketParsingTests(unittest.TestCase):
     def test_participants_give_spoken_surnames(self):
         participants = parse_participants(participants_packet())
         self.assertEqual(len(participants), len(NAMES))
-        self.assertEqual([p.radio_name for p in participants],
-                         [None, 'Hamilton', 'Verstappen', 'Norris', 'Leclerc', None])
+        self.assertEqual(
+            [p.radio_name for p in participants], [None, 'Hamilton', 'Verstappen', 'Norris', 'Leclerc', None]
+        )
         self.assertEqual(participants[3].race_number, 13)
 
 
 class StreamRoutingTests(unittest.TestCase):
     def setUp(self):
         from telemetry_stream import TelemetryStream
+
         self.voice = SilentVoice()
         self.engine = AnalysisEngine(self.voice)
         self.stream = TelemetryStream(self.engine)
@@ -176,8 +191,9 @@ class RaceControlTests(unittest.TestCase):
     def test_fastest_lap_for_player_and_rival(self):
         self.event('FTLP', vehicle_index=2, lap_time_s=81.2345)
         self.event('FTLP', vehicle_index=1, lap_time_s=81.0)
-        self.assertEqual(self.said(), ['Fastest lap, 1:21.234. Purple, mega.',
-                                       'Hamilton sets the fastest lap, 1:21.000.'])
+        self.assertEqual(
+            self.said(), ['Fastest lap, 1:21.234. Purple, mega.', 'Hamilton sets the fastest lap, 1:21.000.']
+        )
 
     def test_retirement_from_event_and_lap_data_is_called_once(self):
         self.event('RTMT', vehicle_index=1)
@@ -204,7 +220,7 @@ class RaceControlTests(unittest.TestCase):
     def test_overtake_is_called_once_position_settles(self):
         self.field.swap(2, 1)
         self.tick()
-        self.assertEqual(self.said(), [])                   # not settled yet
+        self.assertEqual(self.said(), [])  # not settled yet
         self.settle()
         self.assertEqual(self.said(), ['Nice move on Hamilton. P2.'])
         self.field.swap(2, 1)
@@ -281,10 +297,15 @@ class RaceControlTests(unittest.TestCase):
     def test_flags_waved_at_the_player(self):
         for flag in (0, 3, 3, 1, 2, 4):
             self.control.update_status([status(flag=flag)] * 22, 2)
-        self.assertEqual(self.said(), ['Yellow flag, yellow flag. No overtaking.',
-                                       'Green flag, track is clear.',
-                                       'Blue flags. Let the leaders through.',
-                                       'Red flag, red flag. Slow down and bring it back to the pit lane.'])
+        self.assertEqual(
+            self.said(),
+            [
+                'Yellow flag, yellow flag. No overtaking.',
+                'Green flag, track is clear.',
+                'Blue flags. Let the leaders through.',
+                'Red flag, red flag. Slow down and bring it back to the pit lane.',
+            ],
+        )
         self.assertEqual(self.voice.messages[0][1], Priority.CRITICAL)
 
     def test_finish_position_against_the_grid(self):
@@ -301,14 +322,16 @@ class OnDemandModeTests(unittest.TestCase):
         engine.update_session(RACE)
         voice.messages.clear()
         control = engine.race_control
-        control.handle_event(RaceEvent('PENA', penalty_type=4, infringement_type=7, vehicle_index=0,
-                                       time_s=5), 0, 1.0)
+        control.handle_event(
+            RaceEvent('PENA', penalty_type=4, infringement_type=7, vehicle_index=0, time_s=5), 0, 1.0
+        )
         control.handle_event(RaceEvent('FTLP', vehicle_index=1, lap_time_s=80.0), 0, 1.0)
         control.update_status([status(flag=0)] * 22, 0)
         control.update_status([status(flag=3)] * 22, 0)
-        self.assertEqual([m for m, _, _ in voice.messages],
-                         ['5 second time penalty, for corner cutting.',
-                          'Yellow flag, yellow flag. No overtaking.'])
+        self.assertEqual(
+            [m for m, _, _ in voice.messages],
+            ['5 second time penalty, for corner cutting.', 'Yellow flag, yellow flag. No overtaking.'],
+        )
         self.assertEqual(len(control.feed), 3)
 
 

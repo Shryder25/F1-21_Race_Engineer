@@ -13,12 +13,14 @@ including calls that on-demand mode keeps off the radio.
 
 import math
 from collections import deque
+from collections.abc import Callable
+from typing import Any
 
 from voice_engine import Priority
 
 RACE_SESSIONS = (10, 11, 12)
 ACTIVE, FINISHED = 2, 3
-OUT_OF_RACE = (4, 5, 7)            # did not finish, disqualified, retired
+OUT_OF_RACE = (4, 5, 7)  # did not finish, disqualified, retired
 
 # A new position has to hold this long before it is called (lap data jitters across the line).
 POSITION_SETTLE_S = 1.5
@@ -34,8 +36,13 @@ LAP_INVALIDATED = range(10, 16)
 TYRE_REGS, PARKED_TOO_LONG, BLACK_FLAG_TIMER = 9, 8, 17
 SERIOUS_PENALTIES = (DRIVE_THROUGH, STOP_GO, TIME_PENALTY, DSQ)
 
-COMPOUND_PLURALS = {'Soft': 'softs', 'Medium': 'mediums', 'Hard': 'hards',
-                    'Intermediate': 'inters', 'Wet': 'wets'}
+COMPOUND_PLURALS = {
+    'Soft': 'softs',
+    'Medium': 'mediums',
+    'Hard': 'hards',
+    'Intermediate': 'inters',
+    'Wet': 'wets',
+}
 
 
 def lap_time_text(seconds: float) -> str:
@@ -48,7 +55,7 @@ def capitalise(text: str) -> str:
 
 
 class RaceControl:
-    def __init__(self, speak):
+    def __init__(self, speak: Callable[..., Any]) -> None:
         self.speak = speak
         self.participants: list = []
         self.feed: deque = deque(maxlen=30)
@@ -58,7 +65,7 @@ class RaceControl:
     # State
     # ──────────────────────────────────────────
 
-    def reset(self, session):
+    def reset(self, session: Any) -> None:
         """New session: forget everything except who is driving which car."""
         self.session = session
         self.feed.clear()
@@ -80,7 +87,7 @@ class RaceControl:
         self.candidate_since = None
         self.baseline_positions: dict[int, int] = {}
         self.pitted_since_baseline: set[int] = set()
-        self.pit_entries: dict[int, dict] = {}       # car index -> state captured at pit entry
+        self.pit_entries: dict[int, dict] = {}  # car index -> state captured at pit entry
         self.result_status: dict[int, int] = {}
         self.leader = self.leader_candidate = None
         self.leader_since = None
@@ -89,7 +96,7 @@ class RaceControl:
     def is_race(self) -> bool:
         return bool(self.session and self.session.session_type in RACE_SESSIONS)
 
-    def update_participants(self, participants):
+    def update_participants(self, participants: list) -> None:
         self.participants = list(participants)
 
     def position_of(self, index):
@@ -119,8 +126,9 @@ class RaceControl:
     def call(self, message, priority, key, kind, ttl=12, cooldown=0, spoken=True):
         position = self.position_of(self.player_index) if self.player_index is not None else None
         lap = self.laps[self.player_index].current_lap_num if position else None
-        self.feed.appendleft({'kind': kind, 'text': message, 'lap': lap,
-                              'session_time': round(self.session_time, 1)})
+        self.feed.appendleft(
+            {'kind': kind, 'text': message, 'lap': lap, 'session_time': round(self.session_time, 1)}
+        )
         if spoken:
             self.speak(message, priority, key=key, ttl=ttl, cooldown=cooldown)
 
@@ -147,9 +155,15 @@ class RaceControl:
             return
         if event.vehicle_index == self.player_index:
             self._own_penalty(event)
-        elif (self.is_race and event.penalty_type in SERIOUS_PENALTIES
-              and (event.other_vehicle_index == self.player_index or self.is_nearby(event.vehicle_index)
-                   or self.position_of(event.vehicle_index) == 1)):
+        elif (
+            self.is_race
+            and event.penalty_type in SERIOUS_PENALTIES
+            and (
+                event.other_vehicle_index == self.player_index
+                or self.is_nearby(event.vehicle_index)
+                or self.position_of(event.vehicle_index) == 1
+            )
+        ):
             who = capitalise(self.name(event.vehicle_index))
             if event.penalty_type == TIME_PENALTY:
                 what = f'a {event.time_s} second time penalty'
@@ -158,47 +172,89 @@ class RaceControl:
             elif event.penalty_type == STOP_GO:
                 what = f'a {event.time_s} second stop go' if event.time_s else 'a stop go'
             else:
-                self.call(f'{who} has been disqualified.', Priority.RACE,
-                          f'rival_penalty_{event.vehicle_index}', 'penalty')
+                self.call(
+                    f'{who} has been disqualified.',
+                    Priority.RACE,
+                    f'rival_penalty_{event.vehicle_index}',
+                    'penalty',
+                )
                 return
-            reason = ('for the contact with you' if event.other_vehicle_index == self.player_index
-                      else f'for {event.infringement_name}')
-            self.call(f'{who} has {what}, {reason}.', Priority.RACE,
-                      f'rival_penalty_{event.vehicle_index}', 'penalty')
+            reason = (
+                'for the contact with you'
+                if event.other_vehicle_index == self.player_index
+                else f'for {event.infringement_name}'
+            )
+            self.call(
+                f'{who} has {what}, {reason}.',
+                Priority.RACE,
+                f'rival_penalty_{event.vehicle_index}',
+                'penalty',
+            )
 
     def _own_penalty(self, event):
         kind, reason = event.penalty_type, event.infringement_name
         if kind == TIME_PENALTY:
-            self.call(f'{event.time_s} second time penalty, for {reason}.', Priority.CRITICAL,
-                      'penalty', 'penalty')
+            self.call(
+                f'{event.time_s} second time penalty, for {reason}.', Priority.CRITICAL, 'penalty', 'penalty'
+            )
         elif kind == DRIVE_THROUGH:
-            self.call(f'Drive through penalty, for {reason}. We need to serve it, box when told.',
-                      Priority.CRITICAL, 'penalty', 'penalty')
+            self.call(
+                f'Drive through penalty, for {reason}. We need to serve it, box when told.',
+                Priority.CRITICAL,
+                'penalty',
+                'penalty',
+            )
         elif kind == STOP_GO:
             seconds = f'{event.time_s} second ' if event.time_s else ''
-            self.call(f'{capitalise(seconds)}stop go penalty, for {reason}.', Priority.CRITICAL,
-                      'penalty', 'penalty')
+            self.call(
+                f'{capitalise(seconds)}stop go penalty, for {reason}.',
+                Priority.CRITICAL,
+                'penalty',
+                'penalty',
+            )
         elif kind == WARNING:
-            self.call(f'That is a warning, for {reason}. Keep it clean.', Priority.STRATEGY,
-                      'penalty', 'warning', cooldown=5)
+            self.call(
+                f'That is a warning, for {reason}. Keep it clean.',
+                Priority.STRATEGY,
+                'penalty',
+                'warning',
+                cooldown=5,
+            )
         elif kind == REMINDER:
-            self.call('Reminder, we still have a penalty to serve.', Priority.STRATEGY,
-                      'penalty', 'penalty', cooldown=20)
+            self.call(
+                'Reminder, we still have a penalty to serve.',
+                Priority.STRATEGY,
+                'penalty',
+                'penalty',
+                cooldown=20,
+            )
         elif kind == DSQ:
-            self.call("We've been disqualified. Sorry mate, box the car.", Priority.CRITICAL,
-                      'penalty', 'penalty')
+            self.call(
+                "We've been disqualified. Sorry mate, box the car.", Priority.CRITICAL, 'penalty', 'penalty'
+            )
         elif kind == GRID:
-            self.call(f'We have a grid penalty, for {reason}.', Priority.NORMAL,
-                      'grid_penalty', 'penalty')
+            self.call(f'We have a grid penalty, for {reason}.', Priority.NORMAL, 'grid_penalty', 'penalty')
         elif kind == TYRE_REGS:
             self.call('Penalty for the tyre regulations.', Priority.STRATEGY, 'penalty', 'penalty')
         elif kind in (PARKED_TOO_LONG, BLACK_FLAG_TIMER):
-            self.call('Get the car moving, the black flag timer is running.', Priority.CRITICAL,
-                      'penalty', 'penalty', cooldown=10)
+            self.call(
+                'Get the car moving, the black flag timer is running.',
+                Priority.CRITICAL,
+                'penalty',
+                'penalty',
+                cooldown=10,
+            )
         elif kind in LAP_INVALIDATED:
             # Deleted laps only cost anything outside the race; there the driver needs to know.
-            self.call(f'Lap deleted, {reason}.', Priority.TIMING, 'lap_deleted', 'lap_deleted',
-                      ttl=6, cooldown=5, spoken=not self.is_race)
+            self.call(
+                f'Lap deleted, {reason}.',
+                Priority.TIMING,
+                'lap_deleted',
+                'lap_deleted',
+                ttl=6,
+                cooldown=5,
+                spoken=not self.is_race,
+            )
 
     def _penalty_served(self, event):
         if event.vehicle_index == self.player_index:
@@ -213,11 +269,16 @@ class RaceControl:
             return
         time_text = lap_time_text(event.lap_time_s)
         if event.vehicle_index == self.player_index:
-            self.call(f'Fastest lap, {time_text}. Purple, mega.', Priority.TIMING,
-                      'fastest_lap', 'fastest_lap')
+            self.call(
+                f'Fastest lap, {time_text}. Purple, mega.', Priority.TIMING, 'fastest_lap', 'fastest_lap'
+            )
         else:
-            self.call(f'{capitalise(self.name(event.vehicle_index))} sets the fastest lap, {time_text}.',
-                      Priority.NORMAL, 'fastest_lap', 'fastest_lap')
+            self.call(
+                f'{capitalise(self.name(event.vehicle_index))} sets the fastest lap, {time_text}.',
+                Priority.NORMAL,
+                'fastest_lap',
+                'fastest_lap',
+            )
 
     def _event_rtmt(self, event):
         if self._valid_car(event.vehicle_index):
@@ -259,8 +320,12 @@ class RaceControl:
             self.finish_reported = True
             self.call("Get in there! You've won the race! P1!", Priority.CRITICAL, 'race_winner', 'finish')
         else:
-            self.call(f'{capitalise(self.name(event.vehicle_index))} wins the race.', Priority.NORMAL,
-                      'race_winner', 'finish')
+            self.call(
+                f'{capitalise(self.name(event.vehicle_index))} wins the race.',
+                Priority.NORMAL,
+                'race_winner',
+                'finish',
+            )
 
     def _event_lgot(self, event):
         if self.is_race:
@@ -278,17 +343,28 @@ class RaceControl:
         if previous is None or flag == previous or flag < 0:
             return
         if flag == YELLOW:
-            self.call('Yellow flag, yellow flag. No overtaking.', Priority.CRITICAL,
-                      'flag_yellow', 'flag', ttl=5, cooldown=8)
+            self.call(
+                'Yellow flag, yellow flag. No overtaking.',
+                Priority.CRITICAL,
+                'flag_yellow',
+                'flag',
+                ttl=5,
+                cooldown=8,
+            )
         elif flag == RED:
-            self.call('Red flag, red flag. Slow down and bring it back to the pit lane.',
-                      Priority.CRITICAL, 'flag_red', 'flag', ttl=10)
+            self.call(
+                'Red flag, red flag. Slow down and bring it back to the pit lane.',
+                Priority.CRITICAL,
+                'flag_red',
+                'flag',
+                ttl=10,
+            )
         elif flag == BLUE and self.is_race:
-            self.call('Blue flags. Let the leaders through.', Priority.RACE,
-                      'flag_blue', 'flag', ttl=6, cooldown=30)
+            self.call(
+                'Blue flags. Let the leaders through.', Priority.RACE, 'flag_blue', 'flag', ttl=6, cooldown=30
+            )
         elif previous in (YELLOW, RED) and flag in (0, GREEN):
-            self.call('Green flag, track is clear.', Priority.RACE, 'flag_green', 'flag',
-                      ttl=5, cooldown=8)
+            self.call('Green flag, track is clear.', Priority.RACE, 'flag_green', 'flag', ttl=5, cooldown=8)
 
     # ──────────────────────────────────────────
     # Field tracking (Lap Data for all cars)
@@ -321,9 +397,12 @@ class RaceControl:
             if lap.pit_status:
                 self.pitted_since_baseline.add(index)
                 if entry is None:
-                    self.pit_entries[index] = {'stops': lap.num_pit_stops, 'position': lap.car_position,
-                                               'stationary_ms': lap.pit_stop_timer_ms,
-                                               'nearby': self.is_nearby(index) or lap.car_position == 1}
+                    self.pit_entries[index] = {
+                        'stops': lap.num_pit_stops,
+                        'position': lap.car_position,
+                        'stationary_ms': lap.pit_stop_timer_ms,
+                        'nearby': self.is_nearby(index) or lap.car_position == 1,
+                    }
                 else:
                     entry['stationary_ms'] = max(entry['stationary_ms'], lap.pit_stop_timer_ms)
                 continue
@@ -331,7 +410,7 @@ class RaceControl:
                 continue
             del self.pit_entries[index]
             if lap.num_pit_stops <= entry['stops'] and not entry['stationary_ms']:
-                continue                          # drive through or a pit lane pass, not a stop
+                continue  # drive through or a pit lane pass, not a stop
             seconds = entry['stationary_ms'] / 1000
             stop = f'{seconds:.1f} second stop' if 0 < seconds < 60 else None
             compound = self.compound(index)
@@ -353,8 +432,13 @@ class RaceControl:
 
     def _track_milestones(self, player):
         previous_lap, self.player_lap_num = self.player_lap_num, player.current_lap_num
-        if (not self.lap_one_reported and player.result_status == ACTIVE and previous_lap == 1
-                and player.current_lap_num == 2 and player.car_position):
+        if (
+            not self.lap_one_reported
+            and player.result_status == ACTIVE
+            and previous_lap == 1
+            and player.current_lap_num == 2
+            and player.car_position
+        ):
             self.lap_one_reported = True
             message = f'End of lap one, P{player.car_position}.'
             change = player.grid_position - player.car_position if player.grid_position else 0
@@ -390,35 +474,52 @@ class RaceControl:
         if player.current_lap_num < 2 or player_index in pitted:
             return
         if position < old:
-            swapped = [i for i, before in baseline.items() if i != player_index and before < old
-                       and laps[i].car_position > position]
+            swapped = [
+                i
+                for i, before in baseline.items()
+                if i != player_index and before < old and laps[i].car_position > position
+            ]
         else:
-            swapped = [i for i, before in baseline.items() if i != player_index and before > old
-                       and 0 < laps[i].car_position < position]
+            swapped = [
+                i
+                for i, before in baseline.items()
+                if i != player_index and before > old and 0 < laps[i].car_position < position
+            ]
         on_track = [i for i in swapped if i not in pitted and laps[i].result_status == ACTIVE]
         if not swapped or len(on_track) != len(swapped):
             # Places changed through pit stops or retirements, not wheel to wheel.
             self.call(f'P{position}.', Priority.TIMING, 'position', 'position', ttl=6, cooldown=5)
         elif position < old:
             who = self.name(on_track[0]) if len(on_track) == 1 else f'{len(on_track)} cars'
-            self.call(f'Nice move on {who}. P{position}.', Priority.RACE, 'position', 'overtake',
-                      ttl=6, cooldown=3)
+            self.call(
+                f'Nice move on {who}. P{position}.', Priority.RACE, 'position', 'overtake', ttl=6, cooldown=3
+            )
         else:
             who = capitalise(self.name(on_track[0])) if len(on_track) == 1 else f'{len(on_track)} cars'
             verb = 'is' if len(on_track) == 1 else 'are'
-            self.call(f'{who} {verb} through. P{position}.', Priority.RACE, 'position', 'overtake',
-                      ttl=6, cooldown=3)
+            self.call(
+                f'{who} {verb} through. P{position}.',
+                Priority.RACE,
+                'position',
+                'overtake',
+                ttl=6,
+                cooldown=3,
+            )
 
     def _confirm_position(self, laps, position):
         self.confirmed_position = position
         self.candidate_position = None
-        self.baseline_positions = {i: lap.car_position for i, lap in enumerate(laps)
-                                   if lap.result_status == ACTIVE and lap.car_position}
+        self.baseline_positions = {
+            i: lap.car_position
+            for i, lap in enumerate(laps)
+            if lap.result_status == ACTIVE and lap.car_position
+        }
         self.pitted_since_baseline = {i for i, lap in enumerate(laps) if lap.pit_status}
 
     def _track_leader(self, laps, player_index, session_time):
-        leader = next((i for i, lap in enumerate(laps)
-                       if lap.car_position == 1 and lap.result_status == ACTIVE), None)
+        leader = next(
+            (i for i, lap in enumerate(laps) if lap.car_position == 1 and lap.result_status == ACTIVE), None
+        )
         if leader is None:
             return
         if self.leader is None:
@@ -434,8 +535,13 @@ class RaceControl:
             return
         old, self.leader, self.leader_candidate = self.leader, leader, None
         if player_index in (old, leader) or laps[leader].current_lap_num < 2:
-            return                                # the player's own moves are called elsewhere
+            return  # the player's own moves are called elsewhere
         if laps[old].pit_status or laps[old].result_status != ACTIVE or old in self.pit_entries:
             return
-        self.call(f'{capitalise(self.name(leader))} takes the lead from {self.name(old)}.',
-                  Priority.NORMAL, 'lead_change', 'overtake', ttl=8)
+        self.call(
+            f'{capitalise(self.name(leader))} takes the lead from {self.name(old)}.',
+            Priority.NORMAL,
+            'lead_change',
+            'overtake',
+            ttl=8,
+        )

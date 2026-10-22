@@ -20,8 +20,16 @@ _AI = Path(__file__).resolve().parents[2] / 'ai_engineer'
 if str(_AI) not in sys.path:
     sys.path.insert(0, str(_AI))
 
-from udp_recording import (FILE_HEADER, FORMAT_VERSION, MAGIC, RECORD_HEADER,  # noqa: E402,F401
-                           Record, RecordingError, RecordingReader, read_records)
+from udp_recording import (  # noqa: E402,F401
+    FILE_HEADER,
+    FORMAT_VERSION,
+    MAGIC,
+    RECORD_HEADER,
+    Record,
+    RecordingError,
+    RecordingReader,
+    read_records,
+)
 
 
 def read_metadata(path) -> dict:

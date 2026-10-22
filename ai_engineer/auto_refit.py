@@ -51,7 +51,7 @@ def refit(history, models_path, extra_recordings=(), log=print) -> fm.ModelStore
     if player_laps == 0 and not recordings:
         return None
     if player_laps <= _history_laps(previous) and not extra_recordings:
-        return None                                     # nothing new since the last fit
+        return None  # nothing new since the last fit
     records = list(history_records)
     sources = []
     for path in recordings:
@@ -65,15 +65,29 @@ def refit(history, models_path, extra_recordings=(), log=print) -> fm.ModelStore
             shown = str(path.resolve().relative_to(ROOT))
         except ValueError:
             shown = str(path)
-        sources.append({'path': shown, 'laps': sum(r.car_index is None for r in recs),
-                        'rival_laps': sum(r.car_index is not None for r in recs), 'simulated': False})
-    sources.append({'history': 'telemetry.sqlite3', 'laps': player_laps,
-                    'rival_laps': sum(r.car_index is not None for r in history_records),
-                    'sessions': len(captures), 'simulated': False})
+        sources.append(
+            {
+                'path': shown,
+                'laps': sum(r.car_index is None for r in recs),
+                'rival_laps': sum(r.car_index is not None for r in recs),
+                'simulated': False,
+            }
+        )
+    sources.append(
+        {
+            'history': 'telemetry.sqlite3',
+            'laps': player_laps,
+            'rival_laps': sum(r.car_index is not None for r in history_records),
+            'sessions': len(captures),
+            'simulated': False,
+        }
+    )
     if not records:
         return None
     store = fm.ModelStore.fit(records, sources, captures)
     store.save(models_path)
-    log(f'[Learn] Tyre/fuel models updated from {player_laps} of your laps '
-        f'({len(store.wear)} wear, {len(store.fuel)} fuel fits) in {time.monotonic() - started:.1f}s.')
+    log(
+        f'[Learn] Tyre/fuel models updated from {player_laps} of your laps '
+        f'({len(store.wear)} wear, {len(store.fuel)} fuel fits) in {time.monotonic() - started:.1f}s.'
+    )
     return store
