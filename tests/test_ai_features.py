@@ -130,9 +130,14 @@ class AnalysisIntegrationTests(unittest.TestCase):
         quiet.speak('Minus 0.3 to your best.', Priority.LOW, key='live_delta')
         quiet.speak('Braking now.', Priority.CRITICAL, key='braking')
         self.assertEqual(quiet_voice.messages, [])
+        # Tyre temperatures are on the dash: no mid-lap warning unless asked for in config.
         quiet.speak('Critical! Front Left overheating.', Priority.CRITICAL, key='tyre_temperature')
-        self.assertEqual(len(quiet_voice.messages), 1)
-        self.assertIn('tyre_temperature', PROACTIVE_KEYS)
+        self.assertEqual(quiet_voice.messages, [])
+        self.assertNotIn('tyre_temperature', PROACTIVE_KEYS)
+        quiet.speak('One oh five one. Two tenths off your best.', Priority.TIMING, key='lap_time')
+        quiet.speak('Safety Car deployed.', Priority.CRITICAL, key='safety_car')
+        self.assertEqual(len(quiet_voice.messages), 2)
+        self.assertIn('lap_coaching', PROACTIVE_KEYS)
 
     def test_default_mode_keeps_existing_callouts(self):
         self.voice.messages.clear()  # drop the session welcome

@@ -53,7 +53,8 @@ An AI race engineer for the F1 2021 game. It reads the game's live UDP telemetry
 | `--record FILE` | Save every UDP packet for replay and backtesting |
 | `--log-channels DIR` | Log channel data to Parquet (for MoTeC export) |
 | `--tts kokoro` | Kokoro voice (default; `system` for the OS voice) |
-| `--chatty` | Play every callout, not just the urgent ones |
+| *(default)* | Urgent calls (Safety Car, flags, damage, box/strategy) plus one end-of-lap pace call: lap time, where you lost time (sector and corner, with why) and race pace. No tyre temperature warnings |
+| `--chatty` | Adds race info: gaps, sector times, and one call a lap on threats, rival tyres and stops, or Safety Car chance. No braking tips (`--braking-calls` turns them back on) |
 | `--calls-per-lap N` | Max proactive callouts per lap (default 4, 0 = no limit) |
 | `--ai-model NAME` | Ollama model; `qwen2.5:3b` is lighter if you get frame drops |
 | `--ai-test` | Check the AI without the game: asks one question and prints the reply, the time it took, or why it failed |

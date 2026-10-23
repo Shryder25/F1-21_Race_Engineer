@@ -20,10 +20,14 @@ from typing import Any
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / 'config.toml'
 
-# Callouts that break on-demand radio silence: critical events, and strategy calls that
-# cannot wait for the driver to ask (covering or taking an undercut is a this-lap decision).
+# Callouts that break on-demand radio silence: critical events, strategy calls that cannot
+# wait for the driver to ask (covering or taking an undercut is a this-lap decision), and one
+# end-of-lap pace call: the lap time, where time was lost (sector and corner) and race pace.
+# Tyre temperatures are left out on purpose: the driver sees them on the dash.
 DEFAULT_PROACTIVE_KEYS = (
-    'tyre_temperature',
+    'lap_time',
+    'lap_coaching',
+    'race_pace',
     'safety_car',
     'safety_car_in',
     'weather_rain',
@@ -66,7 +70,9 @@ class RadioConfig:
     straight_g: float = 1.5  # until lateral G stays below this...
     straight_s: float = 0.4  # ... for this long; or under heavy braking:
     busy_brake: float = 0.5  # brake pedal (0-1) counted as heavy braking
+    braking_calls: bool = False  # "brake for turn 3, 100 metres" calls (--braking-calls)
     braking_warn_distance_m: float = 220.0  # braking-point call this far before the zone
+    race_briefing: bool = True  # chatty mode: one race-info call per lap (threats, rival tyres, SC odds)
     delta_report_interval_s: float = 14.0  # seconds between live delta calls
 
 

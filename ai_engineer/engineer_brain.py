@@ -15,6 +15,7 @@ Flow for every voice command:
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable
 
 import session_modes
@@ -696,19 +697,23 @@ class EngineerBrain:
         )
         model = getattr(self.client, 'model', '?')
         failures: list[str] = []
+        started = time.monotonic()
 
         def too_slow(error):
             self._timed_out = True
-            self.last_failure = f'timed out ({error})'
+            self.last_failure = f'timed out after {time.monotonic() - started:.0f} s ({error})'
+            placement = self.client.model_placement() if hasattr(self.client, 'model_placement') else None
             log.warning(
-                f'AI ({model}) too slow ({error}); answering from rules. '
-                'Try a lighter model (--ai-model qwen2.5:3b) or a longer --ai-timeout.'
+                f'AI ({model}) too slow: {self.last_failure}; answering from rules. '
+                + (f'The model is {placement}. ' if placement else '')
+                + 'See docs/ai-performance.md ("AI took too long in a race").'
             )
             return None
 
         def answered(voice, advice=''):
             self.last_source = 'ai'
             self.last_advice = advice
+            log.info(f'AI ({model}) answered in {time.monotonic() - started:.1f} s')
             return voice
 
         if fast and hasattr(self.client, 'radio_voice'):

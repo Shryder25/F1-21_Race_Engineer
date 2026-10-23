@@ -116,6 +116,7 @@ class IngestStage(LapsStage):
         self.driver_profile = None
         self.current_corner_data.clear()
         self.best_corner_data.clear()
+        self.best_corner_runs.clear()
         self.corner_diagnostics.clear()
         self.previous_corner_sample = None
         self.brake_start_distance = None
@@ -147,6 +148,7 @@ class IngestStage(LapsStage):
         self._last_event_submit = -1e9
         self.undercut_calls.clear()
         self.rivals.reset()
+        self.briefing.reset()
         self.rival_calls.clear()
         self.player_start_compound = None
         self.lap_start_fuel = None
@@ -198,6 +200,7 @@ class IngestStage(LapsStage):
         self.delta.best_lap_time_ms, self.delta.best_lap_num = 0, 0
         self.delta.current_lap_invalid = True  # this lap was run in mixed conditions
         self.best_corner_data = {}
+        self.best_corner_runs = {}
         self.best_sector_times = {}
         self._load_history_reference(session, self.session_uid)
         web_hud.update_web_state(
