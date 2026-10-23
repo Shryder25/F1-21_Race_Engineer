@@ -333,6 +333,33 @@ class AIClient:
             self.last_error = str(error)
             return None
 
+    def model_placement(self) -> str | None:
+        """Where Ollama has the model loaded right now, e.g. "100% on the graphics card".
+
+        A model that doesn't fully fit next to the game runs partly on the processor, which is
+        the usual reason answers that are quick in a test take too long in a race.
+        """
+        if not self.ollama_root:
+            return None
+        try:
+            with urllib.request.urlopen(f'{self.ollama_root}/api/ps', timeout=2.0) as response:
+                models = json.loads(response.read().decode('utf-8')).get('models') or []
+        except (urllib.error.URLError, OSError, ValueError, AttributeError):
+            return None
+        wanted = self.model if ':' in self.model else f'{self.model}:latest'
+        for entry in models:
+            if entry.get('name') in (self.model, wanted) or entry.get('model') in (self.model, wanted):
+                size, vram = entry.get('size') or 0, entry.get('size_vram') or 0
+                if not size:
+                    return None
+                percent = round(100 * vram / size)
+                if percent >= 99:
+                    return '100% on the graphics card'
+                if percent <= 1:
+                    return 'all on the processor (CPU)'
+                return f'{percent}% on the graphics card, {100 - percent}% on the processor'
+        return 'not loaded'
+
     def _post(self, system: str, user: str, temperature: float, max_tokens: int, json_mode: bool) -> str:
         body = {
             'model': self.model,

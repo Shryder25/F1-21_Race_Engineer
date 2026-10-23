@@ -15,6 +15,7 @@ from typing import Any
 
 import fitted_models
 import pit_wall
+import race_briefing
 import race_sim
 import race_strategy
 import rival_strategy
@@ -254,6 +255,33 @@ class StrategyStage(ModelsStage):
                 )
                 self.last_strategy_call = {**call.as_dict(), 'lap': lap.current_lap_num}
                 self.speak(call.message, Priority.RACE, key='rival_forecast', ttl=8, cooldown=20)
+
+    def call_race_briefing(self, lap_num: int) -> None:
+        """Chatty mode: one race-info call per lap (threats, rival tyres and stops, SC chance)."""
+        if (
+            self.on_demand
+            or not self.config.radio.race_briefing
+            or self.session_mode != session_modes.RACE
+            or lap_num < 2
+        ):
+            return
+        remaining = self.call_budget.remaining
+        if remaining is not None and remaining < 2:
+            return  # filler: leave this lap's last calls for things that can't wait
+        lap = self.latest_lap
+        position = lap.car_position if lap else None
+        text = self.briefing.line(
+            lap_num,
+            {
+                'threats': lambda: race_briefing.threat_line(self.radio.opponent_threats),
+                'rival_tyres': lambda: race_briefing.rival_tyres_line(
+                    self.rival_predictions(), position, lap_num
+                ),
+                'safety_car': lambda: race_briefing.safety_car_line(self.race_simulation()),
+            },
+        )
+        if text:
+            self.speak(text, Priority.RACE, key='race_briefing', ttl=15, cooldown=0)
 
     def rival_strategy_summary(self) -> JSON | None:
         """Nearby rivals' predicted stops for the HUD and the AI prompt."""

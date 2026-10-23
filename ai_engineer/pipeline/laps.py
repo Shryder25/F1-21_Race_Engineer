@@ -10,7 +10,9 @@ import copy
 import time
 from bisect import bisect_left
 
+import lap_coaching
 import radio_phrases as say
+import session_modes
 from packets import CarTelemetryData, LapData
 from pipeline.outputs import OutputsStage
 from pipeline.state import JSON
@@ -132,6 +134,8 @@ class LapsStage(OutputsStage):
 
     def _on_sector_change(self, lap: LapData) -> None:
         """Announce sector timing and delta."""
+        if lap.sector == 1:  # mid-lap, after the lap-start calls (rival stops, pit window...)
+            self.call_race_briefing(lap.current_lap_num)
         if not self.delta.recorded_from_start or self.delta.current_lap_invalid:
             return
         if lap.sector in (1, 2):
@@ -228,6 +232,13 @@ class LapsStage(OutputsStage):
     def _report_completed_lap(self, last_ms: int, lap_num: int, sectors: dict[int, int]) -> None:
         """A clean, complete lap: radio the time, and keep it as the reference if it's a best."""
         self.radio.completed_lap(last_ms, lap_num, sectors, self.best_sector_times)
+        coaching = None
+        racing_start = lap_num == 1 and self.session_mode == session_modes.RACE  # standing start
+        if not racing_start and not self.map_lap_has_pit:
+            coaching = lap_coaching.coaching_line(
+                sectors, self.best_sector_times, self.current_corner_data, self.best_corner_runs
+            )
+        lap_coaching.update_best_corners(self.current_corner_data, self.best_corner_runs)
         for sector, milliseconds in sectors.items():
             self.best_sector_times[sector] = min(
                 self.best_sector_times.get(sector, milliseconds), milliseconds
@@ -266,6 +277,8 @@ class LapsStage(OutputsStage):
             else:
                 message = f'{spoken.capitalize()}. {say.time_amount(diff_s).capitalize()} off your best.'
             self.speak(message, Priority.TIMING, key='lap_time', ttl=10, cooldown=0)
+        if coaching:
+            self.speak(coaching, Priority.TIMING, key='lap_coaching', ttl=15, cooldown=0)
 
     def update_speed_trap(self, speed_kph: float) -> None:
         """Record the fastest Speed Trap event ('SPTP') seen so far on the current lap."""
@@ -298,6 +311,7 @@ class LapsStage(OutputsStage):
             c_end = c['end']
             if prev_dist <= c_start < dist and c_name not in self.current_corner_data:
                 self.current_corner_data[c_name] = {
+                    'sector': lap.sector + 1,  # the game counts sectors from 0
                     'min_speed': speed,
                     'brake_point': self.brake_start_distance,
                     'start_time_ms': crossing_time(c_start),
