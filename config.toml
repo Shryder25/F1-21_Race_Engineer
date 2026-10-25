@@ -16,11 +16,13 @@ file = ""                   # --log-file: also write every record as JSON lines 
 
 [radio]
 on_demand = true            # speak only when asked, plus the proactive keys below (--chatty = false)
-# Callouts that break on-demand silence: critical events and this-lap strategy calls.
+# Callouts that break on-demand silence: critical events, this-lap strategy calls, and the
+# end-of-lap pace call (lap time, where you lost time, race pace). Add "tyre_temperature"
+# to get the mid-lap overheating warning back.
 proactive_keys = [
-    "tyre_temperature", "safety_car", "safety_car_in", "weather_rain", "critical_wear",
-    "wing_damage", "penalty", "flag_yellow", "flag_red", "rival_pit", "undercut",
-    "rival_preempt", "plan_b",
+    "lap_time", "lap_coaching", "race_pace", "safety_car", "safety_car_in", "weather_rain",
+    "critical_wear", "wing_damage", "penalty", "flag_yellow", "flag_red", "rival_pit",
+    "undercut", "rival_preempt", "plan_b",
 ]
 calls_per_lap = 4           # --calls-per-lap: most proactive calls per lap; urgent calls always
                             # get through (Safety Car, flags, box, strategy...). 0 = no limit
@@ -30,7 +32,10 @@ corner_g = 3.5              # --corner-g: ...with at least this much lateral G
 straight_g = 1.5            # back on a straight once lateral G stays below this...
 straight_s = 0.4            # ...for this many seconds (an S-bend counts as one corner)
 busy_brake = 0.5            # brake pedal (0-1) counted as heavy braking
+braking_calls = false       # --braking-calls: "brake for turn 3, 100 metres" before every corner
 braking_warn_distance_m = 220.0   # braking-point call this many metres before the zone
+race_briefing = true        # with --chatty: one race-info call a lap (threats, rival tyres and
+                            # stops, Safety Car chance) (--no-race-briefing = false)
 delta_report_interval_s = 14.0    # minimum seconds between live "up/down on your best" calls
 
 [tyres]

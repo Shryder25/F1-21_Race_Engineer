@@ -219,6 +219,8 @@ def settings_from(args) -> EngineConfig:
             'ai.autostart': False if args.no_ai_autostart else None,
             'radio.on_demand': False if args.chatty else None,
             'radio.calls_per_lap': args.calls_per_lap,
+            'radio.braking_calls': True if args.braking_calls else None,
+            'radio.race_briefing': False if args.no_race_briefing else None,
             'radio.corner_speed_kph': args.corner_speed,
             'radio.corner_g': args.corner_g,
             'logging.level': args.log_level or ('DEBUG' if args.debug else None),
@@ -426,7 +428,13 @@ def build_parser() -> argparse.ArgumentParser:
     ai.add_argument(
         '--ai-normal-priority',
         action='store_true',
-        help="Start Ollama at normal priority (by default it runs below the game's)",
+        help=argparse.SUPPRESS,  # normal priority is the default now; kept so old commands work
+    )
+    ai.add_argument(
+        '--ai-low-priority',
+        action='store_true',
+        help="Start Ollama below the game's priority. Fewer frame drops on a busy CPU, but in a "
+        'race the AI can then be starved and answer too late',
     )
     ai.add_argument(
         '--no-ai-autostart',
@@ -454,7 +462,18 @@ def build_parser() -> argparse.ArgumentParser:
     cmd.add_argument(
         '--chatty',
         action='store_true',
-        help='Keep the old constant callouts instead of speaking only when asked',
+        help='Race info every lap too: threats, rival tyres and stops, Safety Car chance, gaps, '
+        'sector times (no driving tips unless --braking-calls)',
+    )
+    cmd.add_argument(
+        '--braking-calls',
+        action='store_true',
+        help='Call out every braking point ("brake for turn 3, 100 metres"). Off by default',
+    )
+    cmd.add_argument(
+        '--no-race-briefing',
+        action='store_true',
+        help='With --chatty: no per-lap race-info call (threats, rival tyres, Safety Car chance)',
     )
     disc = parser.add_argument_group('radio discipline (config.toml [radio])')
     disc.add_argument(
@@ -746,7 +765,7 @@ def main():
                 client.base_url,
                 client.model,
                 load_options=load_options,
-                low_priority=not args.ai_normal_priority,
+                low_priority=args.ai_low_priority and not args.ai_normal_priority,
                 on_ready=lambda: voice.say(
                     'Pit wall is connected. Ask me anything.', Priority.LOW, key='ai_ready', ttl=15
                 ),

@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 import fitted_models
 import pit_wall
+import race_briefing
 import race_sim
 import radio_discipline
 import rival_strategy
@@ -187,6 +188,7 @@ class EngineState:
         self.undercut_calls: set[tuple[int, int]] = set()
         # Every car's stints, wear and stops, and the next-stop/compound model built on them.
         self.rivals = rival_strategy.RivalTracker()
+        self.briefing = race_briefing.RaceBriefing()  # chatty mode's per-lap race-info call
         self.rival_calls: set[tuple[Any, ...]] = set()
         self.player_start_compound: str | None = None
         self.lap_start_fuel: float | None = None
@@ -234,6 +236,7 @@ class EngineState:
         self.corners: list[JSON] = []
         self.current_corner_data: dict[str, JSON] = {}
         self.best_corner_data: dict[str, JSON] = {}
+        self.best_corner_runs: dict[str, JSON] = {}  # quickest run through each corner this session
         self.corner_diagnostics: list[JSON] = []
         # (lap distance, lap time ms, speed, brake) of the previous frame
         self.previous_corner_sample: tuple[float, int, int, float] | None = None

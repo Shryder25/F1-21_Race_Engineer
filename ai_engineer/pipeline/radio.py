@@ -142,7 +142,7 @@ class RadioStage(EngineState):
     # ── Braking points ──
 
     def check_braking_points(self, lap: LapData, telemetry: CarTelemetryData) -> None:
-        if not self.braking_points or telemetry.speed < 60:
+        if not self.config.radio.braking_calls or not self.braking_points or telemetry.speed < 60:
             return
 
         dist = lap.lap_distance

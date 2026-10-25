@@ -74,6 +74,9 @@ def run_ai_test(client, *, load_options=None, autostart=True, question=None, out
     raw = getattr(client, 'last_reply', '')
     if raw:
         out(f'Raw reply: {raw[:400]!r}')
+    placement = client.model_placement() if hasattr(client, 'model_placement') else None
+    if placement:
+        out(f'Model is {placement}.')
     if brain.last_source == 'ai':
         out(f'OK in {took:.1f} s. The engineer would say: "{answer}"')
         return 0
