@@ -1,4 +1,7 @@
-"""Nonblocking race radio with expiring, interruptible priority callouts.
+"""Nonblocking race radio with expiring priority callouts.
+
+The engineer always finishes the line he is saying. A more urgent call never cuts him
+off: it waits for the current line to end and then goes out first.
 
 All TTS operations belong to one worker, including stop: Windows speech drivers
 require their COM event loop and control calls to stay on the owning thread.
@@ -44,7 +47,7 @@ class _Callout:
 
 
 class VoiceEngine:
-    """Bounded radio queue; urgent callouts interrupt lower priority speech."""
+    """Bounded radio queue; urgent callouts jump the queue but never cut off a line."""
 
     _MAX_PENDING = 64
 
@@ -71,7 +74,6 @@ class VoiceEngine:
         self._active: _Callout | None = None
         self._last_said: dict[str, tuple[float, float]] = {}
         self._sequence = 0
-        self._clear_requested = False
         self._stop_requested = False
         self._running = False
         self._thread: threading.Thread | None = None
@@ -90,7 +92,6 @@ class VoiceEngine:
                 return
             with self._condition:
                 self._stop_requested = False
-                self._clear_requested = False
                 self._engine_ready.clear()
                 self._thread = threading.Thread(target=self._worker, name='VoiceEngine', daemon=True)
                 self._thread.start()
@@ -112,8 +113,8 @@ class VoiceEngine:
     ) -> bool:
         """Queue current information, replacing a pending callout of the same topic.
 
-        ``True`` means accepted, not spoken. Expired, replaced, interrupted, or
-        cleared callouts never return to the queue. Cooldown starts at speech.
+        ``True`` means accepted, not spoken. Expired, replaced or cleared callouts
+        never return to the queue. Cooldown starts at speech.
         """
         if not message or ttl <= 0:
             return False
@@ -147,10 +148,9 @@ class VoiceEngine:
         return self.say(message, Priority.CRITICAL, cooldown=0)
 
     def clear(self):
-        """Cancel pending speech and request worker-thread cancellation of speech."""
+        """Drop every queued callout. The line being spoken still finishes."""
         with self._condition:
             self._pending.clear()
-            self._clear_requested = True
             self._condition.notify_all()
 
     def _started(self, name):
@@ -197,16 +197,7 @@ class VoiceEngine:
                     now = time.monotonic()
                     self._prune(now)
                     next_item = min(self._pending, key=lambda item: item.order, default=None)
-                    interrupt = (
-                        self._active is not None
-                        and next_item is not None
-                        and next_item.priority <= Priority.TIMING
-                        and next_item.priority < self._active.priority
-                    )
-                    if self._clear_requested or interrupt:
-                        engine.stop()
-                        self._active = None
-                        self._clear_requested = False
+                    # Never interrupt: the next call waits until the current line is done.
                     if self._active is None and next_item is not None:
                         # Cornering/Braking filter: Never speak non-critical messages while driver is busy
                         if (
