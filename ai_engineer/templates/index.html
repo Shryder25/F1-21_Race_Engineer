@@ -11,30 +11,41 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="f1-theme">
-    <!-- Top Broadcast Header Bar -->
+    <!-- One slim top bar: badge, tabs, circuit, track status, connection -->
     <header class="broadcast-header">
-        <div class="brand-group">
-            <div class="f1-badge">F1</div>
-            <div class="title-group">
-                <span class="series-tag">FIA FORMULA 1 WORLD CHAMPIONSHIP &trade;</span>
-                <h1 class="main-title">AI RACE ENGINEER TELEMETRY</h1>
-            </div>
-        </div>
+        <div class="f1-badge" title="AI Race Engineer Telemetry">F1</div>
 
-        <div class="header-center">
+        <nav class="hud-tabs">
+            <button class="tab-btn active" data-tab="tab-live" title="Live broadcast &amp; track map">
+                <span class="tab-icon">🏁</span> LIVE
+            </button>
+            <button class="tab-btn" data-tab="tab-pitwall" title="Full-field timing, race chart, stints, strategy odds">
+                <span class="tab-icon">🗼</span> PIT WALL
+            </button>
+            <button class="tab-btn" data-tab="tab-setup" title="Track database &amp; setup advisor">
+                <span class="tab-icon">⚙️</span> SETUP
+            </button>
+            <button class="tab-btn" data-tab="tab-radio" title="Team radio &amp; voice log">
+                <span class="tab-icon">📻</span> RADIO
+            </button>
+            <button class="tab-btn" data-tab="tab-corners" title="Corner delta &amp; speed trace">
+                <span class="tab-icon">📊</span> CORNERS
+            </button>
+            <button class="tab-btn" data-tab="tab-report" title="Lap-by-lap race report">
+                <span class="tab-icon">🗒️</span> REPORT
+            </button>
+        </nav>
+
+        <div class="header-right">
             <div class="circuit-pill" id="circuitPill">
                 <span class="flag-icon" id="circuitFlag">🏁</span>
                 <span class="circuit-name" id="trackNameDisplay">WAITING FOR SESSION</span>
                 <span class="circuit-meta" id="trackLengthDisplay"></span>
             </div>
-
             <div class="safety-car-pill sc-none" id="safetyCarPill">
                 <span class="sc-dot"></span>
                 <span id="safetyCarText">TRACK CLEAR</span>
             </div>
-        </div>
-
-        <div class="header-right">
             <div class="status-beacon" id="statusBeacon">
                 <span class="status-dot" id="statusDot"></span>
                 <span class="status-label" id="statusText">WAITING FOR UDP</span>
@@ -46,97 +57,206 @@
         </div>
     </header>
 
-    <!-- Navigation Tabs -->
-    <nav class="hud-tabs">
-        <button class="tab-btn active" data-tab="tab-live">
-            <span class="tab-icon">🏁</span> LIVE BROADCAST & TRACK MAP
-        </button>
-        <button class="tab-btn" data-tab="tab-pitwall">
-            <span class="tab-icon">🗼</span> PIT WALL
-        </button>
-        <button class="tab-btn" data-tab="tab-setup">
-            <span class="tab-icon">⚙️</span> TRACK DATABASE & SETUP ADVISOR
-        </button>
-        <button class="tab-btn" data-tab="tab-radio">
-            <span class="tab-icon">📻</span> TEAM RADIO & VOICE LOG
-        </button>
-        <button class="tab-btn" data-tab="tab-corners">
-            <span class="tab-icon">📊</span> CORNER DELTA & SPEED TRACE
-        </button>
-        <button class="tab-btn" data-tab="tab-report">
-            <span class="tab-icon">🗒️</span> RACE REPORT
-        </button>
-    </nav>
-
-    <!-- MAIN TAB 1: Live Broadcast & Track Map -->
-    <main class="tab-content active" id="tab-live">
-        <div class="dashboard-grid">
-            <!-- Left: F1 Timing Tower & Gaps -->
-            <section class="panel timing-tower-panel">
+    <!-- MAIN TAB 1: Live, four quadrants that fill the screen (no page scroll) -->
+    <main class="tab-content active fit-screen" id="tab-live">
+        <div class="quad-grid">
+            <!-- Q1 top-left: position, lap timing, sectors, tyres, car vitals, speed/gear/ERS -->
+            <section class="panel quad quad-car">
                 <div class="panel-header">
                     <span class="header-bar red"></span>
-                    <h2>TIMING TOWER</h2>
+                    <h2>CAR &amp; TIMING</h2>
                     <span class="session-badge" id="sessionBadge">--</span>
+                    <div class="compound-tag" id="compoundTag">MEDIUM</div>
                 </div>
 
-                <div class="timing-tower-content">
-                    <div class="driver-pos-card">
-                        <div class="pos-badge" id="posBadge">P1</div>
-                        <div class="driver-info">
-                            <span class="driver-name">PLAYER</span>
-                            <span class="lap-counter" id="lapCounter">LAP 1 / 52</span>
+                <div class="quad-body car-body">
+                    <div class="car-timing">
+                        <div class="driver-pos-card">
+                            <div class="pos-badge" id="posBadge">P1</div>
+                            <div class="driver-info">
+                                <span class="driver-name">PLAYER</span>
+                                <span class="lap-counter" id="lapCounter">LAP 1 / 52</span>
+                            </div>
+                            <div class="tyre-badge-mini compound-medium" id="towerCompoundBadge">M</div>
                         </div>
-                        <div class="tyre-badge-mini compound-medium" id="towerCompoundBadge">M</div>
-                    </div>
 
-                    <!-- Sector Splits -->
-                    <div class="sector-splits-card">
-                        <div class="card-title">SECTOR DELTAS</div>
+                        <div class="lap-times-table">
+                            <div class="time-row delta-row">
+                                <span class="row-label">LIVE DELTA</span>
+                                <span class="row-value delta-val" id="liveDeltaDisplay">---</span>
+                            </div>
+                            <div class="time-row">
+                                <span class="row-label">CURRENT LAP</span>
+                                <span class="row-value" id="currentLapTimeDisplay">0:00.000</span>
+                            </div>
+                            <div class="time-row">
+                                <span class="row-label">LAST LAP</span>
+                                <span class="row-value" id="lastLapTimeDisplay">0:00.000</span>
+                            </div>
+                            <div class="time-row highlight-purple">
+                                <span class="row-label">PERSONAL BEST</span>
+                                <span class="row-value" id="bestLapTimeDisplay">0:00.000</span>
+                            </div>
+                        </div>
+
                         <div class="sectors-row">
                             <div class="sector-box" id="sectorBox1">
-                                <span class="sec-label">SEC 1</span>
+                                <span class="sec-label">S1</span>
                                 <span class="sec-time" id="secTime1">--.---</span>
                                 <span class="sec-delta" id="secDelta1">--</span>
                             </div>
                             <div class="sector-box" id="sectorBox2">
-                                <span class="sec-label">SEC 2</span>
+                                <span class="sec-label">S2</span>
                                 <span class="sec-time" id="secTime2">--.---</span>
                                 <span class="sec-delta" id="secDelta2">--</span>
                             </div>
                             <div class="sector-box" id="sectorBox3">
-                                <span class="sec-label">SEC 3</span>
+                                <span class="sec-label">S3</span>
                                 <span class="sec-time" id="secTime3">--.---</span>
                                 <span class="sec-delta" id="secDelta3">--</span>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Lap Times & Live Delta -->
-                    <div class="lap-times-table">
-                        <div class="time-row delta-row">
-                            <span class="row-label">LIVE DELTA</span>
-                            <span class="row-value delta-val" id="liveDeltaDisplay">---</span>
+                    <div class="car-tyres">
+                        <div class="f1-car-silhouette">
+                            <div class="tyre-card tyre-fl" id="tyreCardFL">
+                                <div class="tyre-pos">FL</div>
+                                <div class="tyre-temp-main" id="tempFL">100°C</div>
+                                <div class="tyre-inner-temp" id="innerTempFL">Carcass: 95°C</div>
+                                <div class="tyre-wear-bar-wrap"><div class="tyre-wear-bar" id="wearBarFL" style="width: 0%;"></div></div>
+                                <div class="tyre-wear-txt" id="wearFL">Wear: 0.0%</div>
+                                <div class="tyre-psi" id="psiFL">23.5 PSI</div>
+                            </div>
+                            <div class="tyre-card tyre-fr" id="tyreCardFR">
+                                <div class="tyre-pos">FR</div>
+                                <div class="tyre-temp-main" id="tempFR">100°C</div>
+                                <div class="tyre-inner-temp" id="innerTempFR">Carcass: 95°C</div>
+                                <div class="tyre-wear-bar-wrap"><div class="tyre-wear-bar" id="wearBarFR" style="width: 0%;"></div></div>
+                                <div class="tyre-wear-txt" id="wearFR">Wear: 0.0%</div>
+                                <div class="tyre-psi" id="psiFR">23.5 PSI</div>
+                            </div>
+
+                            <div class="car-chassis-art">
+                                <div class="chassis-nose"></div>
+                                <div class="chassis-halo">HALO</div>
+                                <div class="chassis-cockpit">
+                                    <div class="steering-indicator" id="steerAngleGraphic"></div>
+                                </div>
+                                <div class="chassis-rear"></div>
+                            </div>
+
+                            <div class="tyre-card tyre-rl" id="tyreCardRL">
+                                <div class="tyre-pos">RL</div>
+                                <div class="tyre-temp-main" id="tempRL">100°C</div>
+                                <div class="tyre-inner-temp" id="innerTempRL">Carcass: 95°C</div>
+                                <div class="tyre-wear-bar-wrap"><div class="tyre-wear-bar" id="wearBarRL" style="width: 0%;"></div></div>
+                                <div class="tyre-wear-txt" id="wearRL">Wear: 0.0%</div>
+                                <div class="tyre-psi" id="psiRL">22.0 PSI</div>
+                            </div>
+                            <div class="tyre-card tyre-rr" id="tyreCardRR">
+                                <div class="tyre-pos">RR</div>
+                                <div class="tyre-temp-main" id="tempRR">100°C</div>
+                                <div class="tyre-inner-temp" id="innerTempRR">Carcass: 95°C</div>
+                                <div class="tyre-wear-bar-wrap"><div class="tyre-wear-bar" id="wearBarRR" style="width: 0%;"></div></div>
+                                <div class="tyre-wear-txt" id="wearRR">Wear: 0.0%</div>
+                                <div class="tyre-psi" id="psiRR">22.0 PSI</div>
+                            </div>
                         </div>
-                        <div class="time-row">
-                            <span class="row-label">CURRENT LAP</span>
-                            <span class="row-value" id="currentLapTimeDisplay">0:00.000</span>
-                        </div>
-                        <div class="time-row">
-                            <span class="row-label">LAST LAP</span>
-                            <span class="row-value" id="lastLapTimeDisplay">0:00.000</span>
-                        </div>
-                        <div class="time-row highlight-purple">
-                            <span class="row-label">PERSONAL BEST</span>
-                            <span class="row-value" id="bestLapTimeDisplay">0:00.000</span>
-                        </div>
-                        <div class="time-row" data-modes="race">
-                            <span class="row-label">RACE PACE (AVG 3)</span>
-                            <span class="row-value" id="racePaceDisplay">--:--.---</span>
+
+                        <div class="car-vital-row">
+                            <div class="vital-item">
+                                <span class="v-label">ENGINE</span>
+                                <span class="v-val" id="engineTempDisplay">90°C</span>
+                            </div>
+                            <div class="vital-item">
+                                <span class="v-label">WEATHER</span>
+                                <span class="v-val" id="weatherDisplay">DRY / CLEAR</span>
+                            </div>
+                            <div class="vital-item">
+                                <span class="v-label">DRS</span>
+                                <span class="v-val drs-off" id="drsStatusDisplay">DRS OFF</span>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Rival Gaps -->
-                    <div class="gaps-card" data-modes="race">
+                    <!-- Speed, gear, revs, pedals and ERS along the bottom of the quadrant -->
+                    <div class="broadcast-telemetry-ribbon">
+                        <div class="speedo-block">
+                            <div class="speed-val" id="speedDisplay">0</div>
+                            <div class="speed-unit">KM/H</div>
+                        </div>
+                        <div class="gear-block">
+                            <div class="gear-label">GEAR</div>
+                            <div class="gear-val" id="gearDisplay">N</div>
+                        </div>
+                        <div class="revs-and-pedals-block">
+                            <div class="rev-counter-strip">
+                                <div class="rev-led-bar" id="revLedBar"></div>
+                                <div class="rpm-number" id="rpmDisplay">0 RPM</div>
+                            </div>
+                            <div class="pedal-inputs">
+                                <div class="pedal-bar-wrap">
+                                    <span class="p-label">THR</span>
+                                    <div class="bar-bg"><div class="bar-fill throttle-bar" id="throttleBar" style="width: 0%;"></div></div>
+                                    <span class="p-pct" id="throttleText">0%</span>
+                                </div>
+                                <div class="pedal-bar-wrap">
+                                    <span class="p-label">BRK</span>
+                                    <div class="bar-bg"><div class="bar-fill brake-bar" id="brakeBar" style="width: 0%;"></div></div>
+                                    <span class="p-pct" id="brakeText">0%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="ers-block">
+                            <div class="ers-header">
+                                <span>ERS</span>
+                                <span class="ers-pct-text" id="ersPctText">100%</span>
+                            </div>
+                            <div class="ers-bar-wrap">
+                                <div class="ers-bar-fill" id="ersBarFill" style="width: 100%;"></div>
+                            </div>
+                            <div class="ers-mode-label" id="ersModeText">DEPLOY: BALANCED</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Q2 top-right: live track map, scaled to its quadrant -->
+            <section class="panel quad track-map-panel">
+                <div class="panel-header">
+                    <span class="header-bar teal"></span>
+                    <h2>TRACK MAP</h2>
+                    <div class="map-legend">
+                        <span class="legend-item"><span class="legend-color dot-car"></span> Car</span>
+                        <span class="legend-item"><span class="legend-color dot-brake"></span> Braking</span>
+                        <span class="legend-item"><span class="legend-color dot-ers"></span> ERS</span>
+                        <span class="legend-item"><span class="legend-color dot-pit"></span> Pit lane</span>
+                    </div>
+                </div>
+
+                <div class="track-map-wrapper">
+                    <canvas id="trackCanvas" width="700" height="420"></canvas>
+                    <div class="canvas-overlay-stats">
+                        <div class="stat-pill"><span class="lbl">X/Z</span> <span id="posCoordsDisplay">0.0, 0.0</span></div>
+                        <div class="stat-pill"><span class="lbl">LAT</span> <span id="latGDisplay">0.00 G</span></div>
+                        <div class="stat-pill"><span class="lbl">LON</span> <span id="lonGDisplay">0.00 G</span></div>
+                    </div>
+                    <div class="canvas-controls">
+                        <button class="mini-btn" id="btnFitMap" title="Recenter and Fit Map">⛶ Fit</button>
+                        <button class="mini-btn" id="btnClearTrace" title="Forget this track's saved map and record it again on the next clean lap">↺ Reset Map</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Q3 bottom-left: the race around us -->
+            <section class="panel quad quad-race">
+                <div class="panel-header">
+                    <span class="header-bar yellow"></span>
+                    <h2>RACE</h2>
+                </div>
+                <div class="quad-body">
+                    <div class="q-tiles" data-modes="race">
                         <div class="gap-item">
                             <span class="gap-label">CAR AHEAD</span>
                             <span class="gap-val" id="gapAheadDisplay">INTERVAL --</span>
@@ -145,202 +265,52 @@
                             <span class="gap-label">CAR BEHIND</span>
                             <span class="gap-val" id="gapBehindDisplay">INTERVAL --</span>
                         </div>
+                        <div class="gap-item">
+                            <span class="gap-label">RACE PACE (AVG 3)</span>
+                            <span class="gap-val" id="racePaceDisplay">--:--.---</span>
+                        </div>
                     </div>
 
-                    <!-- Strategy / Pit Window Box -->
+                    <div class="q-section" data-modes="race" id="threatsCard" style="display:none;">
+                        <div class="card-title">NEARBY THREATS</div>
+                        <div class="q-list" id="threatsList"></div>
+                    </div>
+
+                    <div class="q-section" id="raceControlCard" style="display:none;">
+                        <div class="card-title">RACE CONTROL</div>
+                        <div class="q-list q-list-wide" id="raceControlList"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Q4 bottom-right: strategy, pit window, tyre/fuel model -->
+            <section class="panel quad quad-strategy">
+                <div class="panel-header">
+                    <span class="header-bar purple"></span>
+                    <h2>STRATEGY</h2>
+                </div>
+                <div class="quad-body">
                     <div class="pit-window-box" data-modes="race practice">
                         <span class="pit-title">PIT STOP WINDOW</span>
                         <span class="pit-val" id="pitWindowDisplay">Calculating ideal window...</span>
                     </div>
 
-                    <!-- Nearby Opponent Threats -->
-                    <div class="gaps-card" data-modes="race" id="threatsCard" style="display:none;">
-                        <div class="card-title">NEARBY THREATS</div>
-                        <div id="threatsList"></div>
-                    </div>
-
-                    <!-- Race strategy: stop count, compounds, undercut / overcut -->
-                    <div class="gaps-card" data-modes="race" id="strategyCard" style="display:none;">
+                    <div class="q-section" data-modes="race" id="strategyCard" style="display:none;">
                         <div class="card-title">RACE STRATEGY</div>
-                        <div id="strategyList"></div>
+                        <div class="q-list" id="strategyList"></div>
                     </div>
 
-                    <!-- Fitted tyre / fuel models: 80% ranges, not single numbers -->
-                    <div class="gaps-card" id="modelCard" style="display:none;">
+                    <div class="q-section" id="modelCard" style="display:none;">
                         <div class="card-title">TYRE &amp; FUEL MODEL <span id="modelBasis" class="threat-low"></span></div>
-                        <div id="modelList"></div>
-                    </div>
-
-                    <!-- Race Control feed: penalties, flags, overtakes, pit stops, retirements -->
-                    <div class="gaps-card" id="raceControlCard" style="display:none;">
-                        <div class="card-title">RACE CONTROL</div>
-                        <div id="raceControlList"></div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Center: Interactive Live Track Map -->
-            <section class="panel track-map-panel">
-                <div class="panel-header">
-                    <span class="header-bar teal"></span>
-                    <h2>LIVE TRACK MAP & TELEMETRY TRAIL</h2>
-                    <div class="map-legend">
-                        <span class="legend-item"><span class="legend-color dot-car"></span> Car</span>
-                        <span class="legend-item"><span class="legend-color dot-brake"></span> Braking Zone</span>
-                        <span class="legend-item"><span class="legend-color dot-ers"></span> ERS Deploy</span>
-                        <span class="legend-item"><span class="legend-color dot-pit"></span> Pit Lane</span>
-                    </div>
-                </div>
-
-                <div class="track-map-wrapper">
-                    <canvas id="trackCanvas" width="700" height="520"></canvas>
-                    <div class="canvas-overlay-stats">
-                        <div class="stat-pill"><span class="lbl">POS X/Z:</span> <span id="posCoordsDisplay">0.0, 0.0</span></div>
-                        <div class="stat-pill"><span class="lbl">LAT G:</span> <span id="latGDisplay">0.00 G</span></div>
-                        <div class="stat-pill"><span class="lbl">LON G:</span> <span id="lonGDisplay">0.00 G</span></div>
-                    </div>
-                    <div class="canvas-controls">
-                        <button class="mini-btn" id="btnFitMap" title="Recenter and Fit Map">⛶ Fit Map</button>
-                        <button class="mini-btn" id="btnClearTrace" title="Forget this track's saved map and record it again on the next clean lap">↺ Reset Map</button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Right: F1 Tyre Thermal Heatmap & Status -->
-            <section class="panel tyre-panel">
-                <div class="panel-header">
-                    <span class="header-bar yellow"></span>
-                    <h2>TYRE THERMALS & DEGRADATION</h2>
-                    <div class="compound-tag" id="compoundTag">MEDIUM</div>
-                </div>
-
-                <div class="tyre-content">
-                    <div class="f1-car-silhouette">
-                        <!-- Front Left Tyre -->
-                        <div class="tyre-card tyre-fl" id="tyreCardFL">
-                            <div class="tyre-pos">FRONT LEFT</div>
-                            <div class="tyre-temp-main" id="tempFL">100°C</div>
-                            <div class="tyre-inner-temp" id="innerTempFL">Carcass: 95°C</div>
-                            <div class="tyre-wear-bar-wrap">
-                                <div class="tyre-wear-bar" id="wearBarFL" style="width: 0%;"></div>
-                            </div>
-                            <div class="tyre-wear-txt" id="wearFL">Wear: 0.0%</div>
-                            <div class="tyre-psi" id="psiFL">23.5 PSI</div>
-                        </div>
-
-                        <!-- Front Right Tyre -->
-                        <div class="tyre-card tyre-fr" id="tyreCardFR">
-                            <div class="tyre-pos">FRONT RIGHT</div>
-                            <div class="tyre-temp-main" id="tempFR">100°C</div>
-                            <div class="tyre-inner-temp" id="innerTempFR">Carcass: 95°C</div>
-                            <div class="tyre-wear-bar-wrap">
-                                <div class="tyre-wear-bar" id="wearBarFR" style="width: 0%;"></div>
-                            </div>
-                            <div class="tyre-wear-txt" id="wearFR">Wear: 0.0%</div>
-                            <div class="tyre-psi" id="psiFR">23.5 PSI</div>
-                        </div>
-
-                        <!-- Center Car Silhouette Graphic -->
-                        <div class="car-chassis-art">
-                            <div class="chassis-nose"></div>
-                            <div class="chassis-halo">HALO</div>
-                            <div class="chassis-cockpit">
-                                <div class="steering-indicator" id="steerAngleGraphic"></div>
-                            </div>
-                            <div class="chassis-rear"></div>
-                        </div>
-
-                        <!-- Rear Left Tyre -->
-                        <div class="tyre-card tyre-rl" id="tyreCardRL">
-                            <div class="tyre-pos">REAR LEFT</div>
-                            <div class="tyre-temp-main" id="tempRL">100°C</div>
-                            <div class="tyre-inner-temp" id="innerTempRL">Carcass: 95°C</div>
-                            <div class="tyre-wear-bar-wrap">
-                                <div class="tyre-wear-bar" id="wearBarRL" style="width: 0%;"></div>
-                            </div>
-                            <div class="tyre-wear-txt" id="wearRL">Wear: 0.0%</div>
-                            <div class="tyre-psi" id="psiRL">22.0 PSI</div>
-                        </div>
-
-                        <!-- Rear Right Tyre -->
-                        <div class="tyre-card tyre-rr" id="tyreCardRR">
-                            <div class="tyre-pos">REAR RIGHT</div>
-                            <div class="tyre-temp-main" id="tempRR">100°C</div>
-                            <div class="tyre-inner-temp" id="innerTempRR">Carcass: 95°C</div>
-                            <div class="tyre-wear-bar-wrap">
-                                <div class="tyre-wear-bar" id="wearBarRR" style="width: 0%;"></div>
-                            </div>
-                            <div class="tyre-wear-txt" id="wearRR">Wear: 0.0%</div>
-                            <div class="tyre-psi" id="psiRR">22.0 PSI</div>
-                        </div>
-                    </div>
-
-                    <!-- Ancillary Engine & Weather Box -->
-                    <div class="car-vital-row">
-                        <div class="vital-item">
-                            <span class="v-label">ENGINE TEMP</span>
-                            <span class="v-val" id="engineTempDisplay">90°C</span>
-                        </div>
-                        <div class="vital-item">
-                            <span class="v-label">WEATHER</span>
-                            <span class="v-val" id="weatherDisplay">DRY / CLEAR</span>
-                        </div>
-                        <div class="vital-item">
-                            <span class="v-label">DRS STATUS</span>
-                            <span class="v-val drs-off" id="drsStatusDisplay">DRS OFF</span>
-                        </div>
+                        <div class="q-list" id="modelList"></div>
                     </div>
                 </div>
             </section>
         </div>
-
-        <!-- Bottom Telemetry Broadcast Banner -->
-        <section class="panel broadcast-telemetry-ribbon">
-            <div class="speedo-block">
-                <div class="speed-val" id="speedDisplay">0</div>
-                <div class="speed-unit">KM/H</div>
-            </div>
-
-            <div class="gear-block">
-                <div class="gear-label">GEAR</div>
-                <div class="gear-val" id="gearDisplay">N</div>
-            </div>
-
-            <div class="revs-and-pedals-block">
-                <div class="rev-counter-strip">
-                    <div class="rev-led-bar" id="revLedBar"></div>
-                    <div class="rpm-number" id="rpmDisplay">0 RPM</div>
-                </div>
-
-                <div class="pedal-inputs">
-                    <div class="pedal-bar-wrap">
-                        <span class="p-label">THR</span>
-                        <div class="bar-bg"><div class="bar-fill throttle-bar" id="throttleBar" style="width: 0%;"></div></div>
-                        <span class="p-pct" id="throttleText">0%</span>
-                    </div>
-                    <div class="pedal-bar-wrap">
-                        <span class="p-label">BRK</span>
-                        <div class="bar-bg"><div class="bar-fill brake-bar" id="brakeBar" style="width: 0%;"></div></div>
-                        <span class="p-pct" id="brakeText">0%</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="ers-block">
-                <div class="ers-header">
-                    <span>ERS ENERGY STORE</span>
-                    <span class="ers-pct-text" id="ersPctText">100%</span>
-                </div>
-                <div class="ers-bar-wrap">
-                    <div class="ers-bar-fill" id="ersBarFill" style="width: 100%;"></div>
-                </div>
-                <div class="ers-mode-label" id="ersModeText">DEPLOY: BALANCED</div>
-            </div>
-        </section>
     </main>
 
-    <!-- MAIN TAB: Pit Wall (full-field timing, race chart, stints, strategy odds) -->
-    <main class="tab-content" id="tab-pitwall">
+    <!-- MAIN TAB: Pit Wall (full-field timing, race chart, stints, strategy odds), fits the screen -->
+    <main class="tab-content fit-screen" id="tab-pitwall">
         <div class="pitwall-grid">
             <section class="panel pw-tower-panel">
                 <div class="panel-header">
@@ -348,87 +318,87 @@
                     <h2>TIMING TOWER</h2>
                     <span class="session-badge" id="pwLapBadge">LAP -- / --</span>
                 </div>
-                <table class="pw-tower">
-                    <thead>
-                        <tr>
-                            <th class="c-pos">POS</th>
-                            <th class="c-drv">DRIVER</th>
-                            <th class="c-num" id="pwGapHead">GAP</th>
-                            <th class="c-num">INT</th>
-                            <th class="c-num c-last">LAST</th>
-                            <th class="c-num c-best">BEST</th>
-                            <th class="c-tyre">TYRE</th>
-                            <th class="c-pit">PIT</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pwTowerBody">
-                        <tr class="pw-empty"><td colspan="8">Waiting for the field&hellip;</td></tr>
-                    </tbody>
-                </table>
+                <div class="pw-tower-wrap">
+                    <table class="pw-tower">
+                        <thead>
+                            <tr>
+                                <th class="c-pos">POS</th>
+                                <th class="c-drv">DRIVER</th>
+                                <th class="c-num" id="pwGapHead">GAP</th>
+                                <th class="c-num">INT</th>
+                                <th class="c-num c-last">LAST</th>
+                                <th class="c-num c-best">BEST</th>
+                                <th class="c-tyre">TYRE</th>
+                                <th class="c-pit">PIT</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pwTowerBody">
+                            <tr class="pw-empty"><td colspan="8">Waiting for the field&hellip;</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </section>
 
-            <div class="pw-right">
-                <section class="panel pw-chart-panel">
-                    <div class="panel-header">
-                        <span class="header-bar teal"></span>
-                        <h2>GAP TO LEADER</h2>
-                        <span class="pw-hint">Each car's gap at the line, lap by lap. Leader on top.</span>
-                    </div>
-                    <div class="pw-chart-wrap">
-                        <canvas id="gapChart"></canvas>
-                        <div class="pw-chart-empty" id="gapChartEmpty">The race chart starts when the leader completes lap 1.</div>
-                    </div>
-                </section>
+            <section class="panel pw-chart-panel">
+                <div class="panel-header">
+                    <span class="header-bar teal"></span>
+                    <h2>GAP TO LEADER</h2>
+                    <span class="pw-hint">Each car's gap at the line, lap by lap. Leader on top.</span>
+                </div>
+                <div class="pw-chart-wrap">
+                    <canvas id="gapChart"></canvas>
+                    <div class="pw-chart-empty" id="gapChartEmpty">The race chart starts when the leader completes lap 1.</div>
+                </div>
+            </section>
 
-                <section class="panel pw-stint-panel">
-                    <div class="panel-header">
-                        <span class="header-bar yellow"></span>
-                        <h2>TYRE STINTS</h2>
-                        <div class="pw-legend">
-                            <span class="pw-tyre compound-soft">S</span>
-                            <span class="pw-tyre compound-medium">M</span>
-                            <span class="pw-tyre compound-hard">H</span>
-                            <span class="pw-tyre compound-inter">I</span>
-                            <span class="pw-tyre compound-wet">W</span>
-                            <span class="pw-legend-plan">Our plan</span>
-                        </div>
+            <section class="panel pw-stint-panel">
+                <div class="panel-header">
+                    <span class="header-bar yellow"></span>
+                    <h2>TYRE STINTS</h2>
+                    <div class="pw-legend">
+                        <span class="pw-tyre compound-soft">S</span>
+                        <span class="pw-tyre compound-medium">M</span>
+                        <span class="pw-tyre compound-hard">H</span>
+                        <span class="pw-tyre compound-inter">I</span>
+                        <span class="pw-tyre compound-wet">W</span>
+                        <span class="pw-legend-plan">Our plan</span>
                     </div>
-                    <div class="pw-stints" id="pwStints">
-                        <div class="pw-empty-block">No tyre data yet.</div>
-                    </div>
-                </section>
+                </div>
+                <div class="pw-stints" id="pwStints">
+                    <div class="pw-empty-block">No tyre data yet.</div>
+                </div>
+            </section>
 
-                <section class="panel pw-odds-panel">
-                    <div class="panel-header">
-                        <span class="header-bar purple"></span>
-                        <h2>STRATEGY PROBABILITIES</h2>
-                        <span class="pw-hint" id="pwOddsMeta">Monte Carlo race simulation</span>
-                    </div>
-                    <div class="pw-odds" id="pwOdds">
-                        <div class="pw-empty-block" id="pwOddsEmpty">The race simulation runs once the race is under way.</div>
-                        <div class="pw-odds-body" id="pwOddsBody" style="display:none;">
-                            <div class="pw-tiles">
-                                <div class="pw-tile"><span class="pw-tile-label">WIN</span><span class="pw-tile-val" id="pwWin">--</span><span class="pw-tile-trend" id="pwWinTrend"></span></div>
-                                <div class="pw-tile"><span class="pw-tile-label">PODIUM</span><span class="pw-tile-val" id="pwPodium">--</span><span class="pw-tile-trend" id="pwPodiumTrend"></span></div>
-                                <div class="pw-tile"><span class="pw-tile-label">POINTS</span><span class="pw-tile-val" id="pwPoints">--</span><span class="pw-tile-trend" id="pwPointsTrend"></span></div>
-                                <div class="pw-tile"><span class="pw-tile-label">EXPECTED</span><span class="pw-tile-val" id="pwExpected">--</span><span class="pw-tile-trend" id="pwExpectedRange"></span></div>
-                            </div>
-                            <div class="pw-odds-cols">
-                                <div>
-                                    <div class="card-title">PLAN ODDS <span class="pw-sub">share of races each plan comes out best</span></div>
-                                    <div id="pwPlans"></div>
-                                </div>
-                                <div>
-                                    <div class="card-title">FINISHING POSITION <span class="pw-sub">recommended plan</span></div>
-                                    <div class="pw-dist" id="pwDist"></div>
-                                    <div class="pw-factors" id="pwFactors"></div>
-                                </div>
-                            </div>
-                            <div class="pw-trend-wrap"><canvas id="oddsChart"></canvas></div>
+            <section class="panel pw-odds-panel">
+                <div class="panel-header">
+                    <span class="header-bar purple"></span>
+                    <h2>STRATEGY PROBABILITIES</h2>
+                    <span class="pw-hint" id="pwOddsMeta">Monte Carlo race simulation</span>
+                </div>
+                <div class="pw-odds" id="pwOdds">
+                    <div class="pw-empty-block" id="pwOddsEmpty">The race simulation runs once the race is under way.</div>
+                    <div class="pw-odds-body" id="pwOddsBody" style="display:none;">
+                        <div class="pw-tiles">
+                            <div class="pw-tile"><span class="pw-tile-label">WIN</span><span class="pw-tile-val" id="pwWin">--</span><span class="pw-tile-trend" id="pwWinTrend"></span></div>
+                            <div class="pw-tile"><span class="pw-tile-label">PODIUM</span><span class="pw-tile-val" id="pwPodium">--</span><span class="pw-tile-trend" id="pwPodiumTrend"></span></div>
+                            <div class="pw-tile"><span class="pw-tile-label">POINTS</span><span class="pw-tile-val" id="pwPoints">--</span><span class="pw-tile-trend" id="pwPointsTrend"></span></div>
+                            <div class="pw-tile"><span class="pw-tile-label">EXPECTED</span><span class="pw-tile-val" id="pwExpected">--</span><span class="pw-tile-trend" id="pwExpectedRange"></span></div>
                         </div>
+                        <div class="pw-odds-cols">
+                            <div class="pw-plans-col">
+                                <div class="card-title">PLAN ODDS <span class="pw-sub">share of races each plan comes out best</span></div>
+                                <div id="pwPlans"></div>
+                            </div>
+                            <div>
+                                <div class="card-title">FINISHING POSITION <span class="pw-sub">recommended plan</span></div>
+                                <div class="pw-dist" id="pwDist"></div>
+                                <div class="pw-factors" id="pwFactors"></div>
+                            </div>
+                        </div>
+                        <div class="pw-trend-wrap"><canvas id="oddsChart"></canvas></div>
                     </div>
-                </section>
-            </div>
+                </div>
+            </section>
         </div>
     </main>
 
