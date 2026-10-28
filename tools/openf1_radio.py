@@ -203,12 +203,29 @@ def decode_audio(path: Path, ffmpeg: str = 'ffmpeg') -> Any:
     return np.frombuffer(result.stdout, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+def load_whisper(whisper_model: Any, model_name: str, device: str) -> Any:
+    """Whisper on the GPU when it starts, else on the CPU (slower, same result).
+
+    On Colab the GPU build of CTranslate2 can be newer than the machine's NVIDIA driver
+    ("CUDA driver version is insufficient for CUDA runtime version").
+    """
+    if device == 'cpu':
+        return whisper_model(model_name, device='cpu', compute_type='int8')
+    try:
+        return whisper_model(model_name, device=device, compute_type='auto')
+    except (RuntimeError, ValueError) as error:
+        if 'cuda' not in str(error).lower():
+            raise
+        print(f'GPU could not start ({error}). Transcribing on the CPU instead; this is slower.', flush=True)
+        return whisper_model(model_name, device='cpu', compute_type='int8')
+
+
 def transcribe(out: Path, model_name: str = 'small.en', device: str = 'auto') -> int:
     """Writes <session>/transcripts.json: {filename: [{start, end, text}, ...]}."""
     from faster_whisper import WhisperModel  # optional: only this step needs it
 
     ffmpeg = shutil.which('ffmpeg')
-    model = WhisperModel(model_name, device=device, compute_type='auto')
+    model = load_whisper(WhisperModel, model_name, device)
     done = failed = 0
     for folder in sorted(p for p in out.iterdir() if (p / 'radio').is_dir()):
         target = folder / 'transcripts.json'

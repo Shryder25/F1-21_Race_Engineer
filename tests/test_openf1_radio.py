@@ -310,6 +310,29 @@ class TranscribeTest(unittest.TestCase):
             self.assertEqual(transcripts, {'44_1.mp3': [{'start': 0.0, 'end': 1.0, 'text': 'Box this lap.'}]})
             self.assertIn('1 unreadable clips skipped', log.getvalue())
 
+    def test_whisper_falls_back_to_the_cpu_when_cuda_cannot_start(self):
+        made = []
+
+        def fake_model(name, device, compute_type):
+            made.append((device, compute_type))
+            if device != 'cpu':
+                raise RuntimeError(
+                    'CUDA failed with error CUDA driver version is insufficient for CUDA runtime version'
+                )
+            return 'model'
+
+        with contextlib.redirect_stdout(io.StringIO()) as log:
+            self.assertEqual(of1.load_whisper(fake_model, 'small.en', 'cuda'), 'model')
+        self.assertEqual(made, [('cuda', 'auto'), ('cpu', 'int8')])
+        self.assertIn('on the CPU', log.getvalue())
+
+    def test_other_whisper_errors_are_not_hidden(self):
+        def broken(name, device, compute_type):
+            raise RuntimeError('model files missing')
+
+        with self.assertRaises(RuntimeError):
+            of1.load_whisper(broken, 'small.en', 'cuda')
+
 
 if __name__ == '__main__':
     unittest.main()
