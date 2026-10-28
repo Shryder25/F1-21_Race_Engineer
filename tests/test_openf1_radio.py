@@ -232,6 +232,40 @@ class FetchTest(unittest.TestCase):
             of1.fetch(out, [2024], fetcher)  # everything cached: only the season list is asked again
             self.assertEqual(len(calls), first_run + 1)
 
+    def test_error_pages_are_not_saved_as_clips_and_old_ones_are_fetched_again(self):
+        bodies = {'c0': b'<?xml version="1.0"?><Error><Code>AccessDenied</Code></Error>', 'c1': b'ID3good'}
+
+        def opener(url, timeout):
+            if '/sessions?' in url:
+                return FakeResponse(json.dumps([SESSION]).encode())
+            if '/team_radio?' in url:
+                clips = [
+                    {'driver_number': 44, 'date': iso(i), 'recording_url': f'https://x/c{i}.mp3'}
+                    for i in (0, 1)
+                ]
+                return FakeResponse(json.dumps(clips).encode())
+            if url.endswith('.mp3'):
+                return FakeResponse(bodies[url.rsplit('/', 1)[1][:-4]])
+            return FakeResponse(b'[]')
+
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()) as log:
+            out = pathlib.Path(tmp)
+            radio = out / '9001' / 'radio'
+            radio.mkdir(parents=True)
+            stale = radio / of1.clip_filename({'driver_number': 44, 'date': iso(1)})
+            stale.write_bytes(b'<html>Forbidden</html>')  # saved by an older version
+            of1.fetch(out, [2024], of1.Fetcher(gap_s=0, opener=opener))
+            self.assertEqual({p.name: p.read_bytes() for p in radio.glob('*.mp3')}, {stale.name: b'ID3good'})
+            self.assertIn('server sent no audio', log.getvalue())
+            self.assertIn('AccessDenied', log.getvalue())
+
+    def test_looks_like_audio(self):
+        self.assertTrue(of1.looks_like_audio(b'ID3\x04\x00'))
+        self.assertTrue(of1.looks_like_audio(bytes([0xFF, 0xFB, 0x90])))
+        self.assertTrue(of1.looks_like_audio(b'\x00\x00\x00\x20ftypM4A '))
+        self.assertFalse(of1.looks_like_audio(b'<html><body>403</body></html>'))
+        self.assertFalse(of1.looks_like_audio(b''))
+
     def test_refused_clips_are_skipped_and_audio_stops_after_a_run_of_refusals(self):
         clips = [
             {'driver_number': 44, 'date': iso(i), 'recording_url': f'https://x/c{i}.mp3'}
@@ -309,6 +343,7 @@ class TranscribeTest(unittest.TestCase):
             transcripts = json.loads((radio.parent / 'transcripts.json').read_text())
             self.assertEqual(transcripts, {'44_1.mp3': [{'start': 0.0, 'end': 1.0, 'text': 'Box this lap.'}]})
             self.assertIn('1 unreadable clips skipped', log.getvalue())
+            self.assertIn('not audio, skipped 44_2.mp3', log.getvalue())
 
     def test_whisper_falls_back_to_the_cpu_when_cuda_cannot_start(self):
         made = []

@@ -115,6 +115,20 @@ def race_sessions(fetcher: Fetcher, years: Iterable[int]) -> list[Row]:
     return sorted(sessions, key=lambda s: s.get('date_start') or '')
 
 
+def looks_like_audio(data: bytes) -> bool:
+    """True for MP3 (ID3 tag or MPEG frame sync), M4A/MP4, Ogg or WAV data.
+
+    A server can answer 200 OK with an HTML or XML error page; that must not be saved as a clip.
+    """
+    if data[:3] == b'ID3' or data[:4] in (b'OggS', b'RIFF', b'fLaC') or data[4:8] == b'ftyp':
+        return True
+    return len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0
+
+
+def _preview(data: bytes) -> str:
+    return data[:80].decode('utf-8', 'replace').replace('\n', ' ').strip()
+
+
 def clip_filename(clip: Row) -> str:
     stamp = re.sub(r'[^0-9]', '', str(clip.get('date', '')))[:17]
     return f'{clip.get("driver_number")}_{stamp}.mp3'
@@ -141,6 +155,8 @@ def fetch(out: Path, years: list[int], fetcher: Fetcher | None = None, audio: bo
         for clip in radio:
             target = folder / 'radio' / clip_filename(clip)
             url = clip.get('recording_url')
+            if target.exists() and not looks_like_audio(target.read_bytes()[:16]):
+                target.unlink()  # an error page saved by an older version: fetch it again
             if not url or target.exists() or not audio:
                 continue
             try:
@@ -154,6 +170,18 @@ def fetch(out: Path, years: list[int], fetcher: Fetcher | None = None, audio: bo
                         f'{refused_in_a_row} clips in a row were refused by the audio server. '
                         'Carrying on with timing data only; run fetch again later to pick up '
                         'the missing clips.',
+                        flush=True,
+                    )
+                    audio = False
+                continue
+            if data and not looks_like_audio(data):
+                refused += 1
+                refused_in_a_row += 1
+                print(f'  skipped clip {target.name}: server sent no audio ({_preview(data)!r})', flush=True)
+                if refused_in_a_row >= MAX_REFUSED_IN_A_ROW:
+                    print(
+                        f'{refused_in_a_row} clips in a row came back without audio. '
+                        'Carrying on with timing data only.',
                         flush=True,
                     )
                     audio = False
@@ -233,6 +261,14 @@ def transcribe(out: Path, model_name: str = 'small.en', device: str = 'auto') ->
         for mp3 in sorted((folder / 'radio').glob('*.mp3')):
             if mp3.name in transcripts:
                 continue
+            head = mp3.read_bytes()[:80]
+            if not looks_like_audio(head):
+                failed += 1
+                print(
+                    f'  not audio, skipped {mp3.name} (starts {_preview(head)!r}); run fetch again',
+                    flush=True,
+                )
+                continue
             try:
                 audio = decode_audio(mp3, ffmpeg) if ffmpeg else str(mp3)
                 segments, _ = model.transcribe(audio, language='en', vad_filter=True, beam_size=5)
@@ -242,7 +278,10 @@ def transcribe(out: Path, model_name: str = 'small.en', device: str = 'auto') ->
                 ]
             except (subprocess.CalledProcessError, ValueError, RuntimeError) as error:  # a damaged clip
                 failed += 1
-                print(f'  could not read {mp3.name}: {error}', flush=True)
+                reason = error
+                if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+                    reason = error.stderr.decode('utf-8', 'replace').strip().splitlines()[-1]
+                print(f'  could not read {mp3.name}: {reason}', flush=True)
                 continue
             done += 1
             if done % 50 == 0:
