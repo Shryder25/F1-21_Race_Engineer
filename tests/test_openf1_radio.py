@@ -1,5 +1,6 @@
 """Real-radio dataset builder (tools/openf1_radio.py): situation rebuild, speaker split, tags, build."""
 
+import contextlib
 import io
 import json
 import pathlib
@@ -227,6 +228,35 @@ class FetchTest(unittest.TestCase):
             first_run = len(calls)
             of1.fetch(out, [2024], fetcher)  # everything cached: only the season list is asked again
             self.assertEqual(len(calls), first_run + 1)
+
+    def test_refused_clips_are_skipped_and_audio_stops_after_a_run_of_refusals(self):
+        clips = [
+            {'driver_number': 44, 'date': iso(i), 'recording_url': f'https://x/c{i}.mp3'}
+            for i in range(of1.MAX_REFUSED_IN_A_ROW + 10)
+        ]
+        audio_calls = []
+
+        def opener(url, timeout):
+            if '/sessions?' in url:
+                return FakeResponse(json.dumps([SESSION]).encode())
+            if '/team_radio?' in url:
+                return FakeResponse(json.dumps(clips).encode())
+            if url.endswith('.mp3'):
+                audio_calls.append(url)
+                if url.endswith('/c0.mp3'):
+                    return FakeResponse(b'ID3audio')
+                raise urllib.error.HTTPError(url, 403, 'Forbidden', None, None)
+            return FakeResponse(b'[]')
+
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()) as log:
+            out = pathlib.Path(tmp)
+            self.assertEqual(of1.fetch(out, [2024], of1.Fetcher(gap_s=0, opener=opener)), len(clips))
+            saved = list((out / '9001' / 'radio').glob('*.mp3'))
+            self.assertEqual([p.read_bytes() for p in saved], [b'ID3audio'])
+            # One good clip, then refusals until the limit; the rest aren't asked for.
+            self.assertEqual(len(audio_calls), 1 + of1.MAX_REFUSED_IN_A_ROW)
+            self.assertIn('timing data only', log.getvalue())
+            self.assertTrue((out / '9001' / 'laps.json').exists())
 
 
 if __name__ == '__main__':
