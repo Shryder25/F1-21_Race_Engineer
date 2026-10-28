@@ -4,8 +4,11 @@ import contextlib
 import io
 import json
 import pathlib
+import shutil
+import subprocess
 import sys
 import tempfile
+import types
 import unittest
 import urllib.error
 from datetime import UTC, datetime, timedelta
@@ -257,6 +260,55 @@ class FetchTest(unittest.TestCase):
             self.assertEqual(len(audio_calls), 1 + of1.MAX_REFUSED_IN_A_ROW)
             self.assertIn('timing data only', log.getvalue())
             self.assertTrue((out / '9001' / 'laps.json').exists())
+
+
+class TranscribeTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'needs ffmpeg')
+    def test_clips_are_decoded_with_ffmpeg_and_handed_to_whisper_as_samples(self):
+        seen = []
+
+        class FakeModel:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def transcribe(self, audio, **kwargs):
+                seen.append(audio)
+                return [types.SimpleNamespace(start=0.0, end=1.0, text=' Box this lap. ')], None
+
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()) as log:
+            radio = pathlib.Path(tmp) / '9001' / 'radio'
+            radio.mkdir(parents=True)
+            good = radio / '44_1.mp3'
+            subprocess.run(
+                [
+                    'ffmpeg',
+                    '-loglevel',
+                    'error',
+                    '-f',
+                    'lavfi',
+                    '-i',
+                    'sine=frequency=440:duration=1',
+                    str(good),
+                ],
+                check=True,
+            )
+            (radio / '44_2.mp3').write_bytes(b'not audio')
+            fake = types.ModuleType('faster_whisper')
+            fake.WhisperModel = FakeModel
+            sys.modules['faster_whisper'], saved = fake, sys.modules.get('faster_whisper')
+            try:
+                self.assertEqual(of1.transcribe(pathlib.Path(tmp)), 1)
+            finally:
+                if saved is None:
+                    del sys.modules['faster_whisper']
+                else:
+                    sys.modules['faster_whisper'] = saved
+            self.assertEqual(len(seen), 1)
+            self.assertEqual(str(seen[0].dtype), 'float32')
+            self.assertAlmostEqual(len(seen[0]) / of1.SAMPLE_RATE, 1.0, delta=0.1)
+            transcripts = json.loads((radio.parent / 'transcripts.json').read_text())
+            self.assertEqual(transcripts, {'44_1.mp3': [{'start': 0.0, 'end': 1.0, 'text': 'Box this lap.'}]})
+            self.assertIn('1 unreadable clips skipped', log.getvalue())
 
 
 if __name__ == '__main__':

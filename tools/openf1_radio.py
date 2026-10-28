@@ -32,6 +32,8 @@ import argparse
 import bisect
 import json
 import re
+import shutil
+import subprocess
 import sys
 import time
 import urllib.error
@@ -167,28 +169,70 @@ def fetch(out: Path, years: list[int], fetcher: Fetcher | None = None, audio: bo
 # ── transcription ───────────────────────────────────────────────────────
 
 
+SAMPLE_RATE = 16000  # what Whisper expects
+
+
+def decode_audio(path: Path, ffmpeg: str = 'ffmpeg') -> Any:
+    """The clip as 16 kHz mono float32 samples, decoded by ffmpeg.
+
+    faster-whisper's own decoder (PyAV) breaks when Colab has a different PyAV version
+    installed ("open() got an unexpected keyword argument 'metadata_errors'"), so the
+    audio is decoded here and Whisper gets the samples.
+    """
+    import numpy as np
+
+    result = subprocess.run(
+        [
+            ffmpeg,
+            '-nostdin',
+            '-loglevel',
+            'error',
+            '-i',
+            str(path),
+            '-f',
+            's16le',
+            '-ac',
+            '1',
+            '-ar',
+            str(SAMPLE_RATE),
+            '-',
+        ],
+        capture_output=True,
+        check=True,
+    )
+    return np.frombuffer(result.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+
+
 def transcribe(out: Path, model_name: str = 'small.en', device: str = 'auto') -> int:
     """Writes <session>/transcripts.json: {filename: [{start, end, text}, ...]}."""
     from faster_whisper import WhisperModel  # optional: only this step needs it
 
+    ffmpeg = shutil.which('ffmpeg')
     model = WhisperModel(model_name, device=device, compute_type='auto')
-    done = 0
+    done = failed = 0
     for folder in sorted(p for p in out.iterdir() if (p / 'radio').is_dir()):
         target = folder / 'transcripts.json'
         transcripts: dict[str, list[Row]] = json.loads(target.read_text()) if target.exists() else {}
         for mp3 in sorted((folder / 'radio').glob('*.mp3')):
             if mp3.name in transcripts:
                 continue
-            segments, _ = model.transcribe(str(mp3), language='en', vad_filter=True, beam_size=5)
-            transcripts[mp3.name] = [
-                {'start': round(s.start, 2), 'end': round(s.end, 2), 'text': s.text.strip()} for s in segments
-            ]
+            try:
+                audio = decode_audio(mp3, ffmpeg) if ffmpeg else str(mp3)
+                segments, _ = model.transcribe(audio, language='en', vad_filter=True, beam_size=5)
+                transcripts[mp3.name] = [
+                    {'start': round(s.start, 2), 'end': round(s.end, 2), 'text': s.text.strip()}
+                    for s in segments
+                ]
+            except (subprocess.CalledProcessError, ValueError, RuntimeError) as error:  # a damaged clip
+                failed += 1
+                print(f'  could not read {mp3.name}: {error}', flush=True)
+                continue
             done += 1
             if done % 50 == 0:
                 target.write_text(json.dumps(transcripts))
                 print(f'{done} clips transcribed', flush=True)
         target.write_text(json.dumps(transcripts))
-    print(f'{done} clips transcribed')
+    print(f'{done} clips transcribed' + (f', {failed} unreadable clips skipped' if failed else ''))
     return done
 
 
