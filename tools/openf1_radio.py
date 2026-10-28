@@ -48,6 +48,8 @@ API = 'https://api.openf1.org/v1'
 # not the API, so clips only get a short gap.
 REQUEST_GAP_S = 2.1
 AUDIO_GAP_S = 0.2
+# After this many clips in a row are refused (e.g. HTTP 403), stop asking for audio this run.
+MAX_REFUSED_IN_A_ROW = 25
 ENDPOINTS = (
     'drivers',
     'laps',
@@ -121,7 +123,7 @@ def fetch(out: Path, years: list[int], fetcher: Fetcher | None = None, audio: bo
     out.mkdir(parents=True, exist_ok=True)
     sessions = race_sessions(fetcher, years)
     (out / 'sessions.json').write_text(json.dumps(sessions, indent=1))
-    clips = 0
+    clips = downloaded = refused = refused_in_a_row = 0
     for session in sessions:
         key = session['session_key']
         folder = out / str(key)
@@ -133,17 +135,32 @@ def fetch(out: Path, years: list[int], fetcher: Fetcher | None = None, audio: bo
                 path.write_text(json.dumps(fetcher.get_json(endpoint, session_key=key)))
         radio = json.loads((folder / 'team_radio.json').read_text())
         clips += len(radio)
-        if not audio:
-            continue
         (folder / 'radio').mkdir(exist_ok=True)
         for clip in radio:
             target = folder / 'radio' / clip_filename(clip)
             url = clip.get('recording_url')
-            if url and not target.exists():
+            if not url or target.exists() or not audio:
+                continue
+            try:
                 data = fetcher.get_bytes(url, gap_s=min(AUDIO_GAP_S, fetcher.gap_s))
-                if data:  # a clip F1 has taken down comes back 404: skip it
-                    target.write_bytes(data)
-    print(f'{len(sessions)} races, {clips} radio clips')
+            except (urllib.error.URLError, TimeoutError) as error:  # HTTPError is a URLError
+                refused += 1
+                refused_in_a_row += 1
+                print(f'  skipped clip {target.name}: {error}', flush=True)
+                if refused_in_a_row >= MAX_REFUSED_IN_A_ROW:
+                    print(
+                        f'{refused_in_a_row} clips in a row were refused by the audio server. '
+                        'Carrying on with timing data only; run fetch again later to pick up '
+                        'the missing clips.',
+                        flush=True,
+                    )
+                    audio = False
+                continue
+            refused_in_a_row = 0
+            if data:  # a clip F1 has taken down comes back 404: skip it
+                target.write_bytes(data)
+                downloaded += 1
+    print(f'{len(sessions)} races, {clips} radio clips: {downloaded} downloaded now, {refused} refused')
     return clips
 
 
