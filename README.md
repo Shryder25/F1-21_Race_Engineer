@@ -145,7 +145,7 @@ Entry point: `main.py`, which runs `ai_engineer/main.py`.
 | `udp_recording.py` | Record and replay of raw UDP sessions. |
 | `track_data.py`, `track_profiles.py`, `track_analysis.py` | 24-circuit database, real-race track profiles and setup advice. |
 
-Tools in `tools/`: `backtest.py`, `fit_models.py`, `channels.py`, `golden_sessions.py`, `build_real_race_calibration.py`.
+Tools in `tools/`: `backtest.py`, `fit_models.py`, `channels.py`, `golden_sessions.py`, `build_real_race_calibration.py`, `openf1_radio.py` (real F1 radio + race situation dataset for training the engineer model; run it in Colab with `tools/training/openf1_radio_colab.ipynb`).
 
 ## Settings and logs
 
