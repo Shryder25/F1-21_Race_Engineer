@@ -3,6 +3,7 @@
 Three steps, each one resumable (files already on disk are skipped):
 
     python tools/openf1_radio.py fetch      --years 2023 2024 2025 --out data/openf1
+    (fetching one year later adds it to the race list; earlier years are kept)
     python tools/openf1_radio.py transcribe --out data/openf1 --model small.en
     python tools/openf1_radio.py build      --out data/openf1
 
@@ -150,11 +151,26 @@ def clip_filename(clip: Row) -> str:
     return f'{clip.get("driver_number")}_{stamp}.mp3'
 
 
+def save_sessions(out: Path, sessions: list[Row]) -> list[Row]:
+    """Add these races to sessions.json, keeping the years fetched earlier."""
+    path = out / 'sessions.json'
+    merged: dict[object, Row] = {}
+    if path.exists():
+        try:
+            merged = {s['session_key']: s for s in json.loads(path.read_text()) if 'session_key' in s}
+        except (ValueError, TypeError):
+            merged = {}
+    merged.update({s['session_key']: s for s in sessions})
+    rows = sorted(merged.values(), key=lambda s: s.get('date_start') or '')
+    path.write_text(json.dumps(rows, indent=1))
+    return rows
+
+
 def fetch(out: Path, years: list[int], fetcher: Fetcher | None = None, audio: bool = True) -> int:
     fetcher = fetcher or Fetcher()
     out.mkdir(parents=True, exist_ok=True)
     sessions = race_sessions(fetcher, years)
-    (out / 'sessions.json').write_text(json.dumps(sessions, indent=1))
+    save_sessions(out, sessions)
     clips = downloaded = refused = refused_in_a_row = 0
     for session in sessions:
         key = session['session_key']
