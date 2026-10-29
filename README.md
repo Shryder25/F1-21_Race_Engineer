@@ -145,7 +145,7 @@ Entry point: `main.py`, which runs `ai_engineer/main.py`.
 | `udp_recording.py` | Record and replay of raw UDP sessions. |
 | `track_data.py`, `track_profiles.py`, `track_analysis.py` | 24-circuit database, real-race track profiles and setup advice. |
 
-Tools in `tools/`: `backtest.py`, `fit_models.py`, `channels.py`, `golden_sessions.py`, `build_real_race_calibration.py`, `openf1_radio.py` (real F1 radio + race situation dataset for training the engineer model; run it on your PC, F1's audio server blocks Colab). Once `data/openf1/examples_train.jsonl` exists, the AI is shown 3-4 real engineer lines from similar moments with every answer (`--no-radio-examples` turns it off).
+Tools in `tools/`: `backtest.py`, `fit_models.py`, `channels.py`, `golden_sessions.py`, `build_real_race_calibration.py`, `openf1_radio.py` (real F1 radio + race situation dataset for training the engineer model; run it on your PC, F1's audio server blocks Colab). `training/make_sft.py` + `training/finetune_engineer_colab.ipynb` fine-tune Qwen 2.5 1.5B on that dataset (free Colab T4) into an Ollama model, `--ai-model f1-engineer`. Once `data/openf1/examples_train.jsonl` exists, the AI is shown 3-4 real engineer lines from similar moments with every answer (`--no-radio-examples` turns it off).
 
 ## Settings and logs
 
