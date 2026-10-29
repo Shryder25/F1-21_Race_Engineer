@@ -1,10 +1,9 @@
 """Neural text-to-speech for the race radio (Kokoro), with pyttsx3 as the fallback.
 
 ``NeuralSpeechDriver`` has the same small interface as a pyttsx3 engine, so
-``VoiceEngine`` keeps all its queueing, priority and interrupt logic unchanged and
-just gets a better-sounding voice. Speech is synthesized and played on a helper
-thread so the radio queue never blocks; ``stop()`` cuts playback mid-sentence when a
-more urgent call arrives.
+``VoiceEngine`` keeps all its queueing and priority logic unchanged and just gets a
+better-sounding voice. Speech is synthesized and played on a helper thread so the
+radio queue never blocks; ``stop()`` is only used when the engineer shuts down.
 
 Kokoro setup (free, offline, Apache 2.0): ``pip install kokoro-onnx sounddevice``.
 That's all: on the first start the engineer downloads the two model files (~350 MB) into
