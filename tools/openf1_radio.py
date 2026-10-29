@@ -70,6 +70,21 @@ Row = dict[str, Any]
 # ── fetching ────────────────────────────────────────────────────────────
 
 
+def ascii_url(url: str) -> str:
+    """Percent-encode non-ASCII characters (e.g. 'São Paulo' in a clip's path); urllib can't send them."""
+    parts = urllib.parse.urlsplit(url)
+    safe = "/%:@!$&'()*+,;=-._~"
+    return urllib.parse.urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc.encode('idna').decode('ascii') if not parts.netloc.isascii() else parts.netloc,
+            urllib.parse.quote(parts.path, safe=safe),
+            urllib.parse.quote(parts.query, safe=safe + '?'),
+            urllib.parse.quote(parts.fragment, safe=safe),
+        )
+    )
+
+
 class Fetcher:
     """Polite OpenF1 client: one request every REQUEST_GAP_S, retries on 429/5xx."""
 
@@ -85,6 +100,7 @@ class Fetcher:
         self._last = time.monotonic()
 
     def get_bytes(self, url: str, tries: int = 5, gap_s: float | None = None) -> bytes:
+        url = ascii_url(url)
         for attempt in range(tries):
             self._wait(self.gap_s if gap_s is None else gap_s)
             try:
@@ -161,7 +177,7 @@ def fetch(out: Path, years: list[int], fetcher: Fetcher | None = None, audio: bo
                 continue
             try:
                 data = fetcher.get_bytes(url, gap_s=min(AUDIO_GAP_S, fetcher.gap_s))
-            except (urllib.error.URLError, TimeoutError) as error:  # HTTPError is a URLError
+            except (urllib.error.URLError, TimeoutError, ValueError) as error:  # HTTPError is a URLError
                 refused += 1
                 refused_in_a_row += 1
                 print(f'  skipped clip {target.name}: {error}', flush=True)
