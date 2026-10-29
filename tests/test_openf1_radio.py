@@ -364,6 +364,60 @@ class TranscribeTest(unittest.TestCase):
             self.assertIn('1 unreadable clips skipped', log.getvalue())
             self.assertIn('not audio, skipped 44_2.mp3', log.getvalue())
 
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'needs ffmpeg to make the test clip')
+    def test_pyav_decoder_matches_ffmpeg_and_is_used_when_ffmpeg_is_missing(self):
+        try:
+            import av  # noqa: F401
+        except ImportError:
+            self.skipTest('needs PyAV')
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            radio = pathlib.Path(tmp) / '9001' / 'radio'
+            radio.mkdir(parents=True)
+            clip = radio / '44_1.mp3'
+            subprocess.run(
+                [
+                    'ffmpeg',
+                    '-loglevel',
+                    'error',
+                    '-f',
+                    'lavfi',
+                    '-i',
+                    'sine=frequency=440:duration=1',
+                    str(clip),
+                ],
+                check=True,
+            )
+            by_pyav = of1.decode_audio_pyav(clip)
+            by_ffmpeg = of1.decode_audio(clip)
+            self.assertEqual(str(by_pyav.dtype), 'float32')
+            self.assertAlmostEqual(len(by_pyav) / of1.SAMPLE_RATE, 1.0, delta=0.1)
+            self.assertLess(abs(len(by_pyav) - len(by_ffmpeg)), of1.SAMPLE_RATE // 20)
+            self.assertAlmostEqual(float(abs(by_pyav).max()), float(abs(by_ffmpeg).max()), delta=0.05)
+
+            seen = []
+
+            class FakeModel:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def transcribe(self, audio, **kwargs):
+                    seen.append(audio)
+                    return [], None
+
+            fake = types.ModuleType('faster_whisper')
+            fake.WhisperModel = FakeModel
+            with (
+                mock.patch.dict(sys.modules, {'faster_whisper': fake}),
+                mock.patch.object(of1.shutil, 'which', return_value=None),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(of1.transcribe(pathlib.Path(tmp)), 1)
+            self.assertEqual(
+                str(seen[0].dtype), 'float32'
+            )  # samples, not a file path for PyAV inside Whisper
+
     def test_whisper_falls_back_to_the_cpu_when_cuda_cannot_start(self):
         made = []
 

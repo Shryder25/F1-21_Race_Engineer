@@ -216,6 +216,25 @@ def fetch(out: Path, years: list[int], fetcher: Fetcher | None = None, audio: bo
 SAMPLE_RATE = 16000  # what Whisper expects
 
 
+def decode_audio_pyav(path: Path) -> Any:
+    """Same as decode_audio, using the PyAV library that faster-whisper installs (no ffmpeg needed).
+
+    Calls only PyAV's basic API, so it works whichever PyAV version is installed.
+    """
+    import av
+    import numpy as np
+
+    chunks = []
+    with av.open(str(path)) as container:
+        resampler = av.AudioResampler(format='s16', layout='mono', rate=SAMPLE_RATE)
+        for frame in container.decode(audio=0):
+            chunks += [out.to_ndarray().reshape(-1) for out in resampler.resample(frame)]
+        chunks += [out.to_ndarray().reshape(-1) for out in resampler.resample(None)]
+    if not chunks:
+        raise ValueError('no audio in file')
+    return np.concatenate(chunks).astype(np.float32) / 32768.0
+
+
 def decode_audio(path: Path, ffmpeg: str = 'ffmpeg') -> Any:
     """The clip as 16 kHz mono float32 samples, decoded by ffmpeg.
 
@@ -286,13 +305,18 @@ def transcribe(out: Path, model_name: str = 'small.en', device: str = 'auto') ->
                 )
                 continue
             try:
-                audio = decode_audio(mp3, ffmpeg) if ffmpeg else str(mp3)
+                audio = decode_audio(mp3, ffmpeg) if ffmpeg else decode_audio_pyav(mp3)
                 segments, _ = model.transcribe(audio, language='en', vad_filter=True, beam_size=5)
                 transcripts[mp3.name] = [
                     {'start': round(s.start, 2), 'end': round(s.end, 2), 'text': s.text.strip()}
                     for s in segments
                 ]
-            except (subprocess.CalledProcessError, ValueError, RuntimeError) as error:  # a damaged clip
+            except (
+                subprocess.CalledProcessError,
+                ValueError,
+                RuntimeError,
+                OSError,
+            ) as error:  # a damaged clip
                 failed += 1
                 reason = error
                 if isinstance(error, subprocess.CalledProcessError) and error.stderr:
