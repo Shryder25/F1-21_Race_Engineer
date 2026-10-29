@@ -12,6 +12,7 @@ import types
 import unittest
 import urllib.error
 from datetime import UTC, datetime, timedelta
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT / 'tools') not in sys.path:
@@ -433,6 +434,48 @@ class TranscribeTest(unittest.TestCase):
             self.assertEqual(of1.load_whisper(fake_model, 'small.en', 'cuda'), 'model')
         self.assertEqual(made, [('cuda', 'auto'), ('cpu', 'int8')])
         self.assertIn('on the CPU', log.getvalue())
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'needs ffmpeg to make the test clips')
+    def test_transcribe_switches_to_the_cpu_when_the_gpu_fails_on_first_use(self):
+        made = []
+
+        class FakeModel:
+            def __init__(self, name, device, compute_type):
+                self.device = device
+                made.append(device)
+
+            def transcribe(self, audio, **kwargs):
+                if self.device != 'cpu':
+                    raise RuntimeError('Library cublas64_12.dll is not found or cannot be loaded')
+
+                def segments():  # faster-whisper decodes lazily, while the segments are read
+                    yield types.SimpleNamespace(start=0.0, end=1.0, text='Box box.')
+
+                return segments(), None
+
+        fake = types.ModuleType('faster_whisper')
+        fake.WhisperModel = FakeModel
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()) as log:
+            radio = pathlib.Path(tmp) / '9001' / 'radio'
+            radio.mkdir(parents=True)
+            for name in ('44_1.mp3', '44_2.mp3'):
+                subprocess.run(
+                    [
+                        'ffmpeg',
+                        '-loglevel',
+                        'error',
+                        '-f',
+                        'lavfi',
+                        '-i',
+                        'sine=duration=1',
+                        str(radio / name),
+                    ],
+                    check=True,
+                )
+            with mock.patch.dict(sys.modules, {'faster_whisper': fake}):
+                self.assertEqual(of1.transcribe(pathlib.Path(tmp), device='cuda'), 2)
+        self.assertEqual(made, ['cuda', 'cpu'])  # switched once, not per clip
+        self.assertIn('Switching to the CPU', log.getvalue())
 
     def test_other_whisper_errors_are_not_hidden(self):
         def broken(name, device, compute_type):
