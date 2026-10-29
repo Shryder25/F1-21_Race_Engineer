@@ -140,17 +140,26 @@ class VoiceTests(unittest.TestCase):
         self.assertEqual(self.spoken[1], 'pit window')
         self.assertNotIn('low 63', self.spoken)
 
-    def test_urgent_callout_preempts_on_worker_thread(self):
+    def test_urgent_callout_waits_for_current_line_then_goes_first(self):
         for rank in (Priority.CRITICAL, Priority.STRATEGY, Priority.RACE, Priority.TIMING):
             with self.subTest(rank=rank):
                 message = f'background {rank}'
+                queued = f'queued low {rank}'
                 urgent = f'urgent {rank}'
                 self.driver.held.add(message)
                 self.voice.say(message, Priority.LOW)
                 self.wait_for(lambda m=message: m in self.spoken)
+                self.voice.say(queued, Priority.LOW)
                 self.voice.say(urgent, rank)
-                self.wait_for(lambda u=urgent: u in self.spoken)
-                self.assertIn(message, self.driver.stopped)
+                time.sleep(0.05)
+                # The line being spoken is never cut off mid-sentence.
+                self.assertNotIn(urgent, self.spoken)
+                self.assertNotIn(message, self.driver.stopped)
+                self.driver.held.discard(message)
+                self.wait_for(lambda q=queued: q in self.spoken)
+                # Once it ends, the urgent call jumps ahead of older, less urgent ones.
+                self.assertLess(self.spoken.index(urgent), self.spoken.index(queued))
+        self.assertEqual(self.driver.stopped, [])
         self.assertEqual(len(self.driver.threads), 1)
         self.assertNotIn(threading.get_ident(), self.driver.threads)
 
@@ -173,13 +182,16 @@ class VoiceTests(unittest.TestCase):
         self.release()
         self.wait_for(lambda: 'next sector' in self.spoken)
 
-    def test_clear_cancels_active_and_pending(self):
+    def test_clear_drops_pending_but_lets_current_line_finish(self):
         self.block()
         self.voice.say('discard this')
         self.voice.clear()
         self.voice.say('after clear')
+        time.sleep(0.05)
+        self.assertEqual(self.spoken, ['blocking'])
+        self.release()
         self.wait_for(lambda: 'after clear' in self.spoken)
-        self.assertIn('blocking', self.driver.stopped)
+        self.assertNotIn('blocking', self.driver.stopped)
         self.assertNotIn('discard this', self.spoken)
 
     def test_shutdown_joins_worker_and_restart_works(self):

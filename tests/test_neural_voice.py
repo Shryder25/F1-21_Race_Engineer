@@ -86,7 +86,7 @@ class NeuralDriverTests(unittest.TestCase):
         finally:
             engine.shutdown()
 
-    def test_urgent_call_interrupts_playback(self):
+    def test_urgent_call_waits_for_playback_to_finish(self):
         calls, player = [], FakePlayer()
         player.hold = True
         engine = VoiceEngine(driver_factory=lambda: NeuralSpeechDriver(fake_synth(calls), player))
@@ -95,8 +95,13 @@ class NeuralDriverTests(unittest.TestCase):
             engine.say('Gap ahead two point four.', Priority.LOW, key='gap')
             self.assertTrue(wait_for(lambda: len(player.played) == 1))
             engine.say('Box, box.', Priority.CRITICAL, key='box', cooldown=0)
+            time.sleep(0.1)
+            self.assertEqual(len(player.played), 1)  # still finishing the gap call
+            self.assertEqual(player.stops, 0)
+            player.hold = False
+            player._stop.set()  # the gap call reaches its natural end
             self.assertTrue(wait_for(lambda: len(player.played) == 2))
-            self.assertGreaterEqual(player.stops, 1)
+            self.assertEqual(player.stops, 0)
         finally:
             player.hold = False
             engine.shutdown()
