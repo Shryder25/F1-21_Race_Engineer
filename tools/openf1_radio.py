@@ -266,6 +266,12 @@ def decode_audio(path: Path, ffmpeg: str = 'ffmpeg') -> Any:
     return np.frombuffer(result.stdout, dtype=np.int16).astype(np.float32) / 32768.0
 
 
+def is_gpu_error(error: BaseException) -> bool:
+    """CUDA set-up failures, e.g. 'Library cublas64_12.dll is not found' on Windows without the CUDA libraries."""
+    text = str(error).lower()
+    return any(word in text for word in ('cuda', 'cublas', 'cudnn'))
+
+
 def load_whisper(whisper_model: Any, model_name: str, device: str) -> Any:
     """Whisper on the GPU when it starts, else on the CPU (slower, same result).
 
@@ -277,7 +283,7 @@ def load_whisper(whisper_model: Any, model_name: str, device: str) -> Any:
     try:
         return whisper_model(model_name, device=device, compute_type='auto')
     except (RuntimeError, ValueError) as error:
-        if 'cuda' not in str(error).lower():
+        if not is_gpu_error(error):
             raise
         print(f'GPU could not start ({error}). Transcribing on the CPU instead; this is slower.', flush=True)
         return whisper_model(model_name, device='cpu', compute_type='int8')
@@ -289,6 +295,7 @@ def transcribe(out: Path, model_name: str = 'small.en', device: str = 'auto') ->
 
     ffmpeg = shutil.which('ffmpeg')
     model = load_whisper(WhisperModel, model_name, device)
+    on_cpu = device == 'cpu'
     done = failed = 0
     for folder in sorted(p for p in out.iterdir() if (p / 'radio').is_dir()):
         target = folder / 'transcripts.json'
@@ -306,7 +313,16 @@ def transcribe(out: Path, model_name: str = 'small.en', device: str = 'auto') ->
                 continue
             try:
                 audio = decode_audio(mp3, ffmpeg) if ffmpeg else decode_audio_pyav(mp3)
-                segments, _ = model.transcribe(audio, language='en', vad_filter=True, beam_size=5)
+                try:
+                    segments = list(model.transcribe(audio, language='en', vad_filter=True, beam_size=5)[0])
+                except RuntimeError as error:
+                    # The GPU loaded but fails on first use (CUDA libraries missing): retry on the CPU.
+                    if on_cpu or not is_gpu_error(error):
+                        raise
+                    print(f'GPU failed ({error}). Switching to the CPU; this is slower.', flush=True)
+                    model = load_whisper(WhisperModel, model_name, 'cpu')
+                    on_cpu = True
+                    segments = list(model.transcribe(audio, language='en', vad_filter=True, beam_size=5)[0])
                 transcripts[mp3.name] = [
                     {'start': round(s.start, 2), 'end': round(s.end, 2), 'text': s.text.strip()}
                     for s in segments
