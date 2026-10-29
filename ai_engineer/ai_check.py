@@ -34,7 +34,7 @@ def _get_json(url: str, timeout: float = 3.0):
         return json.loads(response.read().decode('utf-8'))
 
 
-def run_ai_test(client, *, load_options=None, autostart=True, question=None, out=print) -> int:
+def run_ai_test(client, *, load_options=None, autostart=True, question=None, out=print, examples=None) -> int:
     """Return 0 when the AI answered, 1 when it didn't (the printout says why)."""
     question = question or DEFAULT_TEST_QUESTION
     out(f'AI test: model {client.model} at {client.base_url}, timeout {client.timeout:g} s')
@@ -66,7 +66,9 @@ def run_ai_test(client, *, load_options=None, autostart=True, question=None, out
                 f'or start the engineer with --ai-model and one of the names above.'
             )
             return 1
-    brain = EngineerBrain(lambda: dict(SAMPLE_CONTEXT), client)
+    if examples:
+        out(f'Showing the AI real F1 radio lines from {len(examples)} examples')
+    brain = EngineerBrain(lambda: dict(SAMPLE_CONTEXT), client, examples=examples)
     out(f'Asking: "{question}"')
     started = time.monotonic()
     answer = brain.answer_question(question)

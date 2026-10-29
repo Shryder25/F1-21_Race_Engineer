@@ -61,6 +61,7 @@ from packets import (
     SessionData,
 )
 from pipeline.config import ConfigError, EngineConfig, apply_overrides, load_config
+from radio_examples import RadioExamples
 from speech_to_text import DEFAULT_WHISPER_MODEL, WHISPER_MODELS, build_transcriber
 from telemetry_stream import TelemetryStream
 from track_maps import TrackMapStore
@@ -194,7 +195,20 @@ def run_ai_test_from(args, cfg: EngineConfig) -> int:
         cfg.ai.timeout_s,
         load_options=load_options,
     )
-    return run_ai_test(client, load_options=load_options, autostart=cfg.ai.autostart, question=args.ai_test)
+    return run_ai_test(
+        client,
+        load_options=load_options,
+        autostart=cfg.ai.autostart,
+        question=args.ai_test,
+        examples=load_radio_examples(args),
+    )
+
+
+def load_radio_examples(args):
+    """Real engineer radio lines for the AI prompt, or None (off, or no file built yet)."""
+    if args.no_radio_examples:
+        return None
+    return RadioExamples.load(args.radio_examples)
 
 
 def settings_from(args) -> EngineConfig:
@@ -395,6 +409,20 @@ def build_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Send the AI all the data for every question instead of just what the question '
         'is about (slower)',
+    )
+    ai.add_argument(
+        '--radio-examples',
+        type=Path,
+        default=None,
+        metavar='FILE',
+        help='Real F1 radio lines shown to the AI as examples of how an engineer talks '
+        '(default: data/openf1/examples_train.jsonl, built by tools/openf1_radio.py; '
+        'skipped when the file is missing)',
+    )
+    ai.add_argument(
+        '--no-radio-examples',
+        action='store_true',
+        help='Do not show the AI real F1 radio lines',
     )
     ai.add_argument(
         '--ai-context',
@@ -720,7 +748,11 @@ def main():
         )
     )
     brain = EngineerBrain(
-        analysis.build_context, client, rules_first=not args.ai_for_commands, focused=not args.ai_full_context
+        analysis.build_context,
+        client,
+        rules_first=not args.ai_for_commands,
+        focused=not args.ai_full_context,
+        examples=load_radio_examples(args),
     )
     dispatcher = CommandDispatcher(voice, brain, on_log=add_voice_log)
     # Typed HUD questions are deliberate, so they may be free-form like the radio button.

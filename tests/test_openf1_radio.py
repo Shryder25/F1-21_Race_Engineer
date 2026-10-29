@@ -233,6 +233,15 @@ class FetchTest(unittest.TestCase):
             of1.fetch(out, [2024], fetcher)  # everything cached: only the season list is asked again
             self.assertEqual(len(calls), first_run + 1)
 
+    def test_fetching_one_year_keeps_the_years_fetched_before(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = pathlib.Path(tmp)
+            of1.save_sessions(out, [{'session_key': 1, 'year': 2024, 'date_start': '2024-03-02'}])
+            of1.save_sessions(out, [{'session_key': 2, 'year': 2023, 'date_start': '2023-03-05'}])
+            rows = of1.save_sessions(out, [{'session_key': 1, 'year': 2024, 'date_start': '2024-03-02'}])
+            self.assertEqual([r['session_key'] for r in rows], [2, 1])  # oldest first, no repeats
+            self.assertEqual(json.loads((out / 'sessions.json').read_text()), rows)
+
     def test_error_pages_are_not_saved_as_clips_and_old_ones_are_fetched_again(self):
         bodies = {'c0': b'<?xml version="1.0"?><Error><Code>AccessDenied</Code></Error>', 'c1': b'ID3good'}
 

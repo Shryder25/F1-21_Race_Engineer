@@ -21,6 +21,7 @@ from collections.abc import Callable
 import session_modes
 from ai_client import AIClient, AITimeout, AIUnavailable, radio_line, voice_from_reply
 from log_setup import get_logger
+from radio_examples import RadioExamples
 
 log = get_logger('engineer')
 
@@ -430,19 +431,25 @@ def _names_a_driver(question: str, ctx: dict) -> bool:
     )
 
 
-def build_prompt(command: str, ctx: dict, *, focused: bool = True) -> tuple[str, str]:
+def build_prompt(
+    command: str, ctx: dict, *, focused: bool = True, examples: RadioExamples | None = None
+) -> tuple[str, str]:
     """Return (system prompt, user message) for DeepSeek.
 
     ``focused`` sends only the data the question is about (plus the core: lap, position,
     gaps, lap times, tyre set), which makes the prompt shorter and the answer quicker.
+    ``examples``: real engineer radio lines; the few from the most similar moments are added
+    so the model copies a real engineer's tone and length.
     """
     question = COMMAND_QUESTIONS.get(command, command)
     topics = question_topics(command) if focused else None
     if topics is not None and 'field' not in topics and _names_a_driver(question, ctx):
         topics.add('field')
+    real_radio = examples.prompt_block(command, ctx) if examples else ''
     user = (
         f'Driver asks: "{question}"\n\nCurrent data:\n{format_context(ctx, topics)}\n\n'
-        'Answer as the race engineer.'
+        + (f'{real_radio}\n\n' if real_radio else '')
+        + 'Answer as the race engineer.'
     )
     return SYSTEM_PROMPT, user
 
@@ -617,14 +624,17 @@ class EngineerBrain:
         *,
         rules_first: bool = False,
         focused: bool = True,
+        examples: RadioExamples | None = None,
     ):
         """``rules_first``: the fixed commands are answered at once from the live data (no AI
         wait, no load on the graphics card); the AI handles everything else.
-        ``focused``: send the AI only the data the question is about (shorter, faster)."""
+        ``focused``: send the AI only the data the question is about (shorter, faster).
+        ``examples``: real engineer radio lines to show the AI (see radio_examples)."""
         self.context_provider = context_provider
         self.client = client
         self.rules_first = rules_first
         self.focused = focused
+        self.examples = examples
         self.last_source = None  # 'ai' or 'fallback' or 'rules' - useful for the HUD and tests
         self.last_advice = ''  # longer note from the last AI answer, for an on-screen log
         self.last_failure = ''  # why the AI gave nothing last time ('' when it answered)
@@ -688,7 +698,7 @@ class EngineerBrain:
         self._timed_out = False
         if self.client is None:
             return None
-        system, user = build_prompt(question, ctx, focused=self.focused)
+        system, user = build_prompt(question, ctx, focused=self.focused, examples=self.examples)
         # Radio answers are short: no long reasoning, small token budget (much lower latency).
         fast = (
             {'fast': True, 'max_tokens': RADIO_MAX_TOKENS}
