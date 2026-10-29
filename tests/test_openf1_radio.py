@@ -259,6 +259,25 @@ class FetchTest(unittest.TestCase):
             self.assertIn('server sent no audio', log.getvalue())
             self.assertIn('AccessDenied', log.getvalue())
 
+    def test_clip_urls_with_accents_are_percent_encoded(self):
+        url = 'https://livetiming.formula1.com/static/2023/2023-11-05_São_Paulo_Grand_Prix/Race/TeamRadio/MAXVER01_1_x.mp3'
+        encoded = of1.ascii_url(url)
+        self.assertTrue(encoded.isascii())
+        self.assertIn('S%C3%A3o_Paulo', encoded)
+        self.assertEqual(of1.ascii_url(encoded), encoded)  # already-encoded URLs are left alone
+        self.assertEqual(
+            of1.ascii_url('https://api.openf1.org/v1/laps?session_key=9221'),
+            'https://api.openf1.org/v1/laps?session_key=9221',
+        )
+        seen = []
+
+        def opener(u, timeout):
+            seen.append(u)
+            return FakeResponse(b'ID3')
+
+        of1.Fetcher(gap_s=0, opener=opener).get_bytes(url)
+        self.assertEqual(seen, [encoded])
+
     def test_looks_like_audio(self):
         self.assertTrue(of1.looks_like_audio(b'ID3\x04\x00'))
         self.assertTrue(of1.looks_like_audio(bytes([0xFF, 0xFB, 0x90])))
