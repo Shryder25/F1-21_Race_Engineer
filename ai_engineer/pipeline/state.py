@@ -285,9 +285,10 @@ class EngineState:
         self._sent_best_len = -1
 
     def _car_chat_ok(self) -> bool:
-        """Chatty car-management calls keep two of the lap's proactive calls for race info."""
+        """Chatty car-management calls always leave one of the lap's proactive calls for race
+        info (the race budget is only two a lap)."""
         remaining = self.call_budget.remaining
-        return remaining is None or remaining >= 3
+        return remaining is None or remaining >= 2
 
     def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> None:
         """Queue a radio call. Implemented by the radio stage (pipeline/radio.py)."""

@@ -325,5 +325,17 @@ class EngineWiringTests(unittest.TestCase):
         self.assertEqual(car['fuel_mix'], 'standard')
 
 
+class RaceBudgetTests(unittest.TestCase):
+    def test_chatty_car_calls_still_fit_the_two_call_race_budget(self):
+        engine = AnalysisEngine(SilentVoice(), on_demand=False)
+        engine.update_session(SessionData(0, 30, 20, 20, 5000, 10, 11, 0), session_uid=3)
+        engine.call_budget.set_race(True)
+        engine.call_budget.new_lap(5)
+        self.assertEqual(engine.call_budget.remaining, 2)
+        self.assertTrue(engine._car_chat_ok())
+        engine.call_budget.spend('lap_time', Priority.LOW)
+        self.assertFalse(engine._car_chat_ok())  # the last call is kept for race info
+
+
 if __name__ == '__main__':
     unittest.main()
