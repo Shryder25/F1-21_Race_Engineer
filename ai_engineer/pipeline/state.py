@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import car_management
 import fitted_models
 import pit_wall
 import race_briefing
@@ -201,6 +202,8 @@ class EngineState:
         self.radio = RaceRadio(self.speak)
         self.phrases: Phrasebook = self.radio.phrases
         self.race_control = RaceControl(self.speak)
+        # Fuel, ERS, brake, engine and damage calls (car_management.py).
+        self.car_manager = car_management.CarManager(self.speak, self.config.car, self._car_chat_ok)
         self.history = history
         self.capture_id: str | None = None
         # Every car's laps, tyre stints, classification and setups (packets 11, 8 and 5).
@@ -276,6 +279,11 @@ class EngineState:
         self.odds_history: list[JSON] = []
         self._sent_best_trace: list[list[float]] | None = None
         self._sent_best_len = -1
+
+    def _car_chat_ok(self) -> bool:
+        """Chatty car-management calls keep two of the lap's proactive calls for race info."""
+        remaining = self.call_budget.remaining
+        return remaining is None or remaining >= 3
 
     def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> None:
         """Queue a radio call. Implemented by the radio stage (pipeline/radio.py)."""

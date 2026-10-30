@@ -106,6 +106,7 @@ class AnalysisEngine(IngestStage):
         # Radio: callouts straight off the frame
         self.analyze_tyres(telemetry, lap)
         self.check_braking_points(lap, telemetry)
+        self.update_car_management(telemetry, lap)
         # Laps: corner diagnosis
         self.update_corners(telemetry, lap)
         # Strategy: game pit window, rival stops, undercuts, race simulation

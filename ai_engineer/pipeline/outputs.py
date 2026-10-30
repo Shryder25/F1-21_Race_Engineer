@@ -272,6 +272,7 @@ class OutputsStage(TrackMapStage):
                 'ers_deploy_mode': status.ers_deploy_mode if status else 1,
                 'ers_percent': int(round((status.ers_store_energy / 4000000.0) * 100)) if status else 50,
                 'engine_temp': telemetry.engine_temperature,
+                'car_management': self.car_manager.snapshot(status, damage),
                 'lap_num': lap.current_lap_num,
                 'total_laps': session.total_laps if session else 0,
                 'position': lap.car_position,
@@ -430,6 +431,7 @@ class OutputsStage(TrackMapStage):
                 game_pit_window=self.radio.pit_window,
             )
         ctx.update(self._car_context(lap, t, dmg, st))
+        ctx['car_management'] = self.car_manager.snapshot(st, dmg)
         if t:
             ctx['tyre_surface_c'] = dict(zip(WHEEL_CODES, t.tyres_surface_temperature, strict=False))
             ctx['tyre_inner_c'] = dict(zip(WHEEL_CODES, t.tyres_inner_temperature, strict=False))

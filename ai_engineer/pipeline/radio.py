@@ -17,6 +17,7 @@ import time
 from typing import Any
 
 import radio_phrases as say
+import session_modes
 import web_hud
 from packets import CarTelemetryData, LapData
 from pipeline.state import EngineState, wheel_group
@@ -57,7 +58,11 @@ class RadioStage(EngineState):
     def analyze_tyres(self, telemetry: CarTelemetryData, lap: LapData) -> None:
         cfg = self.config.tyres
         now = time.time()
-        temps = telemetry.tyres_surface_temperature
+        # The overheating call reads the carcass (inner) temperature: the surface flickers
+        # with every slide and kerb, the carcass is what actually overheats the tyre.
+        # The hot/cold lap summary stays on the surface temps the driver sees on the dash.
+        temps = telemetry.tyres_inner_temperature
+        surface = telemetry.tyres_surface_temperature
 
         if telemetry.speed < 40:
             return
@@ -79,10 +84,10 @@ class RadioStage(EngineState):
         for i in range(4):
             temp = temps[i]
             state = self.tyre_state
-            state.lap_peak[i] = max(state.lap_peak[i], temp)
-            if temp > cfg.high_c:
+            state.lap_peak[i] = max(state.lap_peak[i], surface[i])
+            if surface[i] > cfg.high_c:
                 state.lap_hot_secs[i] += dt
-            elif temp < cfg.low_c:
+            elif surface[i] < cfg.low_c:
                 state.lap_cold_secs[i] += dt
             if temp >= cfg.critical_c and rise_rates[i] >= cfg.rise_rate_c_per_s:
                 if state.hot_since[i] == 0.0:
@@ -138,6 +143,23 @@ class RadioStage(EngineState):
         state.lap_hot_secs = [0.0, 0.0, 0.0, 0.0]
         state.lap_cold_secs = [0.0, 0.0, 0.0, 0.0]
         state.critical_called_this_lap = False
+
+    # ── Car management: fuel, ERS, brakes, engine, damage ──
+
+    def update_car_management(self, telemetry: CarTelemetryData, lap: LapData) -> None:
+        """Fuel, ERS, brake, engine-temperature and damage calls (car_management.py)."""
+        session = self.session
+        self.car_manager.update(
+            time.monotonic(),
+            lap,
+            telemetry,
+            self.latest_status,
+            self.latest_damage,
+            race=self.session_mode == session_modes.RACE,
+            total_laps=session.total_laps if session else 0,
+            corners=self.corners,
+            gap_ahead_s=self.radio.gap_ahead_s,
+        )
 
     # ── Braking points ──
 

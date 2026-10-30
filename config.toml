@@ -22,7 +22,8 @@ on_demand = true            # speak only when asked, plus the proactive keys bel
 proactive_keys = [
     "lap_time", "lap_coaching", "race_pace", "safety_car", "safety_car_in", "weather_rain",
     "critical_wear", "wing_damage", "penalty", "flag_yellow", "flag_red", "rival_pit",
-    "undercut", "rival_preempt", "plan_b",
+    "undercut", "rival_preempt", "plan_b", "fuel_save", "puncture", "engine_damage",
+    "gearbox_damage", "engine_temp_critical",
 ]
 calls_per_lap = 4           # --calls-per-lap: most proactive calls per lap; urgent calls always
                             # get through (Safety Car, flags, box, strategy...). 0 = no limit
@@ -41,12 +42,36 @@ delta_report_interval_s = 14.0    # minimum seconds between live "up/down on you
 [tyres]
 high_c = 104                # surface °C above this counts as running hot (end-of-lap summary)
 low_c = 80                  # surface °C below this counts as running cold
-critical_c = 112            # critical overheat: the only tyre call made mid-lap...
-rise_rate_c_per_s = 1.5     # ...and only while the temperature climbs at least this fast...
+critical_c = 112            # carcass (inner) °C for a critical overheat: the only mid-lap tyre call...
+rise_rate_c_per_s = 1.5     # ...and only while the carcass temperature climbs at least this fast...
 critical_sustain_s = 0.5    # ...for at least this long
 alert_cooldown_s = 40.0     # minimum seconds between two critical overheat calls
 summary_min_s = 4.0         # seconds hot or cold in a lap before the lap summary mentions it
 summary_repeat_laps = 3     # an unchanged tyre summary is repeated at most every N laps
+
+[car]
+# Car management calls: fuel, ERS, brakes, engine, damage. Every number here is an ESTIMATE
+# until it has been checked against a real F1 2021 recording. Fuel save, puncture, engine and
+# gearbox damage and a critical engine temperature are urgent (heard in quiet mode); the rest
+# (fuel good, ERS, brake temps, engine temps up) are --chatty only.
+fuel_save_laps = -0.3       # fuel margin (laps) below this: "fuel is tight, lift and coast"
+fuel_lift_laps = 0.2        # ...below this: "fuel is marginal, lift slightly"
+fuel_good_laps = 1.0        # ...at or above this: "fuel is good, you can push"
+fuel_repeat_laps = 3        # an unchanged save/lift call is repeated at most every N laps
+ers_low_pct = 15.0          # battery below this at the line: "battery's low, harvest this lap"
+ers_full_pct = 95.0         # battery above this all lap: "battery's full, use it"
+ers_repeat_laps = 3         # the same ERS call at most every N laps
+brake_hot_c = 1050          # brake disc °C counted as a spike in a corner
+brake_repeat_laps = 2       # same corner and brake spiking this many laps running before a call
+brake_cooldown_laps = 5     # then quiet about that corner for N laps
+engine_hot_c = 118          # engine °C held for engine_sustain_s: "engine temps are up"
+engine_critical_c = 128     # engine °C held for engine_sustain_s: critical call
+engine_sustain_s = 5.0      # seconds above a threshold before it counts
+engine_cooldown_s = 90.0    # minimum seconds between two engine temperature calls
+damage_step_pct = 15        # a sudden engine/gearbox damage jump this big gets a call
+damage_warn_pct = 50        # engine/gearbox damage passing this gets a call...
+damage_critical_pct = 75    # ...and passing this
+puncture_jump_pct = 30      # tyre damage jumping this much at once counts as a puncture
 
 [laps]
 delta_sample_interval_m = 10.0   # metres between speed-trace / live-delta samples
