@@ -240,6 +240,12 @@ class PitSequence:
         remaining = self.to_entry_m(lap.lap_distance)
         return remaining is not None and (remaining >= ABORT_MIN_M or self.call.wraps_allowed > 0)
 
+    def cancel(self, why: str) -> None:
+        """Drop a pending box call that another call has already taken back on air."""
+        if self.pending:
+            self.state = ABORTED
+            self._event('stay_out', why=why)
+
     def abort(self, message: str, why: str) -> None:
         """Take the box call back: "Stay out, stay out." plus why."""
         self.speak(f'Stay out, stay out. {message}', Priority.CRITICAL, key='pit_abort', ttl=5, cooldown=0)

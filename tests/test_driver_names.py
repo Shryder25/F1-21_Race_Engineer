@@ -117,6 +117,7 @@ class NamedRadioCallTests(unittest.TestCase):
     def drive(self, last_laps=(0, 0, 0)):
         self.radio.update_field(self.field(0, last_laps), 1, 0, now=0)
         self.radio.update_field(self.field(10, last_laps), 1, 1, now=1)
+        self.radio.call_lap_gaps()
 
     def test_gap_call_names_the_cars_ahead_and_behind(self):
         self.radio.set_driver_names({0: 'Hamilton', 2: 'Verstappen'})
@@ -146,7 +147,7 @@ class NamedRadioCallTests(unittest.TestCase):
     def test_race_pace_call_compares_against_named_neighbours(self):
         self.radio.set_driver_names({0: 'Hamilton', 2: 'Verstappen'})
         self.drive(last_laps=(90800, 91000, 91000))
-        for lap_num in range(1, 4):
+        for lap_num in range(2, 5):
             self.radio.completed_lap(91000, lap_num, {}, {})
         message = self.voice.messages[-1][0]
         self.assertIn('Last three laps averaging', message)

@@ -331,6 +331,20 @@ class EngineSequenceTests(unittest.TestCase):
         self.assertEqual(self.spoken()[-1][0], 'plan_b')
         self.assertEqual(self.engine.pit_sequence.call.reason, 'plan_b')
 
+    def test_safety_car_box_decision_arms_and_stay_out_cancels(self):
+        self.engine.last_strategy_call = {'kind': 'sc_box'}
+        self.engine.radio.update_safety_car(1, decide=lambda status: 'Box, box, cheap stop.')
+        self.assertTrue(self.engine.pit_sequence.pending)
+        self.assertEqual(self.engine.pit_sequence.call.reason, 'safety_car')
+        self.assertFalse(self.engine.pit_sequence.can_abort(self.lap))
+
+        self.engine.pit_sequence.reset(RACE.track_length, racing=True)
+        self.engine.pit_sequence.box_called('window', self.lap)
+        self.engine.last_strategy_call = {'kind': 'sc_stay_out'}
+        self.engine.radio.update_safety_car(2, decide=lambda status: 'Stay out.')
+        self.assertEqual(self.engine.pit_sequence.state, ps.ABORTED)
+        self.assertNotIn('pit_abort', [key for key, _ in self.spoken()])  # the SC call said it
+
     def test_new_keys_break_quiet_mode_and_skip_the_budget(self):
         import radio_discipline
         from pipeline.config import DEFAULT_PROACTIVE_KEYS

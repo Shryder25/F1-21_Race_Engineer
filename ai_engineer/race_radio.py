@@ -12,9 +12,8 @@ from voice_engine import Priority
 # neighbours, Box-Box scores the wider nearby field rather than only P+1/P-1).
 THREAT_WINDOW_POSITIONS = 3
 
-# Gap calls: a routine update roughly once a lap, plus an instant call when a car
-# gets within DRS range (with hysteresis so a gap hovering at 1.0s doesn't spam).
-GAP_REPORT_INTERVAL_S = 45
+# Gap calls: one update per lap at the line, with the trend per lap, plus an instant call
+# when a car gets within DRS range (with hysteresis so a gap hovering at 1.0s doesn't spam).
 DRS_RANGE_S = 1.0
 DRS_REARM_S = 1.3
 GAP_TREND_MIN_S = 0.2
@@ -27,9 +26,13 @@ class RaceRadio:
     def __init__(self, speak: Callable[..., Any], on_box: Callable[..., Any] | None = None) -> None:
         self.speak = speak
         # Told when a box-this-lap call goes on air, so the pit sequence can confirm it
-        # before pit entry (pit_sequence.py). Gets the reason: 'window', 'wear' or 'damage'.
+        # before pit entry (pit_sequence.py). Gets the reason: 'window', 'wear', 'damage', or
+        # 'safety_car' after a Safety Car / VSC decision (box or stay out) went on air.
         self.on_box = on_box
         self.phrases = say.Phrasebook()
+        # Car index -> short tyre note ("on eighteen-lap-old mediums"), set by the engine,
+        # which knows every car's status. DRS calls add it as information for the driver.
+        self.tyre_note: Callable[[int], str | None] | None = None
         # Car index -> radio name from the Participants packet. Kept across reset() because a
         # flashback rewinds the timeline but not who is in the field; cleared on session change.
         self.driver_names: dict[int, str] = {}
@@ -45,7 +48,6 @@ class RaceRadio:
         self.session = session
         self.trajectories = {}
         self.last_session_time = None
-        self.last_gap_report = -math.inf
         self.gap_ahead_s = self.gap_behind_s = None
         self.car_ahead_index = self.car_behind_index = None
         self.pit_notices = set()
@@ -60,13 +62,17 @@ class RaceRadio:
         self.last_critical_alert = 0.0
         self.last_lap_times_ms: dict[int, int] = {}  # car index -> most recent completed lap time
         self.opponent_threats: list = []
-        self.reported_gaps = (None, None)  # (ahead, behind) at the last routine gap call
+        self.reported_gaps = (None, None)  # (ahead, behind) at the last lap-end gap call
+        self.reported_gap_cars = (None, None)  # (ahead, behind) car index at that call
         self.drs_armed = {'ahead': True, 'behind': True}
         self.clean_race_laps = 0
         self.reported_race_pace_ms = None
         self.rival_gaps: dict[int, tuple[float, float]] = {}  # car index -> (signed gap s, session time)
         self.rival_in_pits: dict[int, bool] = {}
         self.rival_pit_events: list[dict] = []
+        # Car index -> lap numbers on which it was seen in the pit lane. A lap on or right
+        # after one of those is an in-lap or out-lap and says nothing about the car's pace.
+        self.pit_laps: dict[int, set[int]] = {}
 
     def update_strategy(self, lap):
         """Monitor pit stop windows with concise radio timing."""
@@ -113,28 +119,40 @@ class RaceRadio:
     # Priority Interrupts (Critical Events)
     # ──────────────────────────────────────────
 
-    def update_safety_car(self, safety_car_status: int):
-        """Immediate priority interrupt when Safety Car or VSC is deployed/withdrawn."""
+    def update_safety_car(
+        self, safety_car_status: int, decide: Callable[[int], str | None] | None = None
+    ) -> None:
+        """Immediate priority interrupt when Safety Car or VSC is deployed/withdrawn.
+
+        ``decide(status)`` gives the box / stay-out decision for a deployment ("Box, box, cheap
+        stop..." or "Stay out..."). A real engineer says it in the same breath as the Safety
+        Car call: the pit entry may be seconds away, there is no time for a follow-up.
+        """
         if safety_car_status == self.last_safety_car:
             return
         prev = self.last_safety_car
         self.last_safety_car = safety_car_status
+        decision = decide(safety_car_status) if decide and safety_car_status in (1, 2) else None
         if safety_car_status == 1:
-            self.speak(
-                "Safety Car, Safety Car. Keep the delta positive, no overtaking.",
+            spoken = self.speak(
+                'Safety Car, Safety Car. ' + (decision or 'Keep the delta positive, no overtaking.'),
                 Priority.CRITICAL,
                 key='safety_car',
                 ttl=10,
                 cooldown=10,
             )
+            if decision and spoken:
+                self._box('safety_car')
         elif safety_car_status == 2:
-            self.speak(
-                "VSC, VSC. Virtual Safety Car deployed, keep the delta positive.",
+            spoken = self.speak(
+                'VSC, VSC. ' + (decision or 'Virtual Safety Car deployed, keep the delta positive.'),
                 Priority.CRITICAL,
                 key='safety_car',
                 ttl=8,
                 cooldown=10,
             )
+            if decision and spoken:
+                self._box('safety_car')
         elif prev == 2 and safety_car_status == 0:
             self.speak(
                 "VSC ending, VSC ending. Green flag, push now.",
@@ -236,8 +254,11 @@ class RaceRadio:
                 history.clear()
             if not history or (lap.total_distance > history[-1][0] and session_time > history[-1][1]):
                 history.append((lap.total_distance, session_time))
+        for index, lap in enumerate(laps):
+            if lap.pit_status:
+                self.pit_laps.setdefault(index, set()).add(lap.current_lap_num)
         for index, lap in active.items():
-            if lap.last_lap_time_ms:
+            if lap.last_lap_time_ms and not self.near_pit_stop(index, lap.current_lap_num - 1):
                 self.last_lap_times_ms[index] = lap.last_lap_time_ms
         self._track_rival_stops(laps, player_index, session_time)
         self.gap_ahead_s = self.gap_behind_s = None
@@ -280,11 +301,18 @@ class RaceRadio:
         threats.sort(key=lambda t: t.threat_score, reverse=True)
         self.opponent_threats = threats[:5]
         self._call_drs_range(now)
-        if now - self.last_gap_report >= GAP_REPORT_INTERVAL_S:
-            self._call_gaps(now)
+
+    def near_pit_stop(self, index: int, lap_num: int) -> bool:
+        """True if ``lap_num`` was an in-lap or out-lap for this car (within a lap of a stop)."""
+        stops = self.pit_laps.get(index)
+        return bool(stops) and (lap_num in stops or lap_num - 1 in stops)
 
     def _call_drs_range(self, now):
-        """Instant call when a car comes within a second, either side."""
+        """Instant call when a car comes within a second, either side.
+
+        Information, not a driving instruction: the gap, who it is and what tyres they are on.
+        The driver knows what to do with DRS.
+        """
         for side, gap in (('ahead', self.gap_ahead_s), ('behind', self.gap_behind_s)):
             if gap is None:
                 continue
@@ -293,55 +321,66 @@ class RaceRadio:
             elif gap < DRS_RANGE_S and self.drs_armed[side]:
                 self.drs_armed[side] = False
                 amount = say.gap_value(gap)
+                index = self.car_ahead_index if side == 'ahead' else self.car_behind_index
+                name = self.driver_name(index)
+                tyres = self.tyre_note(index) if self.tyre_note and index is not None else None
                 if side == 'ahead':
+                    who = name or 'the car ahead'
                     message = self.phrases.pick(
                         'drs_ahead',
                         (
-                            f'You are within a second, {amount} to the car ahead. DRS is yours.',
-                            f'{amount.capitalize()} to the car ahead, you have DRS. Go get them.',
+                            f'DRS available, {amount} to {who}.',
+                            f'{amount.capitalize()} to {who}, you are in DRS range.',
                         ),
                     )
                 else:
+                    who = name or 'Car behind'
                     message = self.phrases.pick(
                         'drs_behind',
                         (
-                            f'Car behind is within a second, {amount}. Defend the braking zones.',
-                            f'Car behind has DRS, {amount}. Cover the inside.',
+                            f'{who} is within DRS, {amount}.',
+                            f'{who} has DRS, {amount} back.',
                         ),
                     )
-                # Counts as a gap update so the routine call doesn't repeat it moments later.
-                self.last_gap_report = now
-                self.reported_gaps = (self.gap_ahead_s, self.gap_behind_s)
+                if tyres:
+                    message += f' They are {tyres}.'
                 self.speak(message, Priority.RACE, key=f'drs_{side}', ttl=4, cooldown=30)
 
-    def _call_gaps(self, now):
-        """Routine gap update with the trend since the last one, like 'you're catching'."""
+    def call_lap_gaps(self) -> None:
+        """Once a lap at the line: the gap either side and how it moved over the lap.
+
+        "Gap to Hamilton ahead two point four, you're catching, three tenths that lap."
+        The trend only counts when it is the same car as at the last call.
+        """
         last_ahead, last_behind = self.reported_gaps
+        car_ahead, car_behind = self.reported_gap_cars
         messages = []
         if self.gap_ahead_s is not None:
             name = self.driver_name(self.car_ahead_index)
             who = f'Gap to {name} ahead' if name else 'Gap ahead'
             text = f'{who} {say.gap_value(self.gap_ahead_s)}'
-            if last_ahead is not None and last_ahead - self.gap_ahead_s >= GAP_TREND_MIN_S:
-                text += ", you're catching"
-            elif last_ahead is not None and self.gap_ahead_s - last_ahead >= GAP_TREND_MIN_S:
-                text += ", they're pulling away"
+            if last_ahead is not None and car_ahead == self.car_ahead_index:
+                change = last_ahead - self.gap_ahead_s
+                if change >= GAP_TREND_MIN_S:
+                    text += f", you're catching, {say.time_amount(change)} that lap"
+                elif -change >= GAP_TREND_MIN_S:
+                    text += f", they're pulling away, {say.time_amount(change)} that lap"
             messages.append(text + '.')
         if self.gap_behind_s is not None:
             name = self.driver_name(self.car_behind_index)
             who = f'{name} behind' if name else 'Car behind'
             text = f'{who} {say.gap_value(self.gap_behind_s)}'
-            if last_behind is not None and last_behind - self.gap_behind_s >= GAP_TREND_MIN_S:
-                text += ", they're closing"
-            elif last_behind is not None and self.gap_behind_s - last_behind >= GAP_TREND_MIN_S:
-                text += ", you're pulling away"
+            if last_behind is not None and car_behind == self.car_behind_index:
+                change = last_behind - self.gap_behind_s
+                if change >= GAP_TREND_MIN_S:
+                    text += f", they're closing, {say.time_amount(change)} that lap"
+                elif -change >= GAP_TREND_MIN_S:
+                    text += f", you're pulling away, {say.time_amount(change)} that lap"
             messages.append(text + '.')
+        self.reported_gaps = (self.gap_ahead_s, self.gap_behind_s)
+        self.reported_gap_cars = (self.car_ahead_index, self.car_behind_index)
         if messages:
-            self.last_gap_report = now
-            self.reported_gaps = (self.gap_ahead_s, self.gap_behind_s)
-            self.speak(
-                ' '.join(messages), Priority.RACE, key='traffic_gaps', ttl=5, cooldown=GAP_REPORT_INTERVAL_S
-            )
+            self.speak(' '.join(messages), Priority.RACE, key='race_gaps', ttl=8, cooldown=0)
 
     def _track_rival_stops(self, laps, player_index, session_time):
         """Queue an event when a nearby rival turns into the pit lane.
@@ -380,6 +419,8 @@ class RaceRadio:
         if token in self.sectors_reported or milliseconds <= 0:
             return
         self.sectors_reported.add(token)
+        if self.session and self.session.session_type in (10, 11, 12):
+            return  # sector deltas to your best are qualifying coaching, not race radio
         name = say.sector_name(sector)
         if not personal_ms:
             message = f'{name.capitalize()}, {say.sector_time(milliseconds)}.'
@@ -405,6 +446,8 @@ class RaceRadio:
             self.report_sector(lap_num, 3, sectors[3], personal_sectors.get(3))
         if not self.session or self.session.session_type not in (10, 11, 12):
             return
+        if lap_num <= 1:
+            return  # the standing start makes lap 1 seconds slow: not race pace
         self.race_laps.append(milliseconds)
         self.clean_race_laps += 1
         if len(self.race_laps) == 3:

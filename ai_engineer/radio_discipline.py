@@ -1,11 +1,14 @@
 """Radio discipline: how much the engineer talks, and when.
 
 Real race engineers keep the radio short and never talk while the driver is through a
-fast corner. Two pieces enforce that:
+fast corner. Three pieces enforce that:
 
-  * ``CallBudget``  at most N proactive callouts per lap (default 4). Urgent calls (Safety
-                    Car, flags, penalties, damage, box calls, pit window, strategy calls,
-                    a car attacking with DRS) always get through and don't use the budget.
+  * ``CallBudget``  at most N proactive callouts per lap (default 4 in practice and
+                    qualifying, 2 in a race). Urgent calls (Safety Car, flags, penalties,
+                    damage, box calls, pit window, strategy calls, a car attacking with DRS)
+                    always get through and don't use the budget.
+  * ``race_quiet_reason`` the moments in a race when only urgent calls go out: lap 1, a DRS
+                    fight (a car within a second either side) and the last two laps.
   * ``DriverLoadGate`` says when the driver is in a high-load corner (fast and high lateral
                     G) or braking hard. The voice queue holds everything except critical
                     calls until the car is back on a straight, then delivers them.
@@ -19,6 +22,13 @@ from dataclasses import dataclass
 from voice_engine import Priority
 
 DEFAULT_CALLS_PER_LAP = 4
+DEFAULT_RACE_CALLS_PER_LAP = 2  # in a race the driver is fighting: half as many proactive calls
+
+# Race quiet windows: only urgent calls on these laps / in a fight.
+QUIET_FINAL_LAPS = 2
+DRS_FIGHT_S = 1.0
+# Calls that describe the fight itself, so the DRS-fight window must not swallow them.
+FIGHT_TOPICS = frozenset({'drs_ahead', 'drs_behind'})
 
 # Topics that are never budgeted, whatever their priority. CRITICAL and STRATEGY priority
 # calls (box box, pit window, undercut, Plan B, a rival's stop) are always urgent too.
@@ -56,14 +66,54 @@ def is_urgent(topic: str | None, priority) -> bool:
     return Priority(priority) <= Priority.STRATEGY or (topic or '') in URGENT_TOPICS
 
 
-class CallBudget:
-    """Counts proactive callouts per lap. ``per_lap`` 0 or None means no limit."""
+def race_quiet_reason(
+    lap_num: int | None,
+    total_laps: int | None,
+    gap_ahead_s: float | None,
+    gap_behind_s: float | None,
+    topic: str | None = None,
+) -> str | None:
+    """Why only urgent calls should go out right now in a race, or None.
 
-    def __init__(self, per_lap: int | None = DEFAULT_CALLS_PER_LAP):
-        self.per_lap = per_lap if per_lap and per_lap > 0 else None
+    Lap 1 is chaos, a car within a second either side is a fight the driver is concentrating
+    on, and the last two laps are about bringing it home. Pace, gaps and briefings wait.
+    """
+    if lap_num is not None and 0 < lap_num <= 1:
+        return 'lap_1'
+    if lap_num and total_laps and lap_num > total_laps - QUIET_FINAL_LAPS:
+        return 'final_laps'
+    if (topic or '') not in FIGHT_TOPICS and any(
+        gap is not None and gap < DRS_FIGHT_S for gap in (gap_ahead_s, gap_behind_s)
+    ):
+        return 'drs_fight'
+    return None
+
+
+class CallBudget:
+    """Counts proactive callouts per lap. ``per_lap`` 0 or None means no limit.
+
+    ``race_per_lap`` is the tighter limit used in a race (``set_race``); it never raises
+    the base limit, and a base of 0 (no limit) stays unlimited in every session.
+    """
+
+    def __init__(
+        self,
+        per_lap: int | None = DEFAULT_CALLS_PER_LAP,
+        race_per_lap: int | None = DEFAULT_RACE_CALLS_PER_LAP,
+    ):
+        self.base_per_lap = per_lap if per_lap and per_lap > 0 else None
+        self.race_per_lap = race_per_lap if race_per_lap and race_per_lap > 0 else None
+        self.per_lap = self.base_per_lap
         self.lap = None
         self.used = 0
         self.skipped = 0  # over-budget calls dropped this lap (HUD/debug)
+
+    def set_race(self, race: bool) -> None:
+        """Use the race limit in a race, the base limit in every other session."""
+        if race and self.base_per_lap is not None and self.race_per_lap is not None:
+            self.per_lap = min(self.base_per_lap, self.race_per_lap)
+        else:
+            self.per_lap = self.base_per_lap
 
     def reset(self) -> None:
         self.lap, self.used, self.skipped = None, 0, 0

@@ -465,6 +465,78 @@ def react_to_rival_stop(
     )
 
 
+SC_DECISION_MARGIN_S = 1.0  # boxing under SC/VSC must beat staying out by this much
+
+
+@dataclass
+class SafetyCarDecision:
+    box: bool
+    compound: str | None  # the set to fit when boxing
+    gain_s: float  # modelled race time boxing now saves over the best stay-out plan
+    message: str
+
+
+def safety_car_decision(
+    laps_remaining: int,
+    current_compound: str | None,
+    tyre_age: float,
+    current_lap: int,
+    pit_loss: float,
+    pit_factor: float,
+    compounds_used: set[str] | tuple = (),
+    deg_scale: float = 1.0,
+    life_scale: float = 1.0,
+    neutral: str = 'Safety Car',
+) -> SafetyCarDecision | None:
+    """Box now under the Safety Car / VSC, or stay out? Said in the same breath as the SC call.
+
+    Boxing now costs this lap on the current set, a stop at ``pit_factor`` of the green-flag
+    loss and the best plan for the rest of the race on the new set. Staying out is the best
+    plan at the normal pit loss. Box when the cheap stop wins by SC_DECISION_MARGIN_S.
+    Track position under the Safety Car is not modelled here: the race simulator's Plan B call
+    weighs that afterwards. None when there is nothing to plan.
+    """
+    current = normalise_compound(current_compound) or 'MEDIUM'
+    if laps_remaining <= 2:
+        return SafetyCarDecision(False, None, 0.0, 'Stay out, too late to stop.')
+    stay = plan_race(
+        laps_remaining, current, tyre_age, current_lap, pit_loss, compounds_used, deg_scale, life_scale
+    )
+    if stay is None:
+        return None
+    used = {c for c in (normalise_compound(u) for u in compounds_used) if c} | {current}
+    options = (current,) if current in WET_COMPOUNDS else DRY_COMPOUNDS
+    this_lap = tyre_curve(current, deg_scale, life_scale).lap_cost(tyre_age)
+    best: tuple[float, str] | None = None
+    for compound in options:
+        rest = plan_race(
+            laps_remaining - 1, compound, 0.0, current_lap + 1, pit_loss, used, deg_scale, life_scale
+        )
+        if rest is None:
+            continue
+        curve = tyre_curve(compound, deg_scale, life_scale)
+        warmup = curve.lap_cost(0.0, out_lap=True) - curve.lap_cost(0.0)
+        total = this_lap + pit_loss * pit_factor + rest.best.total_time_s + warmup
+        if best is None or total < best[0]:
+            best = (total, compound)
+    if best is None:
+        return None
+    gain = round(stay.best.total_time_s - best[0], 1)
+    if gain >= SC_DECISION_MARGIN_S:
+        compound = best[1]
+        return SafetyCarDecision(
+            True,
+            compound,
+            gain,
+            f'Box, box. Box this lap for {compound.lower()}s, cheap stop under the {neutral}.',
+        )
+    if stay.best.stops == 0:
+        message = 'Stay out, we keep track position.'
+    else:
+        message = f'Stay out, we keep track position. Plan stays lap {stay.best.pit_laps[0]}.'
+    return SafetyCarDecision(False, None, gain, message)
+
+
 def describe_plan(plan: StrategyPlan | None) -> str:
     """Short spoken summary of the best plan."""
     if plan is None:

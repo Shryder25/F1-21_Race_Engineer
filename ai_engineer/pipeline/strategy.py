@@ -19,6 +19,7 @@ import pit_wall
 import race_briefing
 import race_sim
 import race_strategy
+import radio_phrases as say
 import rival_strategy
 import session_modes
 import strategy_replan
@@ -129,6 +130,58 @@ class StrategyStage(ModelsStage):
         if self.all_status is None or index is None or not 0 <= index < len(self.all_status):
             return None
         return self.all_status[index]
+
+    def rival_tyre_note(self, index: int) -> str | None:
+        """'on mediums, eight laps older than yours': what a DRS call tells the driver."""
+        rival = self._rival_status(index)
+        compound = race_strategy.normalise_compound(rival.compound_name) if rival else None
+        if rival is None or compound is None:
+            return None
+        tyres = f'{compound.lower()}s'
+        player = self.latest_status
+        if player is not None:
+            diff = rival.tyres_age_laps - player.tyres_age_laps
+            if abs(diff) >= 3:
+                laps = say.number_words(abs(diff))
+                return f'on {tyres}, {laps} laps {"older" if diff > 0 else "newer"} than yours'
+            if race_strategy.normalise_compound(player.compound_name) == compound:
+                return None  # same tyres, same age: nothing worth saying
+        if rival.tyres_age_laps <= 1:
+            return f'on fresh {tyres}'
+        return f'on {say.number_words(rival.tyres_age_laps)} lap old {tyres}'
+
+    def safety_car_call(self, safety_car_status: int) -> str | None:
+        """Box or stay out, for the Safety Car / VSC call itself (None: no decision to give)."""
+        status, lap, session = self.latest_status, self.latest_lap, self.session
+        if (
+            self.session_mode != session_modes.RACE
+            or status is None
+            or lap is None
+            or session is None
+            or lap.pit_status
+            or not session.total_laps
+        ):
+            return None
+        deg_scale, life_scale = self.strategy_scales()
+        decision = race_strategy.safety_car_decision(
+            session.total_laps - lap.current_lap_num + 1,
+            status.compound_name,
+            status.tyres_age_laps,
+            lap.current_lap_num,
+            race_strategy.pit_loss_s(session.track_id),
+            race_sim.SC_PIT_FACTOR if safety_car_status == 1 else race_sim.VSC_PIT_FACTOR,
+            self.compounds_used,
+            deg_scale,
+            life_scale,
+            neutral='Safety Car' if safety_car_status == 1 else 'VSC',
+        )
+        if decision is None:
+            return None
+        call = race_strategy.StrategyCall(
+            'sc_box' if decision.box else 'sc_stay_out', decision.message, decision.gain_s
+        )
+        self.last_strategy_call = {**call.as_dict(), 'lap': lap.current_lap_num}
+        return decision.message
 
     # ── Rival stop / compound predictions ──
 
@@ -270,8 +323,8 @@ class StrategyStage(ModelsStage):
         ):
             return
         remaining = self.call_budget.remaining
-        if remaining is not None and remaining < 2:
-            return  # filler: leave this lap's last calls for things that can't wait
+        if remaining is not None and remaining < 1:
+            return  # this lap's calls are used up
         lap = self.latest_lap
         position = lap.car_position if lap else None
         text = self.briefing.line(
@@ -419,6 +472,14 @@ class StrategyStage(ModelsStage):
 
     def box_called(self, reason: str, car_index: int | None = None) -> None:
         """A box-this-lap call went on air: arm the confirm before entry, abort and brief."""
+        if reason == 'safety_car':
+            # The Safety Car call carried a decision: box (cheap stop) or stay out.
+            kind = (self.last_strategy_call or {}).get('kind')
+            if kind == 'sc_stay_out':
+                self.pit_sequence.cancel('safety_car')  # the SC call already said "stay out"
+                return
+            if kind != 'sc_box':
+                return
         self.pit_sequence.box_called(reason, self.latest_lap, car_index)
 
     def update_pit_sequence(self, lap: LapData) -> None:

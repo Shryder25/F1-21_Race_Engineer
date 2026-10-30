@@ -117,7 +117,7 @@ class AnalysisEngine(IngestStage):
 
         # Radio: priority interrupts
         if self.session:
-            self.radio.update_safety_car(self.session.safety_car_status)
+            self.radio.update_safety_car(self.session.safety_car_status, self.safety_car_call)
             self.radio.update_weather_alert(self.session.weather)
         if self.latest_damage:
             self.radio.update_damage_alert(
