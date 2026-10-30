@@ -22,12 +22,15 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / 'config.to
 
 # Callouts that break on-demand radio silence: critical events, strategy calls that cannot
 # wait for the driver to ask (covering or taking an undercut is a this-lap decision), and one
-# end-of-lap pace call: the lap time, where time was lost (sector and corner) and race pace.
+# end-of-lap call. Practice/qualifying: the lap time and where time was lost (sector and
+# corner). Race: the gaps either side with their trend, race pace every few laps, and corner
+# coaching only when the same corner keeps costing time.
 # Tyre temperatures are left out on purpose: the driver sees them on the dash.
 DEFAULT_PROACTIVE_KEYS = (
     'lap_time',
     'lap_coaching',
     'race_pace',
+    'race_gaps',
     'safety_car',
     'safety_car_in',
     'weather_rain',
@@ -64,6 +67,7 @@ class RadioConfig:
     on_demand: bool = True  # speak only when asked, except proactive_keys
     proactive_keys: tuple[str, ...] = DEFAULT_PROACTIVE_KEYS
     calls_per_lap: int = 4  # most proactive calls per lap; urgent ones always get through (0 = no limit)
+    race_calls_per_lap: int = 2  # tighter limit in a race (never above calls_per_lap; 0 = same as it)
     # No talking in a high-load corner (radio_discipline.py): at least this fast...
     corner_speed_kph: float = 200.0
     corner_g: float = 3.5  # ... with at least this much lateral G,
