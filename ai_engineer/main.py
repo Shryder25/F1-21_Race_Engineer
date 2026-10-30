@@ -233,6 +233,7 @@ def settings_from(args) -> EngineConfig:
             'ai.autostart': False if args.no_ai_autostart else None,
             'radio.on_demand': False if args.chatty else None,
             'radio.calls_per_lap': args.calls_per_lap,
+            'radio.race_calls_per_lap': args.race_calls_per_lap,
             'radio.braking_calls': True if args.braking_calls else None,
             'radio.race_briefing': False if args.no_race_briefing else None,
             'radio.corner_speed_kph': args.corner_speed,
@@ -511,6 +512,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='N',
         help='Most proactive callouts per lap; urgent calls (Safety Car, flags, box, pit window, '
         f'strategy, DRS attack) always get through (default {defaults.radio.calls_per_lap}, 0 = no limit)',
+    )
+    disc.add_argument(
+        '--race-calls-per-lap',
+        type=int,
+        default=None,
+        metavar='N',
+        help='Tighter proactive-call limit in a race, never above --calls-per-lap '
+        f'(default {defaults.radio.race_calls_per_lap}, 0 = same as --calls-per-lap)',
     )
     disc.add_argument(
         '--corner-speed',

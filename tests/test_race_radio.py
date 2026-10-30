@@ -52,6 +52,7 @@ class RaceRadioTests(unittest.TestCase):
         self.radio.update_field(field(10), 1, 1, now=1)
         self.assertAlmostEqual(self.radio.gap_ahead_s, 1)
         self.assertAlmostEqual(self.radio.gap_behind_s, 1)
+        self.radio.call_lap_gaps()  # gaps are said once a lap, at the line
         self.assertTrue(any('ahead' in message[0] for message in self.voice.messages))
         self.radio.reset(self.session)
         self.assertIsNone(self.radio.gap_ahead_s)
@@ -59,10 +60,14 @@ class RaceRadioTests(unittest.TestCase):
     def test_sector_and_clean_race_pace_have_timing_priority(self):
         from voice_engine import Priority
 
+        self.radio.session = replace(self.session, session_type=5)  # sector deltas: qualifying only
         self.radio.report_sector(1, 1, 28000, 28500)
         self.assertIn('half a second up', self.voice.messages[-1][0])
         self.assertEqual(self.voice.messages[-1][1], Priority.TIMING)
-        for lap_num, lap_time in enumerate([90000, 92000, 91000], 1):
+        self.radio.session = self.session
+        self.radio.report_sector(1, 2, 28000, 28500)
+        self.assertEqual(len(self.voice.messages), 1)  # a race has no sector-by-sector deltas
+        for lap_num, lap_time in enumerate([90000, 92000, 91000], 2):
             self.radio.completed_lap(lap_time, lap_num, {}, {})
         self.assertEqual(self.radio.race_pace_ms, 91000)
         self.assertEqual(self.voice.messages[-1][1], Priority.RACE)
@@ -87,7 +92,7 @@ class RaceRadioTests(unittest.TestCase):
     def test_analysis_uses_only_clean_complete_laps_for_race_pace(self):
         fixture = test_analysis.LapValidityTests()
         fixture.setUp()
-        for lap_num in range(1, 5):
+        for lap_num in range(1, 6):
             for distance in range(0, 1000, 20):
                 lap = replace(
                     fixture.lap,
@@ -107,6 +112,6 @@ class RaceRadioTests(unittest.TestCase):
                     last_lap_time_ms=50000,
                 ),
             )
-            if lap_num < 4:
+            if lap_num < 5:  # lap 1 (standing start) and lap 3 (invalid) don't count
                 self.assertIsNone(fixture.engine.radio.race_pace_ms)
         self.assertEqual(fixture.engine.radio.race_pace_ms, 50000)

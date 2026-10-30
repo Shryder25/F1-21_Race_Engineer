@@ -17,15 +17,19 @@ file = ""                   # --log-file: also write every record as JSON lines 
 [radio]
 on_demand = true            # speak only when asked, plus the proactive keys below (--chatty = false)
 # Callouts that break on-demand silence: critical events, this-lap strategy calls, and the
-# end-of-lap pace call (lap time, where you lost time, race pace). Add "tyre_temperature"
+# end-of-lap call (practice/quali: lap time + where you lost time; race: gaps + trend, race
+# pace, and corner coaching only when one corner costs time three laps running). Add "tyre_temperature"
 # to get the mid-lap overheating warning back.
 proactive_keys = [
-    "lap_time", "lap_coaching", "race_pace", "safety_car", "safety_car_in", "weather_rain",
+    "lap_time", "lap_coaching", "race_pace", "race_gaps", "safety_car", "safety_car_in", "weather_rain",
     "critical_wear", "wing_damage", "penalty", "flag_yellow", "flag_red", "rival_pit",
     "undercut", "rival_preempt", "plan_b",
 ]
 calls_per_lap = 4           # --calls-per-lap: most proactive calls per lap; urgent calls always
                             # get through (Safety Car, flags, box, strategy...). 0 = no limit
+race_calls_per_lap = 2      # --race-calls-per-lap: tighter limit in a race (never above the one above).
+                            # Races also go quiet (urgent calls only) on lap 1, in a DRS fight
+                            # (car within 1s either side) and on the last two laps.
 # The driver counts as busy (calls wait for the straight) in a high-load corner or braking hard:
 corner_speed_kph = 200.0    # --corner-speed: a high-load corner is at least this fast...
 corner_g = 3.5              # --corner-g: ...with at least this much lateral G
