@@ -58,6 +58,11 @@ URGENT_TOPICS = frozenset(
         'race_winner',
         'race_finish',
         'lap_deleted',
+        'fuel_save',
+        'puncture',
+        'engine_damage',
+        'gearbox_damage',
+        'engine_temp_critical',
     }
 )
 

@@ -151,6 +151,7 @@ class IngestStage(LapsStage):
         self.undercut_calls.clear()
         self.rivals.reset()
         self.briefing.reset()
+        self.car_manager.reset()
         self.rival_calls.clear()
         self.player_start_compound = None
         self.lap_start_fuel = None

@@ -46,6 +46,11 @@ DEFAULT_PROACTIVE_KEYS = (
     'pit_confirm',
     'pit_abort',
     'pit_brief',
+    'fuel_save',
+    'puncture',
+    'engine_damage',
+    'gearbox_damage',
+    'engine_temp_critical',
 )
 
 
@@ -57,8 +62,8 @@ class ConfigError(ValueError):
 class TyreConfig:
     high_c: int = 104  # surface temp above this counts as running hot
     low_c: int = 80  # surface temp below this counts as running cold
-    critical_c: int = 112  # critical overheat: the only mid-lap tyre call
-    rise_rate_c_per_s: float = 1.5  # a critical temp must also be climbing this fast
+    critical_c: int = 112  # carcass (inner) °C for a critical overheat: the only mid-lap tyre call
+    rise_rate_c_per_s: float = 1.5  # a critical carcass temp must also be climbing this fast
     critical_sustain_s: float = 0.5  # ... for at least this long
     alert_cooldown_s: float = 40.0  # seconds between two critical overheat calls
     summary_min_s: float = 4.0  # seconds hot/cold in a lap before the summary says so
@@ -81,6 +86,31 @@ class RadioConfig:
     braking_warn_distance_m: float = 220.0  # braking-point call this far before the zone
     race_briefing: bool = True  # chatty mode: one race-info call per lap (threats, rival tyres, SC odds)
     delta_report_interval_s: float = 14.0  # seconds between live delta calls
+
+
+@dataclass
+class CarConfig:
+    """Car management calls (car_management.py). Every threshold is an estimate until it is
+    checked against a real F1 2021 recording."""
+
+    fuel_save_laps: float = -0.3  # fuel margin (laps) below this: "fuel is tight, save" (urgent)
+    fuel_lift_laps: float = 0.2  # ... below this: "fuel is marginal, lift slightly" (urgent)
+    fuel_good_laps: float = 1.0  # ... at or above this: "fuel is good, you can push" (chatty)
+    fuel_repeat_laps: int = 3  # an unchanged save/lift call is repeated at most this often
+    ers_low_pct: float = 15.0  # battery below this at the line: "harvest this lap" (chatty)
+    ers_full_pct: float = 95.0  # battery above this all lap: "battery's full, use it" (chatty)
+    ers_repeat_laps: int = 3  # the same ERS call at most this often
+    brake_hot_c: int = 1050  # brake disc °C counted as a spike in a corner
+    brake_repeat_laps: int = 2  # same corner and brake hot this many laps running before a call
+    brake_cooldown_laps: int = 5  # then quiet about that corner for this many laps
+    engine_hot_c: int = 118  # engine °C held this long: "engine temps are up" (chatty)
+    engine_critical_c: int = 128  # engine °C held this long: critical call (urgent)
+    engine_sustain_s: float = 5.0  # seconds above a threshold before it counts
+    engine_cooldown_s: float = 90.0  # seconds between two engine temperature calls
+    damage_step_pct: int = 15  # a sudden engine/gearbox damage jump this big is called (urgent)
+    damage_warn_pct: int = 50  # engine/gearbox damage passing this is called (urgent)
+    damage_critical_pct: int = 75  # ... and passing this (critical)
+    puncture_jump_pct: int = 30  # tyre damage jumping this much at once counts as a puncture
 
 
 @dataclass
@@ -141,6 +171,7 @@ class LoggingConfig:
 class EngineConfig:
     tyres: TyreConfig = field(default_factory=TyreConfig)
     radio: RadioConfig = field(default_factory=RadioConfig)
+    car: CarConfig = field(default_factory=CarConfig)
     laps: LapConfig = field(default_factory=LapConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     simulation: SimulationConfig = field(default_factory=SimulationConfig)

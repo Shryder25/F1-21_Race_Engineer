@@ -707,6 +707,8 @@ class CarStatusData:
     ers_store_energy: float
     ers_deploy_mode: int
     ers_deployed_this_lap: float
+    fuel_mix: int = 1  # 0 lean, 1 standard, 2 rich, 3 max
+    ers_harvested_this_lap: float = 0.0  # MGU-K + MGU-H, joules
 
     @property
     def compound_name(self) -> str:
@@ -727,6 +729,8 @@ def _car_status_from_values(v: tuple) -> CarStatusData:
         ers_store_energy=v[17],
         ers_deploy_mode=v[18],
         ers_deployed_this_lap=v[21],
+        fuel_mix=v[2],
+        ers_harvested_this_lap=v[19] + v[20],
     )
 
 
@@ -778,6 +782,7 @@ class CarDamageData:
     floor: int
     gearbox: int
     engine: int
+    drs_fault: int = 0
 
     @property
     def worst_tyre_wear(self) -> float:
@@ -794,6 +799,7 @@ def _car_damage_from_values(v: tuple) -> CarDamageData:
         floor=v[15],
         gearbox=v[19],
         engine=v[20],
+        drs_fault=v[18],
     )
 
 

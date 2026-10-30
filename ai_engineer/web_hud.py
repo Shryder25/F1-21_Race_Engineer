@@ -56,6 +56,8 @@ dashboard_state: dict[str, Any] = {
     "safety_car": "NONE",
     "weather": "Clear",
     "engine_temp": 90,
+    # Fuel margin, hot brakes, punctures, engine/gearbox damage (car_management.py)
+    "car_management": {},
     "lap_num": 1,
     "total_laps": 52,
     "position": 1,

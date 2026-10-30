@@ -187,7 +187,7 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
         time_module.time = lambda: clock['t']
         try:
             # Build a steadily, genuinely rising temperature across several frames.
-            for temp in (100, 105, 110, 115, TYRE_TEMP_CRITICAL + 3):
+            for temp in (100, 105, 110, TYRE_TEMP_CRITICAL + 1, TYRE_TEMP_CRITICAL + 3):
                 self.engine.analyze_tyres(self.make_telemetry(temp), self.lap)
                 clock['t'] += 1.0
             first_count = sum(
@@ -250,7 +250,7 @@ class TyreTempFalsePositiveTests(unittest.TestCase):
         clock = {'t': 2000.0}
         time_module.time = lambda: clock['t']
         try:
-            for temp in (100, 108, 116, TYRE_TEMP_CRITICAL + 2):
+            for temp in (100, 108, TYRE_TEMP_CRITICAL + 1, TYRE_TEMP_CRITICAL + 4):
                 self.engine.analyze_tyres(self.make_telemetry(temp), self.lap)
                 clock['t'] += 1.0
             alerts_after_climb = sum(
