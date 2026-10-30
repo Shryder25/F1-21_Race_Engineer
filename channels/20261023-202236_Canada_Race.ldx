@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<LDXFile Locale="English_United Kingdom.1252" DefaultLocale="C" Version="1.6">
+ <Layers>
+  <Layer>
+   <MarkerBlock>
+    <MarkerGroup Name="Beacons" Index="3">
+     <Marker Version="100" ClassName="BCN" Name="Manual.1" Flags="77" Time="2698791.50"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.2" Flags="77" Time="81037277.22"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.3" Flags="77" Time="159192398.07"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.4" Flags="77" Time="236810897.83"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.5" Flags="77" Time="313520431.52"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.6" Flags="77" Time="390781845.09"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.7" Flags="77" Time="467580734.25"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.8" Flags="77" Time="544493576.05"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.9" Flags="77" Time="621770065.31"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.10" Flags="77" Time="715421127.32"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.11" Flags="77" Time="791625106.81"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.12" Flags="77" Time="867314437.87"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.13" Flags="77" Time="943135116.58"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.14" Flags="77" Time="1020643051.15"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.15" Flags="77" Time="1098654647.83"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.16" Flags="77" Time="1177731674.19"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.17" Flags="77" Time="1259373641.97"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.18" Flags="77" Time="1341596908.57"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.19" Flags="77" Time="1447969467.16"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.20" Flags="77" Time="1560358261.11"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.21" Flags="77" Time="1677008651.73"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.22" Flags="77" Time="1792201400.76"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.23" Flags="77" Time="1868878280.64"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.24" Flags="77" Time="1944448593.14"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.25" Flags="77" Time="2019848739.62"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.26" Flags="77" Time="2094858261.11"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.27" Flags="77" Time="2172471786.50"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.28" Flags="77" Time="2248552108.76"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.29" Flags="77" Time="2325523300.17"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.30" Flags="77" Time="2402501815.80"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.31" Flags="77" Time="2479034774.78"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.32" Flags="77" Time="2555782333.37"/>
+     <Marker Version="100" ClassName="BCN" Name="Manual.33" Flags="77" Time="2632214706.42"/>
+    </MarkerGroup>
+   </MarkerBlock>
+   <RangeBlock/>
+  </Layer>
+  <Details>
+   <String Id="Total Laps" Value="34"/>
+   <String Id="Fastest Time" Value="1:15.042"/>
+   <String Id="Fastest Lap" Value="27"/>
+  </Details>
+ </Layers>
+</LDXFile>

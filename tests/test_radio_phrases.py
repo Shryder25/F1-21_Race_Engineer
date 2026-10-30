@@ -66,13 +66,21 @@ class RadioTimingTests(unittest.TestCase):
         message = next(m for m, _, kw in self.voice.messages if kw.get('key') == 'drs_ahead')
         self.assertIn('eight tenths', message)
 
-    def test_routine_gap_update_is_about_once_a_lap_not_every_twenty_seconds(self):
+    def test_gap_update_is_once_a_lap_at_the_line_with_the_trend(self):
         for t in range(0, 60):
             self.radio.update_field(self._field(150, t), 1, float(t), now=float(t))
-        self.assertEqual(self._keys().count('traffic_gaps'), 2)  # t=1 and t=46
+        self.assertEqual(self._keys().count('race_gaps'), 0)  # no timed gap calls mid-lap
+        self.radio.call_lap_gaps()
+        for t in range(60, 70):
+            self.radio.update_field(self._field(130, t), 1, float(t), now=float(t))
+        self.radio.call_lap_gaps()
+        calls = [m for m, _, kw in self.voice.messages if kw.get('key') == 'race_gaps']
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], 'Gap ahead three point zero.')
+        self.assertEqual(calls[1], "Gap ahead two point six, you're catching, four tenths that lap.")
 
     def test_race_pace_summary_every_three_laps(self):
-        for lap_num in range(1, 7):
+        for lap_num in range(1, 8):  # lap 1 is a standing start and never counts
             self.radio.completed_lap(91000, lap_num, {}, {})
         pace_calls = [m for m, p, kw in self.voice.messages if kw.get('key') == 'race_pace']
         self.assertEqual(len(pace_calls), 2)

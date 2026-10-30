@@ -78,18 +78,23 @@ class TrackMapStore:
                 log.warning(f'Could not read {self.path}: {error}')
 
     def get(self, track_id, track_length: float) -> dict:
-        """{'outline': [...], 'pit_lane': [...]} for this track ([] where not mapped yet)."""
+        """{'outline': [...], 'pit_lane': [...], 'pit_entry_m': lap distance or None} for this track."""
         entry = self.maps.get(str(track_id))
         if (
             not entry
             or track_length <= 0
             or abs(entry.get('track_length', 0) - track_length) > LENGTH_TOLERANCE_M
         ):
-            return {'outline': [], 'pit_lane': []}
-        return {'outline': list(entry.get('outline') or []), 'pit_lane': list(entry.get('pit_lane') or [])}
+            return {'outline': [], 'pit_lane': [], 'pit_entry_m': None}
+        pit_entry = entry.get('pit_entry_m')
+        return {
+            'outline': list(entry.get('outline') or []),
+            'pit_lane': list(entry.get('pit_lane') or []),
+            'pit_entry_m': float(pit_entry) if isinstance(pit_entry, int | float) else None,
+        }
 
-    def save(self, track_id, track_length: float, outline=None, pit_lane=None):
-        """Store a new outline and/or pit lane for a track (None leaves that part as is)."""
+    def save(self, track_id, track_length: float, outline=None, pit_lane=None, pit_entry_m=None):
+        """Store a new outline, pit lane and/or pit entry lap distance (None leaves it as is)."""
         key = str(track_id)
         entry = dict(self.maps.get(key) or {})
         if abs(entry.get('track_length', track_length) - track_length) > LENGTH_TOLERANCE_M:
@@ -99,6 +104,8 @@ class TrackMapStore:
             entry['outline'] = outline
         if pit_lane is not None:
             entry['pit_lane'] = pit_lane
+        if pit_entry_m is not None:
+            entry['pit_entry_m'] = pit_entry_m
         entry['updated'] = int(time.time())
         self.maps[key] = entry
         self._write()

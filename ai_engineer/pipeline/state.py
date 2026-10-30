@@ -11,7 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import car_management
 import fitted_models
+import lap_coaching
+import pit_sequence
 import pit_wall
 import race_briefing
 import race_sim
@@ -153,7 +156,7 @@ class EngineState:
         # Radio discipline: a per-lap budget for proactive calls, and no talking through
         # high-load corners or heavy braking (the voice queue holds calls for the straight).
         # main.py passes config.toml's values; a bare engine uses radio_discipline's defaults.
-        self.call_budget = radio_discipline.CallBudget(calls_per_lap)
+        self.call_budget = radio_discipline.CallBudget(calls_per_lap, self.config.radio.race_calls_per_lap)
         self.load_gate = radio_discipline.DriverLoadGate(load_thresholds)
         # Saved outline + pit lane per circuit (memory-only unless main.py gives it a file).
         self.track_store = track_store if track_store is not None else track_maps.TrackMapStore()
@@ -198,9 +201,15 @@ class EngineState:
         self._ml_cache: tuple[tuple[Any, ...], Any] | None = None
         self.session_mode = session_modes.UNKNOWN
         self._corner_key: tuple[int, int] | None = None
-        self.radio = RaceRadio(self.speak)
+        self.radio = RaceRadio(self.speak, on_box=self.box_called)
+        self.radio.tyre_note = self.rival_tyre_note  # DRS calls say what the other car is on
+        # The stop as a real engineer runs it: box call, confirm before pit entry, stay-out
+        # abort, out-lap brief (pit_sequence.py). Reset with the session.
+        self.pit_sequence = pit_sequence.PitSequence(self.speak)
         self.phrases: Phrasebook = self.radio.phrases
         self.race_control = RaceControl(self.speak)
+        # Fuel, ERS, brake, engine and damage calls (car_management.py).
+        self.car_manager = car_management.CarManager(self.speak, self.config.car, self._car_chat_ok)
         self.history = history
         self.capture_id: str | None = None
         # Every car's laps, tyre stints, classification and setups (packets 11, 8 and 5).
@@ -237,6 +246,8 @@ class EngineState:
         self.current_corner_data: dict[str, JSON] = {}
         self.best_corner_data: dict[str, JSON] = {}
         self.best_corner_runs: dict[str, JSON] = {}  # quickest run through each corner this session
+        # Race coaching: corners lost lap after lap (lap_coaching.CornerLossStreaks)
+        self.race_corner_streaks = lap_coaching.CornerLossStreaks()
         self.corner_diagnostics: list[JSON] = []
         # (lap distance, lap time ms, speed, brake) of the previous frame
         self.previous_corner_sample: tuple[float, int, int, float] | None = None
@@ -277,6 +288,20 @@ class EngineState:
         self._sent_best_trace: list[list[float]] | None = None
         self._sent_best_len = -1
 
-    def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> None:
+    def _car_chat_ok(self) -> bool:
+        """Chatty car-management calls always leave one of the lap's proactive calls for race
+        info (the race budget is only two a lap)."""
+        remaining = self.call_budget.remaining
+        return remaining is None or remaining >= 2
+
+    def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> bool:
         """Queue a radio call. Implemented by the radio stage (pipeline/radio.py)."""
         raise NotImplementedError
+
+    def box_called(self, reason: str, car_index: int | None = None) -> None:
+        """A box-this-lap call went out. Implemented by the strategy stage (pipeline/strategy.py)."""
+        raise NotImplementedError
+
+    def rival_tyre_note(self, index: int) -> str | None:
+        """A car's tyres, said in a DRS call. Implemented by the strategy stage."""
+        return None

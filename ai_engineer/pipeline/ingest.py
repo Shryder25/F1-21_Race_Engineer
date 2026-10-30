@@ -75,6 +75,7 @@ class IngestStage(LapsStage):
         self.track_id = session.track_id
         self.track_name = TRACK_NAMES.get(session.track_id, f'Track {session.track_id}')
         self.session_mode = session_modes.session_mode(session.session_type)
+        self.call_budget.set_race(self.session_mode == session_modes.RACE)
 
         # Load braking points and corner zones for whichever circuit the game reports
         self.braking_points = get_braking_points(session.track_id)
@@ -117,6 +118,7 @@ class IngestStage(LapsStage):
         self.current_corner_data.clear()
         self.best_corner_data.clear()
         self.best_corner_runs.clear()
+        self.race_corner_streaks.reset()
         self.corner_diagnostics.clear()
         self.previous_corner_sample = None
         self.brake_start_distance = None
@@ -149,6 +151,7 @@ class IngestStage(LapsStage):
         self.undercut_calls.clear()
         self.rivals.reset()
         self.briefing.reset()
+        self.car_manager.reset()
         self.rival_calls.clear()
         self.player_start_compound = None
         self.lap_start_fuel = None
@@ -186,6 +189,11 @@ class IngestStage(LapsStage):
         self._reset_hud()
         self.radio.reset(session)
         self.race_control.reset(session)
+        self.pit_sequence.reset(
+            session.track_length,
+            racing=session_modes.session_mode(session.session_type) == session_modes.RACE,
+            stored_entry_m=self.track_store.get(session.track_id, session.track_length).get('pit_entry_m'),
+        )
         web_hud.update_web_state({'race_control': []})
 
     def _change_conditions(self, session: SessionData) -> None:
@@ -201,6 +209,7 @@ class IngestStage(LapsStage):
         self.delta.current_lap_invalid = True  # this lap was run in mixed conditions
         self.best_corner_data = {}
         self.best_corner_runs = {}
+        self.race_corner_streaks.reset()  # dry losses say nothing about the wet
         self.best_sector_times = {}
         self._load_history_reference(session, self.session_uid)
         web_hud.update_web_state(

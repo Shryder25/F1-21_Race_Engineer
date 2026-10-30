@@ -23,7 +23,7 @@ class HistoryTests(unittest.TestCase):
         self.history = TelemetryHistory(self.path)
         self.addCleanup(self.history.close)
         self.engine = AnalysisEngine(SilentVoice(), history=self.history)
-        self.session = SessionData(0, 30, 20, 20, 1000, 10, 11, 0)
+        self.session = SessionData(0, 30, 20, 20, 1000, 5, 11, 0)  # qualifying: sector calls
         self.engine.update_session(self.session, session_uid=100)
         self.telemetry = parse_player_telemetry(build_telemetry_packet(1, 1, 100, 1, 0, 4, 95), 0)
         self.lap = parse_player_lap_data(build_lap_packet(1, 1, 0, 100, 1, 3), 0)

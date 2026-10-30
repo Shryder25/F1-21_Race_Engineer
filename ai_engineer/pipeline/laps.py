@@ -104,7 +104,9 @@ class LapsStage(OutputsStage):
         delta_ms = round(elapsed_ms - reference_ms)
         self.delta.last_reported_delta_ms = delta_ms
 
-        # Voice delta callout periodically
+        # Voice delta callout periodically (not in a race: "up on your best" is qualifying talk)
+        if self.session_mode == session_modes.RACE:
+            return
         if now - self.delta.last_delta_report_time < self.config.radio.delta_report_interval_s:
             return
         self.delta.last_delta_report_time = now
@@ -183,6 +185,8 @@ class LapsStage(OutputsStage):
         self.current_lap_speed_trap_kph = None
         if prev_lap_num > 0 and self.delta.current_lap_samples:
             self._save_lap_recording(lap, prev_lap_num, complete, sectors)
+        if prev_lap_num > 0 and self.session_mode == session_modes.RACE:
+            self.radio.call_lap_gaps()  # race: the gaps and their trend, every lap at the line
         if complete and lap.last_lap_time_ms > 0 and self.delta.current_lap_times:
             self._report_completed_lap(lap.last_lap_time_ms, prev_lap_num, sectors)
 
@@ -233,8 +237,14 @@ class LapsStage(OutputsStage):
         """A clean, complete lap: radio the time, and keep it as the reference if it's a best."""
         self.radio.completed_lap(last_ms, lap_num, sectors, self.best_sector_times)
         coaching = None
-        racing_start = lap_num == 1 and self.session_mode == session_modes.RACE  # standing start
-        if not racing_start and not self.map_lap_has_pit:
+        race = self.session_mode == session_modes.RACE
+        if race:
+            # Race: no lap-by-lap coaching. Only a corner that keeps costing time gets a call.
+            if lap_num > 1 and not self.map_lap_has_pit:  # lap 1 is a standing start
+                streaks = self.race_corner_streaks
+                streaks.observe(lap_num, self.current_corner_data, self.best_corner_runs)
+                coaching = streaks.line(lap_num, self.current_corner_data, self.best_corner_runs)
+        elif not self.map_lap_has_pit:
             coaching = lap_coaching.coaching_line(
                 sectors, self.best_sector_times, self.current_corner_data, self.best_corner_runs
             )
@@ -246,7 +256,9 @@ class LapsStage(OutputsStage):
         spoken = say.lap_time(last_ms)
 
         # Store as best if first completed lap or faster
-        if self.delta.best_lap_time_ms == 0 or last_ms < self.delta.best_lap_time_ms:
+        first_lap = self.delta.best_lap_time_ms == 0
+        personal_best = first_lap or last_ms < self.delta.best_lap_time_ms
+        if personal_best:
             self.delta.best_lap_times = dict(self.delta.current_lap_times)
             self.delta.best_lap_speeds = list(self.delta.current_lap_speeds)
             self.delta.best_lap_time_ms = last_ms
@@ -257,6 +269,9 @@ class LapsStage(OutputsStage):
                 self.braking_zones_best = list(self.current_lap_braking_zones)
                 self.ers_zones_best = list(self.current_lap_ers_zones)
 
+        if race and first_lap:
+            pass  # a race's first clean lap is always a "personal best": not news
+        elif personal_best:
             self.speak(
                 self.phrases.pick(
                     'personal_best',
@@ -270,7 +285,7 @@ class LapsStage(OutputsStage):
                 ttl=10,
                 cooldown=0,
             )
-        else:
+        elif not race:  # "X off your best" every lap is qualifying coaching, not race radio
             diff_s = (last_ms - self.delta.best_lap_time_ms) / 1000.0
             if diff_s < 0.15:
                 message = f'{spoken.capitalize()}. Just {say.time_amount(diff_s)} off your best.'

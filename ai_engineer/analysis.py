@@ -106,16 +106,19 @@ class AnalysisEngine(IngestStage):
         # Radio: callouts straight off the frame
         self.analyze_tyres(telemetry, lap)
         self.check_braking_points(lap, telemetry)
+        self.update_car_management(telemetry, lap)
         # Laps: corner diagnosis
         self.update_corners(telemetry, lap)
         # Strategy: game pit window, rival stops, undercuts, race simulation
         self.radio.update_strategy(lap)
         self.update_strategy_calls(lap)
         self.update_race_simulation()
+        # Strategy: the stop itself (confirm before pit entry, stay-out abort, out-lap brief)
+        self.update_pit_sequence(lap)
 
         # Radio: priority interrupts
         if self.session:
-            self.radio.update_safety_car(self.session.safety_car_status)
+            self.radio.update_safety_car(self.session.safety_car_status, self.safety_car_call)
             self.radio.update_weather_alert(self.session.weather)
         if self.latest_damage:
             self.radio.update_damage_alert(
