@@ -24,8 +24,11 @@ RACE_PACE_EVERY_LAPS = 3
 class RaceRadio:
     """Authentic F1 race radio protocol with silence enforcement, concise calls, and priority interrupts."""
 
-    def __init__(self, speak: Callable[..., Any]) -> None:
+    def __init__(self, speak: Callable[..., Any], on_box: Callable[..., Any] | None = None) -> None:
         self.speak = speak
+        # Told when a box-this-lap call goes on air, so the pit sequence can confirm it
+        # before pit entry (pit_sequence.py). Gets the reason: 'window', 'wear' or 'damage'.
+        self.on_box = on_box
         self.phrases = say.Phrasebook()
         # Car index -> radio name from the Participants packet. Kept across reset() because a
         # flashback rewinds the timeline but not who is in the field; cleared on session change.
@@ -98,7 +101,13 @@ class RaceRadio:
         notice = (window, lap.num_pit_stops, phase)
         if notice not in self.pit_notices:
             self.pit_notices.add(notice)
-            self.speak(message, Priority.STRATEGY, key='pit_window', ttl=8, cooldown=0)
+            spoken = self.speak(message, Priority.STRATEGY, key='pit_window', ttl=8, cooldown=0)
+            if phase == 'last' and spoken:
+                self._box('window')
+
+    def _box(self, reason: str) -> None:
+        if self.on_box is not None:
+            self.on_box(reason)
 
     # ──────────────────────────────────────────
     # Priority Interrupts (Critical Events)
@@ -167,23 +176,25 @@ class RaceRadio:
             return
         if worst_tyre_wear >= 75.0:
             self.last_critical_alert = now
-            self.speak(
+            if self.speak(
                 f"Box, box. Box this lap, tyres are finished. "
                 f"{say.number_words(int(worst_tyre_wear))} percent wear.",
                 Priority.CRITICAL,
                 key='critical_wear',
                 ttl=8,
                 cooldown=20,
-            )
+            ):
+                self._box('wear')
         elif front_wing_damage >= 50:
             self.last_critical_alert = now
-            self.speak(
+            if self.speak(
                 "We can see front wing damage. Box this lap for a new nose. Box, box.",
                 Priority.CRITICAL,
                 key='wing_damage',
                 ttl=8,
                 cooldown=25,
-            )
+            ):
+                self._box('damage')
 
     @staticmethod
     def _crossing_time(history, distance):

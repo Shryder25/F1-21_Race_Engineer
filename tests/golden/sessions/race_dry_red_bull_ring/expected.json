@@ -32,6 +32,7 @@
   {"t": 293.8, "key": "traffic_gaps", "priority": "RACE", "proactive": false, "text": "Gap to Hamilton ahead three point seven, they're pulling away."},
   {"t": 294.2, "key": "drs_behind", "priority": "RACE", "proactive": false, "text": "Car behind has DRS, half a second. Cover the inside."},
   {"t": 296.0, "key": "rival_pit_6", "priority": "RACE", "proactive": false, "text": "Leclerc has pitted from P5, 2.3 second stop, onto the hards. Rejoins P7."},
+  {"t": 297.6, "key": "pit_brief", "priority": "RACE", "proactive": true, "text": "Lost one place in the stop, P5. Hamilton ahead, three point seven, on fresh hards. Perez behind, seven tenths, on fresh mediums. Get the tyres in, but keep Perez behind."},
   {"t": 357.2, "key": "rival_pit_5", "priority": "RACE", "proactive": false, "text": "Norris has pitted from P2, 2.2 second stop, onto the hards. Rejoins P4."},
   {"t": 380.0, "key": "race_briefing", "priority": "RACE", "proactive": false, "text": "Perez behind is the threat, nine tenths back."},
   {"t": 380.0, "key": "sector_1", "priority": "TIMING", "proactive": false, "text": "Sector one, matching your best."},

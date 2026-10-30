@@ -112,6 +112,8 @@ class AnalysisEngine(IngestStage):
         self.radio.update_strategy(lap)
         self.update_strategy_calls(lap)
         self.update_race_simulation()
+        # Strategy: the stop itself (confirm before pit entry, stay-out abort, out-lap brief)
+        self.update_pit_sequence(lap)
 
         # Radio: priority interrupts
         if self.session:
