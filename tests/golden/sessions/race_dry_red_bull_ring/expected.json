@@ -14,6 +14,7 @@
   {"t": 290.0, "key": "rival_pit_1", "priority": "RACE", "proactive": false, "text": "Hamilton has pitted from P1, 2.4 second stop, onto the hards. Rejoins P4."},
   {"t": 293.6, "key": "own_pit_stop", "priority": "RACE", "proactive": false, "text": "Good stop, 2.3 seconds, on the hards. Rejoining P5."},
   {"t": 294.2, "key": "drs_behind", "priority": "RACE", "proactive": false, "text": "Perez has DRS, half a second back. They are on two lap old mediums."},
+  {"t": 297.6, "key": "pit_brief", "priority": "RACE", "proactive": true, "text": "Lost one place in the stop, P5. Hamilton ahead, three point seven, on fresh hards. Perez behind, seven tenths, on fresh mediums. Get the tyres in, but keep Perez behind."},
   {"t": 479.05, "key": "chequered", "priority": "RACE", "proactive": false, "text": "Chequered flag is out. Bring it home."},
   {"t": 479.05, "key": "race_winner", "priority": "NORMAL", "proactive": false, "text": "Verstappen wins the race."},
   {"t": 487.0, "key": "race_finish", "priority": "RACE", "proactive": false, "text": "That's the flag. We finish P5."}

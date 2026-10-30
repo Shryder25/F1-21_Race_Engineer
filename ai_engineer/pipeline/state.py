@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 import fitted_models
 import lap_coaching
+import pit_sequence
 import pit_wall
 import race_briefing
 import race_sim
@@ -199,8 +200,11 @@ class EngineState:
         self._ml_cache: tuple[tuple[Any, ...], Any] | None = None
         self.session_mode = session_modes.UNKNOWN
         self._corner_key: tuple[int, int] | None = None
-        self.radio = RaceRadio(self.speak)
+        self.radio = RaceRadio(self.speak, on_box=self.box_called)
         self.radio.tyre_note = self.rival_tyre_note  # DRS calls say what the other car is on
+        # The stop as a real engineer runs it: box call, confirm before pit entry, stay-out
+        # abort, out-lap brief (pit_sequence.py). Reset with the session.
+        self.pit_sequence = pit_sequence.PitSequence(self.speak)
         self.phrases: Phrasebook = self.radio.phrases
         self.race_control = RaceControl(self.speak)
         self.history = history
@@ -281,8 +285,12 @@ class EngineState:
         self._sent_best_trace: list[list[float]] | None = None
         self._sent_best_len = -1
 
-    def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> None:
+    def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> bool:
         """Queue a radio call. Implemented by the radio stage (pipeline/radio.py)."""
+        raise NotImplementedError
+
+    def box_called(self, reason: str, car_index: int | None = None) -> None:
+        """A box-this-lap call went out. Implemented by the strategy stage (pipeline/strategy.py)."""
         raise NotImplementedError
 
     def rival_tyre_note(self, index: int) -> str | None:

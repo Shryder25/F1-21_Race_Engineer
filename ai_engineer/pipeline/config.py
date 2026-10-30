@@ -43,6 +43,9 @@ DEFAULT_PROACTIVE_KEYS = (
     'undercut',
     'rival_preempt',
     'plan_b',
+    'pit_confirm',
+    'pit_abort',
+    'pit_brief',
 )
 
 

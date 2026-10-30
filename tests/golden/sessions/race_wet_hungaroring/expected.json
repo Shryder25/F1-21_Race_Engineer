@@ -17,6 +17,7 @@
   {"t": 244.0, "key": "own_pit_stop", "priority": "RACE", "proactive": false, "text": "Good stop, 2.4 seconds, on the inters. Rejoining P5."},
   {"t": 245.0, "key": "rival_pit_4", "priority": "RACE", "proactive": false, "text": "Perez has pitted from P3, 2.4 second stop, onto the inters. Rejoins P6."},
   {"t": 247.2, "key": "rival_pit_6", "priority": "RACE", "proactive": false, "text": "Leclerc has pitted from P4, 2.2 second stop, onto the inters. Rejoins P7."},
+  {"t": 248.0, "key": "pit_brief", "priority": "RACE", "proactive": true, "text": "Lost three places in the stop, P5. Norris ahead, two point nine, on fresh inters. Perez behind, one point two, on fresh inters. Get the tyres in, but keep Perez behind."},
   {"t": 441.85, "key": "chequered", "priority": "RACE", "proactive": false, "text": "Chequered flag is out. Bring it home."},
   {"t": 441.85, "key": "race_winner", "priority": "NORMAL", "proactive": false, "text": "Hamilton wins the race."},
   {"t": 450.8, "key": "race_finish", "priority": "RACE", "proactive": false, "text": "That's the flag. We finish P5."}
