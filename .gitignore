@@ -21,3 +21,5 @@ dist/
 
 # Real F1 radio dataset (tools/openf1_radio.py): F1 owns the audio, keep it out of the repo
 data/openf1/
+# Fine-tuned engineer model (about 1 GB; too big for GitHub, and trained on F1 radio)
+*.gguf
