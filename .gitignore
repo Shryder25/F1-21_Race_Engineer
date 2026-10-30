@@ -23,3 +23,9 @@ dist/
 data/openf1/
 # Fine-tuned engineer model (about 1 GB; too big for GitHub, and trained on F1 radio)
 *.gguf
+*.safetensors
+*.gguf
+chat_template*
+generation_config*
+Modelfile
+config.json

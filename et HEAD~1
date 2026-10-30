@@ -1,0 +1,17 @@
+[33mcommit f0d5290665b7a615ce22cdea4818ea53b4525fc1[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mclaude/project-thread-k63fdt[m[33m)[m
+Author: anvit <anvitbhobe20@gmail.com>
+Date:   Fri Oct 30 12:16:52 2026 +0530
+
+    Some files were deleted. REst are added which include fine tuned model for ai race engineer
+
+ .../download/model.safetensors.metadata            |   0
+ .../huggingface/download/tokenizer.model.lock      |   0
+ .../model => }/Modelfile                           |   0
+ .../model/gguf => }/chat_template.jinja            |   0
+ .../model/gguf => }/config.json                    |   0
+ .../model/gguf => }/generation_config.json         |   0
+ .../model/f1-engineer.gguf                         | Bin [31m986048224[m -> [32m0[m bytes
+ .../model/gguf_gguf/Modelfile                      |  57 [31m---------------------[m
+ .../model/gguf => }/tokenizer.json                 |   0
+ .../model/gguf => }/tokenizer_config.json          |   0
+ 10 files changed, 57 deletions(-)
