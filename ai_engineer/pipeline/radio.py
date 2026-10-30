@@ -3,6 +3,9 @@
 * ``speak()`` is the one door to the voice. On-demand mode keeps the radio silent except for
   the proactive keys in config (critical events and this-lap strategy calls).
 * A per-lap budget for proactive calls (radio_discipline.CallBudget): urgent ones always pass.
+  A race gets a tighter budget than practice or qualifying.
+* Race quiet windows (radio_discipline.race_quiet_reason): lap 1, a DRS fight and the last
+  two laps carry urgent calls only.
 * ``is_driver_busy()`` is the silence filter: non-urgent calls wait out heavy braking
   and high-load corners, and land on the next straight.
 * Tyre-temperature and braking-point callouts, which come straight off the telemetry frame.
@@ -16,6 +19,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import radio_discipline
 import radio_phrases as say
 import session_modes
 import web_hud
@@ -30,6 +34,8 @@ class RadioStage(EngineState):
         topic = options.get('key', message)
         if self.on_demand and topic not in self.config.radio.proactive_keys:
             return  # radio silence until the driver asks or critical priority event
+        if self.race_quiet_reason(topic, priority):
+            return  # lap 1, a DRS fight or the last two laps: urgent calls only
         if not self.call_budget.allows(topic, priority):
             return  # this lap's proactive calls are used up; urgent calls still get through
         options['key'] = f'{self.capture_id or self.session_context}:{topic}'
@@ -38,6 +44,23 @@ class RadioStage(EngineState):
             self.call_budget.spend(topic, priority)
         if not queued and not getattr(self.voice, 'is_running', False):
             web_hud.add_voice_log(message, status='muted')
+
+    def race_quiet_reason(self, topic: str | None, priority: Priority) -> str | None:
+        """Why a non-urgent race call is held back right now ('lap_1', 'drs_fight', 'final_laps')."""
+        if (
+            self.session_mode != session_modes.RACE
+            or topic in ('session', 'lap_one')  # the radio check, and where you are after lap 1
+            or radio_discipline.is_urgent(topic, priority)
+        ):
+            return None
+        lap = self.latest_lap
+        return radio_discipline.race_quiet_reason(
+            lap.current_lap_num if lap else None,
+            self.session.total_laps if self.session else None,
+            self.radio.gap_ahead_s,
+            self.radio.gap_behind_s,
+            topic,
+        )
 
     def is_driver_busy(self) -> bool:
         """True in a high-load corner or under heavy braking (the voice queue's silence filter).

@@ -75,6 +75,7 @@ class IngestStage(LapsStage):
         self.track_id = session.track_id
         self.track_name = TRACK_NAMES.get(session.track_id, f'Track {session.track_id}')
         self.session_mode = session_modes.session_mode(session.session_type)
+        self.call_budget.set_race(self.session_mode == session_modes.RACE)
 
         # Load braking points and corner zones for whichever circuit the game reports
         self.braking_points = get_braking_points(session.track_id)
@@ -117,6 +118,7 @@ class IngestStage(LapsStage):
         self.current_corner_data.clear()
         self.best_corner_data.clear()
         self.best_corner_runs.clear()
+        self.race_corner_streaks.reset()
         self.corner_diagnostics.clear()
         self.previous_corner_sample = None
         self.brake_start_distance = None
@@ -202,6 +204,7 @@ class IngestStage(LapsStage):
         self.delta.current_lap_invalid = True  # this lap was run in mixed conditions
         self.best_corner_data = {}
         self.best_corner_runs = {}
+        self.race_corner_streaks.reset()  # dry losses say nothing about the wet
         self.best_sector_times = {}
         self._load_history_reference(session, self.session_uid)
         web_hud.update_web_state(
