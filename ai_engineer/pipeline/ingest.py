@@ -189,6 +189,11 @@ class IngestStage(LapsStage):
         self._reset_hud()
         self.radio.reset(session)
         self.race_control.reset(session)
+        self.pit_sequence.reset(
+            session.track_length,
+            racing=session_modes.session_mode(session.session_type) == session_modes.RACE,
+            stored_entry_m=self.track_store.get(session.track_id, session.track_length).get('pit_entry_m'),
+        )
         web_hud.update_web_state({'race_control': []})
 
     def _change_conditions(self, session: SessionData) -> None:

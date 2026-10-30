@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 import fitted_models
+import pit_sequence
 import pit_wall
 import race_briefing
 import race_sim
@@ -27,6 +28,9 @@ from packets import CarStatusData, LapData, SessionData
 from pipeline.models import ModelsStage
 from pipeline.state import JSON
 from voice_engine import Priority
+
+# Strategy calls that mean "box this lap" (they start the pit stop call sequence).
+BOX_NOW_CALLS = frozenset({'undercut', 'cover', 'pre_empt'})
 
 
 class StrategyStage(ModelsStage):
@@ -381,7 +385,19 @@ class StrategyStage(ModelsStage):
         if plan is None:
             return
         deg_scale, life_scale = self.strategy_scales()
+        sequence = self.pit_sequence
         for event in events:
+            if (
+                sequence.pending
+                and sequence.call is not None
+                and sequence.call.reason == 'undercut'
+                and event['car_index'] == sequence.call.car_index
+            ):
+                # The car we were undercutting has boxed first: the undercut is gone.
+                who = self.radio.driver_name(event['car_index']) or 'Car ahead'
+                if sequence.can_abort(lap):
+                    sequence.abort(f"{who} has boxed, undercut's gone. Stay out and push.", 'target_pitted')
+                continue
             if abs(event['gap_s']) > self.config.strategy.rival_react_gap_s:
                 continue
             rival = self._rival_status(event['car_index'])
@@ -403,6 +419,15 @@ class StrategyStage(ModelsStage):
                 rival_name=self.radio.driver_name(event['car_index']),
                 assumed_new_compound=expected,
             )
+            if sequence.pending:
+                # We are already boxing this lap. A car ahead stopping can turn it into an
+                # overcut: take the box call back while there is still time. Anything else
+                # ("stay out, undercut won't work", "box to cover") would only confuse it.
+                if call.kind == 'overcut' and sequence.can_abort(lap):
+                    who = self.radio.driver_name(event['car_index']) or 'Car ahead'
+                    sequence.abort(f'{who} has boxed. Overcut is on, push now, big lap.', 'overcut')
+                    self.last_strategy_call = {**call.as_dict(), 'lap': lap.current_lap_num}
+                continue
             self._make_strategy_call(call, 'rival_pit')
 
         self.update_rival_forecasts(lap, plan, deg_scale, life_scale)
@@ -439,7 +464,78 @@ class StrategyStage(ModelsStage):
     def _make_strategy_call(self, call: race_strategy.StrategyCall, key: str) -> None:
         lap = self.latest_lap.current_lap_num if self.latest_lap else None
         self.last_strategy_call = {**call.as_dict(), 'lap': lap}
-        self.speak(call.message, Priority.STRATEGY, key=key, ttl=10, cooldown=0)
+        spoken = self.speak(call.message, Priority.STRATEGY, key=key, ttl=10, cooldown=0)
+        if spoken and call.kind in BOX_NOW_CALLS:
+            self.box_called(call.kind, call.car_index)
+
+    # ── The pit stop call sequence (pit_sequence.py) ──
+
+    def box_called(self, reason: str, car_index: int | None = None) -> None:
+        """A box-this-lap call went on air: arm the confirm before entry, abort and brief."""
+        if reason == 'safety_car':
+            # The Safety Car call carried a decision: box (cheap stop) or stay out.
+            kind = (self.last_strategy_call or {}).get('kind')
+            if kind == 'sc_stay_out':
+                self.pit_sequence.cancel('safety_car')  # the SC call already said "stay out"
+                return
+            if kind != 'sc_box':
+                return
+        self.pit_sequence.box_called(reason, self.latest_lap, car_index)
+
+    def update_pit_sequence(self, lap: LapData) -> None:
+        """Confirm before pit entry, spot the stop, then brief the out lap."""
+        session_time = self.radio.last_session_time
+        self.pit_sequence.update(
+            lap,
+            self.field_laps,
+            self.player_index,
+            session_time if session_time is not None else 0.0,
+            self.out_lap_neighbours,
+        )
+        entry = self.pit_sequence.take_entry_to_save()
+        if entry is not None and self.session is not None:
+            self.track_store.save(self.track_id, self.session.track_length, pit_entry_m=entry)
+
+    def out_lap_neighbours(self) -> list[pit_sequence.Neighbour]:
+        """The cars directly ahead and behind on the road after the stop, with gap and tyres."""
+        laps = self.field_laps
+        if laps is None or not 0 <= self.player_index < len(laps):
+            return []
+        me = laps[self.player_index]
+        now = self.radio.last_session_time
+        found = []
+        for side, offset in (('ahead', -1), ('behind', 1)):
+            position = me.car_position + offset
+            index = next(
+                (
+                    i
+                    for i, other in enumerate(laps)
+                    if i != self.player_index
+                    and other.car_position == position
+                    and other.result_status == pit_sequence.ACTIVE
+                    and not other.pit_status
+                ),
+                None,
+            )
+            if index is None:
+                continue
+            measured = self.radio.rival_gaps.get(index)
+            gap = None
+            if measured is not None and now is not None and now - measured[1] <= pit_sequence.GAP_FRESH_S:
+                gap = abs(measured[0])
+            status = self._rival_status(index)
+            found.append(
+                pit_sequence.Neighbour(
+                    side,
+                    index,
+                    self.radio.driver_name(index),
+                    gap,
+                    pit_sequence.tyre_words(status.compound_name) if status else None,
+                    status.tyres_age_laps if status else None,
+                    laps[index].num_pit_stops,
+                )
+            )
+        return found
 
     # ── Monte Carlo race simulation (race_sim.py) ──
 
@@ -629,7 +725,15 @@ class StrategyStage(ModelsStage):
             'gap_s': None,
             'car_index': None,
         }
-        self.speak(call.message, Priority.STRATEGY, key='plan_b', ttl=12, cooldown=0)
+        boxes_now = bool(call.plan.pit_laps) and call.plan.pit_laps[0] <= lap.current_lap_num
+        sequence = self.pit_sequence
+        if sequence.pending and not boxes_now:
+            # The re-plan flips the stop we just called: take it back before the entry line.
+            if sequence.can_abort(lap):
+                sequence.abort(call.message, 'plan_b')
+            return
+        if self.speak(call.message, Priority.STRATEGY, key='plan_b', ttl=12, cooldown=0) and boxes_now:
+            self.box_called('plan_b')
 
     def race_simulation(self) -> JSON | None:
         """Latest simulation summary, or None when it is off, not run yet or out of date."""
@@ -692,6 +796,7 @@ class StrategyStage(ModelsStage):
             if (a['compounds'], a['pit_laps']) != (plan.best.compounds, plan.best.pit_laps):
                 summary['radio'] += ' ' + replan['radio']
         summary['last_call'] = self.last_strategy_call
+        summary['pit_call'] = self.pit_sequence.summary()
         status, rival = self.latest_status, self._rival_status(self.radio.car_ahead_index)
         wet = (
             race_strategy.normalise_compound(status.compound_name if status else None)

@@ -29,21 +29,26 @@ from voice_engine import Priority
 
 
 class RadioStage(EngineState):
-    def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> None:
-        """Queue speech; priority interrupts in the proactive keys break on-demand silence."""
+    def speak(self, message: str, priority: Priority = Priority.NORMAL, **options: Any) -> bool:
+        """Queue speech; priority interrupts in the proactive keys break on-demand silence.
+
+        Returns False when the radio rules keep the call off the air (on-demand silence or
+        the lap's budget), True when it went to the voice.
+        """
         topic = options.get('key', message)
         if self.on_demand and topic not in self.config.radio.proactive_keys:
-            return  # radio silence until the driver asks or critical priority event
+            return False  # radio silence until the driver asks or critical priority event
         if self.race_quiet_reason(topic, priority):
-            return  # lap 1, a DRS fight or the last two laps: urgent calls only
+            return False  # lap 1, a DRS fight or the last two laps: urgent calls only
         if not self.call_budget.allows(topic, priority):
-            return  # this lap's proactive calls are used up; urgent calls still get through
+            return False  # this lap's proactive calls are used up; urgent calls still get through
         options['key'] = f'{self.capture_id or self.session_context}:{topic}'
         queued = self.voice.say(message, priority, **options)
         if queued:
             self.call_budget.spend(topic, priority)
         if not queued and not getattr(self.voice, 'is_running', False):
             web_hud.add_voice_log(message, status='muted')
+        return True
 
     def race_quiet_reason(self, topic: str | None, priority: Priority) -> str | None:
         """Why a non-urgent race call is held back right now ('lap_1', 'drs_fight', 'final_laps')."""

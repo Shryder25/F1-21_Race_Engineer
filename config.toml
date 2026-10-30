@@ -23,8 +23,8 @@ on_demand = true            # speak only when asked, plus the proactive keys bel
 proactive_keys = [
     "lap_time", "lap_coaching", "race_pace", "race_gaps", "safety_car", "safety_car_in", "weather_rain",
     "critical_wear", "wing_damage", "penalty", "flag_yellow", "flag_red", "rival_pit",
-    "undercut", "rival_preempt", "plan_b", "fuel_save", "puncture", "engine_damage",
-    "gearbox_damage", "engine_temp_critical",
+    "undercut", "rival_preempt", "plan_b", "pit_confirm", "pit_abort", "pit_brief",
+    "fuel_save", "puncture", "engine_damage", "gearbox_damage", "engine_temp_critical",
 ]
 calls_per_lap = 4           # --calls-per-lap: most proactive calls per lap; urgent calls always
                             # get through (Safety Car, flags, box, strategy...). 0 = no limit
