@@ -65,10 +65,33 @@ class MakeSftTest(unittest.TestCase):
                     '\n'.join(json.dumps(r) for r in rows) + '\nbad\n'
                 )
             self.assertEqual(make_sft.main(['--data', tmp]), 0)
-            lines = (data / 'sft_train.jsonl').read_text().splitlines()
-            self.assertEqual(len(lines), 1)
-            self.assertEqual(len(json.loads(lines[0])['messages']), 3)
+            lines = [json.loads(x) for x in (data / 'sft_train.jsonl').read_text().splitlines()]
+            self.assertEqual(len(lines), 2)  # one real line kept, plus one answered question
+            self.assertEqual(
+                json.loads(lines[0]['messages'][2]['content'])['voice'], 'Stay out, tyres are fine.'
+            )
+            self.assertEqual(len(lines[1]['messages']), 3)
             self.assertTrue((data / 'sft_test.jsonl').exists())
+
+    def test_transcript_filler_is_cleaned_off(self):
+        self.assertEqual(
+            make_sft.clean_line("Yeah yeah copy that Yeah we're gonna need a bit more gap behind us"),
+            "We're gonna need a bit more gap behind us",
+        )
+        self.assertEqual(
+            make_sft.clean_line('Okay, um, box box this lap for hards.'), 'Box box this lap for hards.'
+        )
+        self.assertEqual(make_sft.clean_line('Copy that.'), '')
+        self.assertEqual(make_sft.clean_line('we we are happy'), 'We are happy')
+
+    def test_answered_questions_use_the_data(self):
+        answers = {
+            c['messages'][1]['content'].split('\n')[0]: json.loads(c['messages'][2]['content'])['voice']
+            for c in make_sft.qa_chats({'situation': SITUATION})
+        }
+        self.assertEqual(answers['Driver asks: "What is the gap to the car ahead?"'], 'VER is 2.0 ahead.')
+        self.assertEqual(answers['Driver asks: "What position am I in?"'], "You're P3, lap 20 of 57.")
+        self.assertEqual(answers['Driver asks: "How old are my tyres?"'], 'Mediums are 18 laps old.')
 
     def test_missing_dataset_says_what_to_run(self):
         with tempfile.TemporaryDirectory() as tmp:

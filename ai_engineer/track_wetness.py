@@ -66,6 +66,15 @@ DRY_REFERENCE_MAX_WETNESS = 0.05  # slick laps count towards the dry reference b
 DRY_REFERENCE_LAPS = 12
 OBS_WINDOW_LAPS = 1.3  # laps within this many lap-lengths are compared
 
+# ── Inters holding their pace ──
+# With only inters out (a wet start, no dry laps to compare with) the rain physics alone can
+# push the estimate past the inter/wet crossover. But if the field's inter laps aren't getting
+# slower, the track isn't at standing water: hold the estimate just under the crossover.
+INTER_STEADY_SLOWDOWN_S = 2.0  # per 90 s lap: latest lap vs the car's best of its last few
+INTER_STEADY_MIN_CARS = 3
+INTER_STEADY_LAPS = 3  # a car needs this many clean inter laps in a row to count
+WET_CAP_MARGIN = 0.05
+
 GRID = np.linspace(0.0, 1.0, 101)
 
 
@@ -144,6 +153,7 @@ class TrackWetness:
         self.history: deque = deque(maxlen=60)  # (time, wetness), for the trend
         self._cars: dict[int, tuple] = {}
         self.car_dry: dict[int, deque] = {}  # each car's own dry slick laps (fuel-corrected)
+        self.wet_cap: float | None = None  # ceiling while the field's inters hold their pace
 
     # ── physics ──
     def update_weather(self, weather: int, track_temp: float, now: float, forecast: tuple = ()):
@@ -157,6 +167,8 @@ class TrackWetness:
             minutes = (now - self.last_t) / 60.0
             # Integrate under the weather that was in force since the last update.
             self.wetness = step(self.wetness, minutes, self.weather, self.track_temp)
+            if self.wet_cap is not None:
+                self.wetness = min(self.wetness, self.wet_cap)
             self.sd = min(0.4, math.sqrt(self.sd**2 + PROCESS_SD_PER_SQRT_MIN**2 * minutes))
         self.weather = weather
         self.last_t = now
@@ -264,6 +276,38 @@ class TrackWetness:
         """Fold in the latest lap-time reading once enough new laps are in (about one per car)."""
         if self.wetness is None or self.new_records < max(4, len({r[1] for r in self.records}) // 2):
             return
+        self._fold_reading(now)
+        self._update_wet_cap(now)
+
+    def inters_holding_pace(self) -> bool:
+        """True when enough cars on inters are lapping no slower than their recent best."""
+        runs: dict[int, list[float]] = {}
+        for _, car, fam, lap_s in self.records:
+            if fam == 'inter':
+                runs.setdefault(car, []).append(lap_s)
+            else:
+                runs.pop(car, None)  # a run on inters starts again after a change of tyre type
+        slowdowns = [
+            laps[-1] - min(laps[-1 - INTER_STEADY_LAPS : -1])
+            for laps in runs.values()
+            if len(laps) >= INTER_STEADY_LAPS
+        ]
+        if len(slowdowns) < INTER_STEADY_MIN_CARS:
+            return False
+        return float(np.median(slowdowns)) < INTER_STEADY_SLOWDOWN_S * self.lap_s / REFERENCE_LAP_S
+
+    def _update_wet_cap(self, now: float):
+        cross = crossover('inter', 'wet')
+        wets_running = len(self._recent(now)['wet']) >= MIN_CARS_PER_FAMILY
+        if cross is None or wets_running or not self.inters_holding_pace():
+            self.wet_cap = None
+            return
+        self.wet_cap = cross - WET_CAP_MARGIN
+        if self.wetness is not None and self.wetness > self.wet_cap:
+            self.wetness = self.wet_cap
+            self.basis = 'inters holding their pace'
+
+    def _fold_reading(self, now: float):
         obs = self.reading(now)
         self.new_records = 0
         if obs is None:
@@ -302,6 +346,8 @@ class TrackWetness:
             out.append(w)
             weather = self.weather_at(k * lap_s / 60.0)
             w = step(w, lap_s / 60.0, weather, self.track_temp)
+            if self.wet_cap is not None:
+                w = min(w, self.wet_cap)
         return out
 
     def weather_at(self, minutes_ahead: float) -> int:

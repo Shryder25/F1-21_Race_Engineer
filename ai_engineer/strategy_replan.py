@@ -56,6 +56,9 @@ EVENT_REASONS = ('safety_car', 'vsc', 'rain', 'rival_stop', 'crossover', 'tyre_g
 SWITCH_OFFSETS = (-1, 0, 2)
 TYRE_WORDS = {'slick': 'slicks', 'inter': 'inters', 'wet': 'full wets'}
 WET_WEATHER = 3  # session weather code from which the track is wet (light rain)
+# With this many laps left (this one included) a new stop costs more than any tyre can win back,
+# so Plan B never adds or brings forward a stop, except slicks onto inters or wets in the rain.
+LATE_STOP_LAPS = 4
 
 
 @dataclass
@@ -259,6 +262,7 @@ class Replanner:
         self.challenger: dict | None = None  # best alternative in the last re-run, for the HUD
         self.status = 'waiting'  # waiting / holding / watching / cooldown / switched
         self.last_run: dict | None = None
+        self.last_lap: int | None = None  # the race's last lap, from the latest re-run
 
     # ── triggers ──
     def observe(
@@ -374,6 +378,8 @@ class Replanner:
     ) -> list[race_sim.Candidate]:
         """Plan A first, then tyre-type changes around the crossover, the event options (box now)
         and the planner's options. ``trajectory`` is the expected wetness lap by lap from now."""
+        if last_lap is not None:
+            self.last_lap = last_lap
         if self.plan_a is None:
             return race_sim.candidates_from_plan(plan)
         out, seen = [self.plan_a], {_plan_key(self.plan_a)}
@@ -433,7 +439,7 @@ class Replanner:
             if o.is_reference or not vs:
                 continue
             c = race_sim.Candidate(o.label, o.stops, list(o.compounds), list(o.pit_laps))
-            if same_plan(c, plan_a, lap_num):
+            if same_plan(c, plan_a, lap_num) or self.late_stop(c, plan_a, lap_num):
                 continue
             score = (vs['position_gain'], vs['time_gain_s'])
             if best_score is None or score > best_score:
@@ -477,6 +483,18 @@ class Replanner:
         self.last_call, self.status = call, 'switched'
         self.streak_key, self.streak, self.challenger = None, 0, None
         return call
+
+    def late_stop(self, c: race_sim.Candidate, plan_a: race_sim.Candidate, lap_num: int) -> bool:
+        """True when ``c`` adds or brings forward a stop this close to the flag (not worth it)."""
+        if self.last_lap is None or not c.pit_laps:
+            return False
+        laps_left = self.last_lap + 2 - lap_num  # last_lap is the last lap but one
+        if laps_left > LATE_STOP_LAPS:
+            return False
+        if plan_a.pit_laps and c.stops <= plan_a.stops and c.pit_laps[0] >= plan_a.pit_laps[0]:
+            return False  # not an extra or earlier stop
+        rain_rescue = tw.family(c.compounds[0]) == 'slick' and tw.family(c.compounds[1]) in ('inter', 'wet')
+        return not rain_rescue
 
     # ── for the HUD, the AI prompt and the strategy answer ──
     def summary(self, lap_num: int | None) -> dict | None:
