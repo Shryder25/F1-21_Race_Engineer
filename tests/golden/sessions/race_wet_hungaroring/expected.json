@@ -85,7 +85,7 @@
     "pit_window": "Not enough laps on these tyres to predict a window yet.",
     "gap_ahead": "Gap to Bottas ahead is 1.2.",
     "gap_behind": "Gap to Perez behind is 0.8.",
-    "pace": "Last lap 1:13.900. 3.0 faster than your best.",
+    "pace": "Last lap 1:13.900. That was your best. 1.2 slower than Bottas ahead.",
     "threats": "Medium threat from Perez behind, 0.8, gap 0.8s (DRS range).",
     "strategy": "Plan is one stop. Box lap 2 for soft. 2 stops is 21.0 slower. Undercut on the car ahead will not work yet.",
     "rivals": "Bottas likely to box lap 4, onto mediums. Window lap 2 to 6. Perez likely to box lap 3, onto hards. Window lap 1 to 5."
@@ -135,7 +135,7 @@
     "pit_window": "Not enough laps on these tyres to predict a window yet.",
     "gap_ahead": "Gap to Bottas ahead is 1.6.",
     "gap_behind": "Gap to Perez behind is 1.0.",
-    "pace": "Last lap 1:10.250.",
+    "pace": "Last lap 1:10.250. 0.4 slower than Bottas ahead.",
     "threats": "Low threat from Perez behind, 1.0.",
     "strategy": "Plan is one stop. Box lap 3 for soft. 2 stops is 21.0 slower. Undercut on the car ahead will not work yet.",
     "rivals": "Bottas likely to box lap 4, onto intermediates. Window lap 3 to 6. Perez likely to box lap 3, onto hards. Window lap 2 to 5."
@@ -279,7 +279,7 @@
     "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "Gap to Norris ahead is 2.8.",
     "gap_behind": "Gap to Perez behind is 1.4.",
-    "pace": "Last lap 1:09.950.",
+    "pace": "Last lap 1:09.950. 0.1 quicker than Norris ahead.",
     "threats": "Low threat from Perez behind, 1.4.",
     "strategy": "No more stops. Bring the intermediates home.",
     "rivals": "Norris looks to be going to the end on intermediates. Perez looks to be going to the end on intermediates."
@@ -324,7 +324,7 @@
     "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
     "gap_ahead": "No gap ahead reading right now.",
     "gap_behind": "No gap behind reading right now.",
-    "pace": "Last lap 1:09.950.",
+    "pace": "Last lap 1:09.950. That was your best. 0.1 quicker than Norris ahead. 0.1 quicker than Perez behind.",
     "threats": "No immediate threats.",
     "strategy": "No strategy data yet.",
     "rivals": "No read on the other cars yet."
@@ -376,7 +376,7 @@
   "pit_window": "Tyres should reach the flag. No stop needed at the moment.",
   "gap_ahead": "No gap ahead reading right now.",
   "gap_behind": "No gap behind reading right now.",
-  "pace": "Last lap 1:09.950.",
+  "pace": "Last lap 1:09.950. That was your best. 0.1 quicker than Norris ahead. 0.1 quicker than Perez behind.",
   "threats": "No immediate threats.",
   "strategy": "No strategy data yet.",
   "rivals": "No read on the other cars yet."

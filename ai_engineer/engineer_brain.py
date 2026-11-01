@@ -431,6 +431,60 @@ def _names_a_driver(question: str, ctx: dict) -> bool:
     )
 
 
+def _named_driver_row(question: str, ctx: dict) -> dict | None:
+    """The running-order row of the (other) driver the question names, if exactly one."""
+    words = set(re.findall(r'[a-z]+', (question or '').lower()))
+    found = [
+        row
+        for row in ctx.get('standings') or []
+        if row.get('name')
+        and not row.get('is_player')
+        and any(part in words for part in re.findall(r'[a-z]+', row['name'].lower()) if len(part) > 2)
+    ]
+    return found[0] if len(found) == 1 else None
+
+
+# A question about another driver's stop goes to the rival-stop answer, not this one.
+_STOP_WORDS = re.compile(r'\b(box|boxing|pit|pits|pitting|stop|stops|stopping)\b')
+_WHERE_WORDS = re.compile(r'\b(where|position|place|placed|gap|far|behind|ahead|doing|running|p\d+)\b')
+_TYRE_LETTER = {'S': 'softs', 'M': 'mediums', 'H': 'hards', 'I': 'inters', 'W': 'wets'}
+
+
+def _gap(row: dict) -> float | None:
+    """Gap to the leader; the leader's own row has none."""
+    if row.get('gap_s') is None and row.get('position') == 1:
+        return 0.0
+    return row.get('gap_s')
+
+
+def driver_answer(question: str, ctx: dict) -> str | None:
+    """'Verstappen is P4, 3.2 behind you, on 6-lap inters.' for a question naming one driver."""
+    text = (question or '').lower()
+    if _STOP_WORDS.search(text) or not _WHERE_WORDS.search(text):
+        return None
+    row = _named_driver_row(question, ctx)
+    if row is None:
+        return None
+    name = row['name'].title() if row['name'].isupper() else row['name']
+    parts = [f"{name} is P{row.get('position')}"]
+    me = next((r for r in ctx.get('standings') or [] if r.get('is_player')), None)
+    if row.get('status') and row['status'] not in ('RUN', None):
+        parts.append(f"status {row['status'].lower()}")
+    elif me and _gap(row) is not None and _gap(me) is not None and not row.get('laps_down'):
+        diff = _gap(row) - _gap(me)
+        parts.append(f"{abs(diff):.1f} {'behind' if diff > 0 else 'ahead of'} you")
+    elif row.get('laps_down'):
+        parts.append(f"{row['laps_down']} lap{'s' if row['laps_down'] > 1 else ''} down")
+    text = ', '.join(parts)
+    if row.get('compound'):
+        age = row.get('tyre_age')
+        tyre = _TYRE_LETTER.get(str(row['compound']).upper(), str(row['compound']).lower())
+        text += f", on {f'{age}-lap ' if age is not None else ''}{tyre}"
+    if row.get('last_lap_ms'):
+        text += f". Last lap {_fmt_lap(row['last_lap_ms'])}"
+    return text + '.'
+
+
 def build_prompt(
     command: str, ctx: dict, *, focused: bool = True, examples: RadioExamples | None = None
 ) -> tuple[str, str]:
@@ -598,17 +652,46 @@ def rule_based_answer(command: str, ctx: dict) -> str:
         picks = [rivals[side] for side in ('ahead', 'behind') if rivals.get(side)] or rivals['nearby'][:2]
         return ' '.join(r['summary'] for r in picks)
     if command == 'pace':
-        parts = []
-        if ctx.get('last_lap_ms'):
-            parts.append(f"Last lap {_fmt_lap(ctx['last_lap_ms'])}.")
-        delta = ctx.get('delta_to_best_ms')
-        if delta is not None:
-            parts.append(f"{abs(delta) / 1000:.1f} {'slower' if delta > 0 else 'faster'} than your best.")
-        trend = ctx.get('pace_trend_s_per_lap')
-        if trend is not None:
-            parts.append(f"Tyres costing {max(trend, 0):.2f} a lap.")
-        return ' '.join(parts) or 'No pace data yet.'
+        return pace_answer(ctx)
     return 'Say again.'
+
+
+PACE_COMPARE_MAX_S = 3.0
+
+
+def pace_answer(ctx: dict) -> str:
+    """Last lap against your best, the cars either side and the tyre trend."""
+    last = ctx.get('last_lap_ms')
+    if not last:
+        return 'No lap time yet, give me one more lap.'
+    parts = [f'Last lap {_fmt_lap(last)}.']
+    best = ctx.get('best_lap_ms')
+    if best and (last - best) / 1000 > PACE_COMPARE_MAX_S:
+        pass  # a pit, Safety Car or yellow-flag lap: comparing it says nothing
+    elif best and last > best:
+        parts.append(f'{(last - best) / 1000:.1f} off your best.')
+    elif best:
+        parts.append('That was your best.')
+    rows = ctx.get('standings') or []
+    me = next((r for r in rows if r.get('is_player')), None)
+    if me and me.get('position') and ctx.get('session_mode') in ('race', None):
+        for offset, where in ((-1, 'ahead'), (1, 'behind')):
+            other = next((r for r in rows if r.get('position') == me['position'] + offset), None)
+            if not other or not other.get('last_lap_ms') or other.get('pit'):
+                continue
+            diff = (other['last_lap_ms'] - last) / 1000
+            if abs(diff) > PACE_COMPARE_MAX_S:
+                continue  # an in-lap, out-lap or Safety Car lap on one side: not a pace reading
+            name = other.get('name') or f'Car {where}'
+            name = name.title() if name.isupper() else name
+            if abs(diff) < 0.05:
+                parts.append(f'Same pace as {name} {where}.')
+            else:
+                parts.append(f"{abs(diff):.1f} {'quicker' if diff > 0 else 'slower'} than {name} {where}.")
+    trend = ctx.get('pace_trend_s_per_lap')
+    if trend is not None and trend > 0.05:
+        parts.append(f'Tyres costing {trend:.1f} a lap.')
+    return ' '.join(parts)
 
 
 # A question this short that matches a fixed command ("gap ahead?", "tyre temps") gets the
@@ -673,6 +756,11 @@ class EngineerBrain:
                 self.last_advice = ''
                 return blocked
         question = re.sub(r'\s+', ' ', question.replace('"', "'")).strip()
+        named = driver_answer(question, ctx) if command != 'rivals' else None
+        if named:  # "where is Verstappen": straight from the timing tower, never the car ahead
+            self.last_source = 'rules'
+            self.last_advice = ''
+            return named
         if command and self.rules_first and len(question.split()) <= INSTANT_MAX_WORDS:
             self.last_source = 'rules'
             self.last_advice = ''
