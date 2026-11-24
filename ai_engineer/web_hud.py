@@ -11,6 +11,7 @@ Provides:
 
 import base64
 import hashlib
+import hmac
 import http.server
 import json
 import socketserver
@@ -246,6 +247,41 @@ _reset_map_handler = None
 def set_reset_map_handler(handler):
     global _reset_map_handler
     _reset_map_handler = handler
+
+
+# Cloud mode (cloud_server.py): the relay on the game PC streams telemetry into /relay, and
+# the HUD's control endpoints (typed questions, map reset, AI setup consult) need a token,
+# because the page is on a public URL. Local mode leaves both hooks unset: nothing changes.
+_relay_handler = None
+# None = controls open to anyone (local mode). '' = controls off for everyone.
+# Anything else = a browser must present this secret (cookie set via /control?token=...).
+_control_secret: str | None = None
+CONTROL_COOKIE = 'f1_control'
+
+
+def set_relay_handler(handler):
+    """handler(request_handler) serves GET /relay (a WebSocket from tools/cloud_relay.py)."""
+    global _relay_handler
+    _relay_handler = handler
+
+
+def set_control_secret(secret: str | None):
+    global _control_secret
+    _control_secret = secret
+
+
+def control_allowed(headers) -> bool:
+    """May this request use the control endpoints? Header X-Control-Token or the cookie."""
+    if _control_secret is None:
+        return True
+    if not _control_secret:
+        return False
+    supplied = headers.get('X-Control-Token') or ''
+    for part in (headers.get('Cookie') or '').split(';'):
+        name, _, value = part.strip().partition('=')
+        if name == CONTROL_COOKIE:
+            supplied = supplied or value
+    return hmac.compare_digest(supplied.encode('utf-8'), _control_secret.encode('utf-8'))
 
 
 # DeepSeek track analyst for the Track Database tab (no client = data model only).
@@ -801,7 +837,7 @@ def ws_frame(payload: bytes, opcode: int = 0x1) -> bytes:
     return head + payload
 
 
-def ws_read_frame(rfile) -> tuple[int, bytes] | None:
+def ws_read_frame(rfile, max_size: int = WS_MAX_INCOMING) -> tuple[int, bytes] | None:
     """(opcode, payload) of the next client frame, or None at end of stream."""
     head = rfile.read(2)
     if len(head) < 2:
@@ -811,14 +847,16 @@ def ws_read_frame(rfile) -> tuple[int, bytes] | None:
         length = struct.unpack('!H', rfile.read(2))[0]
     elif length == 127:
         length = struct.unpack('!Q', rfile.read(8))[0]
-    if length > WS_MAX_INCOMING:
+    if length > max_size:
         raise ValueError('client frame too large')
     mask = rfile.read(4) if head[1] & 0x80 else b''
     payload = rfile.read(length)
     if len(payload) < length:
         return None
-    if mask:
-        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    if mask and length:
+        # XOR the whole payload with the repeated 4-byte mask in one big-int operation.
+        key = (mask * (length // 4 + 1))[:length]
+        payload = (int.from_bytes(payload, 'big') ^ int.from_bytes(key, 'big')).to_bytes(length, 'big')
     return opcode, payload
 
 
@@ -889,6 +927,33 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
         if path == "/ws":
             self._serve_websocket()
 
+        elif path == "/healthz":
+            # Health check for the cloud host (Railway / Fly.io).
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        elif path == "/relay" and _relay_handler is not None:
+            _relay_handler(self)
+
+        elif path == "/control" and _control_secret:
+            # Cloud mode: open /control?token=<CONTROL_SECRET> once to unlock the controls
+            # in this browser (the HUD sends the cookie with every POST).
+            token = urllib.parse.parse_qs(parsed.query).get("token", [""])[0]
+            if not hmac.compare_digest(token.encode("utf-8"), _control_secret.encode("utf-8")):
+                self.send_response(403)
+                self.end_headers()
+                return
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto", "") == "https" else ""
+            self.send_response(303)
+            self.send_header(
+                "Set-Cookie",
+                f"{CONTROL_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000{secure}",
+            )
+            self.send_header("Location", "/")
+            self.end_headers()
+
         elif path in ("/", "/index.html"):
             template_path = Path(__file__).resolve().parent / "templates" / "index.html"
             content = None
@@ -953,6 +1018,14 @@ class TelemetryHUDHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+
+        if not control_allowed(self.headers):
+            # Cloud mode on a public URL: viewers watch, only the owner's browser controls.
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error": "read-only: controls need the owner token"}')
+            return
 
         if path == "/api/command":
             if _command_handler is None:

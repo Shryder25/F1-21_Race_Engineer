@@ -1,0 +1,13 @@
+# Railway: New Project -> Deploy from GitHub repo, then see docs/cloud-deployment.md.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python cloud_server.py"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+# One replica: the HUD state is in memory (Redis would be needed for more, see
+# ai_engineer/cloud_link.py).
+numReplicas = 1
