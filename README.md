@@ -171,3 +171,4 @@ cd tests && python -m unittest discover -v
 - [docs/push-to-talk.md](docs/push-to-talk.md), [docs/ai-performance.md](docs/ai-performance.md)
 - [docs/fitted-models.md](docs/fitted-models.md), [docs/race-simulator.md](docs/race-simulator.md)
 - [docs/channel-store.md](docs/channel-store.md), [docs/udp-recording-format.md](docs/udp-recording-format.md)
+- [docs/cloud-deployment.md](docs/cloud-deployment.md): permanent HUD URL on Railway / Fly.io, fed by a relay on your PC

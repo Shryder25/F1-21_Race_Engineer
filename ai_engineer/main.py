@@ -43,6 +43,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import webbrowser
 
 import auto_refit
+import cloud_link
 import push_to_talk
 import radio_discipline
 import strategy_replan
@@ -828,7 +829,18 @@ def main():
 
     # ─── Set up UDP Socket (or a recording standing in for it) ───
     recorder = None
-    if args.replay:
+    # Cloud mode (cloud_server.py, CLOUD_MODE=1): packets come from tools/cloud_relay.py on
+    # the game PC over a WebSocket, and there is no console or browser to drive.
+    cloud = cloud_link.enabled()
+    if cloud and not args.replay:
+        try:
+            sock = cloud_link.setup()
+        except ValueError as e:
+            log.error(f"Cloud mode: {e}")
+            voice.shutdown()
+            history.close()
+            sys.exit(1)
+    elif args.replay:
         try:
             sock = ReplaySource(args.replay, args.replay_speed)
         except (OSError, ValueError) as e:
@@ -871,17 +883,19 @@ def main():
             pass
 
     # Start Visual Telemetry Web HUD Server (Port 5000)
-    hud_port = cfg.network.hud_port
+    hud_port = cloud_link.hud_port(cfg.network.hud_port) if cloud else cfg.network.hud_port
     web_server = start_web_hud_server(port=hud_port)
-    try:
-        webbrowser.open(f"http://localhost:{hud_port}")
-    except Exception:
-        pass
-
-    print_telemetry_banner(cfg.network.udp_port)
+    if not cloud:
+        try:
+            webbrowser.open(f"http://localhost:{hud_port}")
+        except Exception:
+            pass
+        print_telemetry_banner(cfg.network.udp_port)
     if args.replay:
         speed = 'max speed' if args.replay_speed is None else f'{args.replay_speed:g}x'
         log.info(f"Replay: reading telemetry from {args.replay} at {speed}")
+    elif cloud:
+        log.info(f"Cloud mode: waiting for the relay on /relay (HUD on port {hud_port})")
     else:
         log.info(f"Bound to UDP port {cfg.network.udp_port}")
     if recorder:
@@ -913,7 +927,7 @@ def main():
                 break
             except TimeoutError:
                 stream.check_timeout()
-                if not first_packet_logged:
+                if not first_packet_logged and not cloud:
                     now = time.time()
                     if now - last_wait_tick >= 0.5:
                         last_wait_tick = now
@@ -943,14 +957,15 @@ def main():
 
             if not first_packet_logged:
                 first_packet_logged = True
-                sys.stdout.write("\r" + " " * 75 + "\r")
+                if not cloud:
+                    sys.stdout.write("\r" + " " * 75 + "\r")
                 log.info('Valid F1 2021 telemetry stream detected!')
                 # Prepare space for 9 lines of dashboard
-                for _ in range(9):
+                for _ in range(9 if not cloud else 0):
                     print()
 
             # ─── Run Analysis ───
-            if latest_telemetry and latest_lap:
+            if latest_telemetry and latest_lap and not cloud:
                 # ─── Console Display ───
                 now = time.time()
                 if now - last_display_time >= display_interval:
